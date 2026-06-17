@@ -1,6 +1,6 @@
 # TinyPHP
 
-> PHP → C 转译编译器，将 PHP 子集转为安全 C 代码，由 TCC 编译为原生产物（可执行文件、静态库、动态库等）。
+> PHP → C 转译编译器，将 PHP 子集转为安全 C 代码，由编译器编译为原生产物（可执行文件、静态库、动态库等）。
 
 ## 快速开始
 
@@ -16,6 +16,10 @@ php tphp.php .
 
 # 指定输出
 php tphp.php main.php -o app.exe
+
+# 指定编译器（默认内置 TCC）
+php tphp.php main.php -cc gcc
+php tphp.php main.php -cc clang
 ```
 
 编译后直接运行生成的产物即可（Windows 为 `.exe`，Linux/macOS 为无后缀可执行文件）。
@@ -23,7 +27,7 @@ php tphp.php main.php -o app.exe
 ## 编译流水线
 
 ```
-PHP 源码 → Lexer → Token[] → Parser → AST → CodeGenerator → .c → TCC → .exe
+PHP 源码 → Lexer → Token[] → Parser → AST → CodeGenerator → .c → 编译器 → 产物
 ```
 
 - `src/Lexer.php` — 词法分析，逐字符扫描生成 Token 流
@@ -34,6 +38,7 @@ PHP 源码 → Lexer → Token[] → Parser → AST → CodeGenerator → .c →
 ## 支持的语言特性
 
 ### 类型系统
+
 | PHP | C |
 |-----|---|
 | `int` | `int64_t` |
@@ -47,7 +52,6 @@ PHP 源码 → Lexer → Token[] → Parser → AST → CodeGenerator → .c →
 ### 语法支持
 
 ```php
-// 类与方法（强类型）
 class Main {
     public function main(): void {
         // 变量
@@ -60,32 +64,51 @@ class Main {
         // 运算
         $z = $a + 5;
 
+        // 字符串拼接
+        $s = $a . " " . $b;          // "10 hello"
+        $s2 = "hello $d\n";          // 双引号插值
+        $s3 = "hello {$d}\n";        // 花括号插值
+
         // 数组字面量
         $arr = [1, 2, 3];
         $nested = [10, "str", true, [4, 5]];
+
+        // 数组访问
+        $x = $arr[0];
+        count($arr);                  // 3
 
         // 输出
         echo "hello\n";
 
         // 调试（完整类型输出）
-        var_dump($a);        // int(10)
-        var_dump($arr);      // array(3) { [0]=> int(1) ... }
-        var_dump($nested);   // 递归嵌套输出
+        var_dump($a);                 // int(10)
+        var_dump($arr);               // array(3) { [0]=> int(1) ... }
+        var_dump($nested);            // 递归嵌套输出
 
         // 对象
         $d = new Demo();
         $d->hello();
 
-        // 匿名函数 / 闭包
+        // 匿名函数 / 闭包 + 调用
         $fn = function (): int { return 10; };
-        var_dump($fn());     // int(10)
-
-        // 调用
-        $this->test();
-        myFn();
+        var_dump($fn());              // int(10)
+        $fn2 = function (int $x, int $y): int { return $x + $y; };
+        var_dump($fn2(1, 2));         // int(3)
     }
 }
 ```
+
+### 类型强制转换
+
+| 转换 | 示例 | 规则 |
+|------|------|------|
+| `(string)` | `(string)123` → `"123"` | int/float→数字串，bool→"1"/""，null→"" |
+| `(int)` | `(int)"123abc"` → `123` | 字符串提取前导数字，float 截断 |
+| `(float)` | `(float)"1.2e3"` → `1200` | 支持科学计数法 |
+| `(bool)` | `(bool)"0"` → `false` | ""/"0"/0/0.0/null/[]→false，其余→true |
+| `(array)` | `(array)123` → `[123]` | 标量→单元素数组，null→空数组 |
+
+`(string)` 转换数组/对象时编译报错；`(int)`/`(float)` 转换对象时编译报错。
 
 ### 多文件 & 命名空间
 
@@ -111,8 +134,8 @@ function myFunc2(): void { ... }
 ### 不支持的
 
 - `if` / `else` / `while` / `for` 等控制流
-- 数组字面量之外的数组操作（如 `$a['key']`）
-- 字符串插值、`use` 闭包捕获
+- `$a['key']` 字符串键数组赋值、多维数组赋值
+- `use` 闭包变量捕获
 - 游离代码（不在 class/function 内）
 - 任何形式的 `include` / `require`
 
@@ -121,9 +144,9 @@ function myFunc2(): void { ... }
 | 文件 | 内容 |
 |------|------|
 | `types.h` | 类型系统：`t_int`, `t_float`, `t_string`, `t_bool`, `t_var`, `t_array`, `t_object`, `t_callback` |
-| `val.h` | 便捷宏：`VAR_INT`, `VAR_STRING`, `VAR_ARRAY`, `VAR_NULL`, `VAR_CALLBACK`, `STR_LIT` |
-| `array.h` | PHP 风格数组：`tphp_arr_create`, `tphp_arr_push`, `tphp_arr_set_str/int`, `tphp_arr_get_str/int` |
-| `function.h` | 运行时：`tphp_echo`, `tphp_var_dump`, `tphp_str_from_int/float/bool`, `tphp_object_free` |
+| `val.h` | 便捷宏：`VAR_INT`, `VAR_FLOAT`, `VAR_BOOL`, `VAR_STRING`, `VAR_ARRAY`, `VAR_CALLBACK`, `VAR_NULL`, `STR_LIT` |
+| `array.h` | PHP 风格数组：`create`, `push`, `set_str/int`, `get_str/int`, `index`, `item_int/float/str/bool`, `count`, `free` |
+| `function.h` | 运行时：`tphp_init`, `tphp_echo`, `tphp_var_dump`, `tphp_str_concat`, `tphp_parse_int/float`, `tphp_str_from_*`, `tphp_object_free` |
 
 ## 输出结构
 
@@ -135,6 +158,14 @@ function myFunc2(): void { ... }
 ```
 
 所有 C 标识符统一加 `tphp_` 前缀，避免与标准库冲突。
+
+## CLI 选项
+
+| 选项 | 说明 |
+|------|------|
+| `-o <output>` | 输出文件路径（默认执行目录下以入口文件名命名） |
+| `-cc <compiler>` | 指定 C 编译器（默认内置 TCC） |
+| `-h, --help` | 显示帮助 |
 
 ## 构建 TCC
 

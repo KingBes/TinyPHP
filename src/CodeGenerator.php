@@ -300,9 +300,13 @@ class CodeGenerator implements ASTVisitor
                 } else {
                     $parts[] = "tphp_echo({$code});";
                 }
+            } elseif ($e instanceof CastExpr) {
+                // 类型转换：根据目标类型包装
+                $ct = $e->castType;
+                $parts[] = $ct === 'string' ? "tphp_echo({$code});"
+                         : $this->echoWrap(self::$typeMap[$ct] ?? 't_int', $code);
             } elseif ($e instanceof CallExpr) {
-                // 函数调用：默认当作 echo 的参数，推导返回类型
-                $parts[] = $this->echoWrap('t_int', $code); // 默认 int
+                $parts[] = $this->echoWrap('t_int', $code);
             } else {
                 $parts[] = "tphp_echo({$code});";
             }
@@ -341,6 +345,16 @@ class CodeGenerator implements ASTVisitor
             return "{$cn}* {$var} = {$expr};";
         }
 
+        // (array)xxx → 标量转单元素数组
+        if ($node->expr instanceof CastExpr && $node->expr->castType === 'array') {
+            if (!$isDeclared) {
+                $elType = $this->inferType($node->expr->expr);
+                $this->varTypes[$var] = $elType; // 记录元素类型用于 ArrayAccess
+                return "t_array* {$var} = {$expr};";
+            }
+            return "{$var} = {$expr};";
+        }
+
         // null 赋值 → PHP 类型为 null，C 类型用 void* 占位
         if ($node->expr instanceof NullLiteralExpr) {
             if (!$isDeclared) {
@@ -371,8 +385,12 @@ class CodeGenerator implements ASTVisitor
         if ($expr instanceof NullLiteralExpr) {
             return 'null';
         }
+        if ($expr instanceof UnaryExpr) {
+            return $this->inferType($expr->expr);
+        }
         if ($expr instanceof BinaryExpr) {
-            return $this->inferType($expr->left); // 取左操作数类型
+            if ($expr->operator === '.') return 't_string';
+            return $this->inferType($expr->left);
         }
         if ($expr instanceof ArrayLiteralExpr) {
             return 't_array*';
@@ -383,6 +401,13 @@ class CodeGenerator implements ASTVisitor
         if ($expr instanceof VariableExpr) {
             $vn = self::varName($expr->name);
             return $this->varTypes[$vn] ?? 't_int';
+        }
+        if ($expr instanceof ArrayAccessExpr) {
+            // 数组元素类型取决于数组变量类型
+            return $this->inferType($expr->array);
+        }
+        if ($expr instanceof CastExpr) {
+            return self::$typeMap[$expr->castType] ?? 't_int';
         }
         if ($expr instanceof CallExpr) {
             return 't_int'; // 默认函数返回 int，后续可优化
@@ -454,6 +479,8 @@ class CodeGenerator implements ASTVisitor
                     default      => "VAR_NULL()",
                 };
                 $parts[] = "tphp_arr_push({$varName}, {$wrap});";
+            } elseif ($el instanceof UnaryExpr) {
+                $parts[] = "tphp_arr_push({$varName}, VAR_INT({$code}));";
             } else {
                 // BinaryExpr, CallExpr 等 —— 默认 int 类型
                 $parts[] = "tphp_arr_push({$varName}, VAR_INT({$code}));";
@@ -520,8 +547,18 @@ class CodeGenerator implements ASTVisitor
         return $n === '$this' ? 'self' : $n;
     }
 
+    public function visitUnary(UnaryExpr $node): string
+    {
+        return $node->operator . '(' . $node->expr->accept($this) . ')';
+    }
+
     public function visitBinary(BinaryExpr $node): string
     {
+        if ($node->operator === '.') {
+            $left  = $this->castToStr($node->left);
+            $right = $this->castToStr($node->right);
+            return 'tphp_str_concat(' . $left . ', ' . $right . ')';
+        }
         return '(' . $node->left->accept($this) . ' ' . $node->operator . ' ' . $node->right->accept($this) . ')';
     }
 
@@ -530,6 +567,17 @@ class CodeGenerator implements ASTVisitor
         // var_dump 内置函数 —— 包装参数为 t_var 并调用 tphp_var_dump
         if ($node->callee === null && $node->name === 'var_dump') {
             return $this->generateVarDump($node->args);
+        }
+
+        // count 内置函数 → tphp_arr_count
+        if ($node->callee === null && $node->name === 'count') {
+            $args = array_map(fn($a) => $a->accept($this), $node->args);
+            return 'tphp_arr_count(' . implode(', ', $args) . ')';
+        }
+
+        // var_export 内置函数 —— 转换为可读字符串输出
+        if ($node->callee === null && $node->name === 'var_export') {
+            return $this->generateVarExport($node->args);
         }
 
         // 闭包调用: $h() → ((t_int(*)(...))h.func)(args)
@@ -564,6 +612,24 @@ class CodeGenerator implements ASTVisitor
             $wrapped[] = $this->wrapVar($arg);
         }
         return 'tphp_var_dump(' . implode(', ', $wrapped) . ')';
+    }
+
+    /** 生成 var_export 调用：将表达式转为可读字符串并 echo */
+    private function generateVarExport(array $args): string
+    {
+        $parts = [];
+        foreach ($args as $arg) {
+            if ($arg instanceof BoolLiteralExpr) {
+                $parts[] = 'tphp_echo(' . ($arg->value ? 'STR_LIT("true")' : 'STR_LIT("false")') . ')';
+            } elseif ($arg instanceof CastExpr && $arg->castType === 'bool') {
+                $code = $arg->accept($this);
+                $parts[] = 'tphp_echo(' . $code . ' ? STR_LIT("true") : STR_LIT("false"))';
+            } else {
+                // 默认 var_dump 行为
+                $parts[] = 'tphp_var_dump(' . $this->wrapVar($arg) . ')';
+            }
+        }
+        return implode('; ', $parts);
     }
 
     /** 生成闭包调用: ((t_int(*)(t_int,...))var.func)(args) */
@@ -619,6 +685,19 @@ class CodeGenerator implements ASTVisitor
             $arrCode = $this->genArrayLiteralInline($expr, $tmpName);
             return "VAR_ARRAY(({ {$arrCode} {$tmpName}; }))";
         }
+        if ($expr instanceof BinaryExpr && $expr->operator === '.') {
+            return 'VAR_STRING(' . $expr->accept($this) . ')';
+        }
+        if ($expr instanceof CastExpr) {
+            $code = $expr->accept($this);
+            return match ($expr->castType) {
+                'bool'   => "VAR_BOOL({$code})",
+                'string' => "VAR_STRING({$code})",
+                'int'    => "VAR_INT({$code})",
+                'float'  => "VAR_FLOAT({$code})",
+                default  => "VAR_INT({$code})",
+            };
+        }
         // 默认 int
         $code = $expr->accept($this);
         return "VAR_INT({$code})";
@@ -626,6 +705,21 @@ class CodeGenerator implements ASTVisitor
 
     public function visitCast(CastExpr $node): string
     {
+        if ($node->castType === 'string') {
+            return $this->castToStr($node->expr, strict: true);
+        }
+        if ($node->castType === 'int') {
+            return $this->castToInt($node->expr);
+        }
+        if ($node->castType === 'float') {
+            return $this->castToFloat($node->expr);
+        }
+        if ($node->castType === 'bool') {
+            return $this->castToBool($node->expr);
+        }
+        if ($node->castType === 'array') {
+            return $this->castToArray($node->expr);
+        }
         return '((' . self::mapType($node->castType) . ')(' . $node->expr->accept($this) . '))';
     }
 
@@ -645,6 +739,7 @@ class CodeGenerator implements ASTVisitor
         return implode("\n", [
             "/* ── C entry: main() ─────────────────────────── */",
             "int main(int argc, char* argv[]) {",
+            $this->ind("tphp_init();"),
             $this->ind("t_array* _argv = tphp_build_argv(argc, argv);"),
             $this->ind("{$this->className}* _main = new_{$this->className}((t_int)argc, _argv);"),
             $this->ind("if (_main == NULL) { tphp_arr_free(_argv); return 1; }"),
@@ -666,6 +761,252 @@ class CodeGenerator implements ASTVisitor
     }
 
     private function methodImpl(MethodNode $m): string { return $this->methodDecl($m); }
+
+    /** 将任意表达式转为 t_int（用于 (int) 转换） */
+    private function castToInt(ExprNode $expr): string
+    {
+        if ($expr instanceof IntLiteralExpr) return $expr->accept($this);
+
+        if ($expr instanceof FloatLiteralExpr) {
+            return '(t_int)(' . $expr->accept($this) . ')';
+        }
+        if ($expr instanceof BoolLiteralExpr) {
+            return $expr->value ? '1' : '0';
+        }
+        if ($expr instanceof NullLiteralExpr) {
+            return '0';
+        }
+        if ($expr instanceof StringLiteralExpr) {
+            return 'tphp_parse_int(' . $expr->accept($this) . ')';
+        }
+        if ($expr instanceof ArrayLiteralExpr) {
+            return empty($expr->elements) ? '0' : '1';
+        }
+        if ($expr instanceof NewExpr) {
+            throw new RuntimeException(
+                sprintf("[%d:%d] 对象不能转换为整数", $expr->line, $expr->column)
+            );
+        }
+        if ($expr instanceof UnaryExpr) {
+            return $expr->accept($this); // -(inner) 已经是正确的 int
+        }
+        if ($expr instanceof BinaryExpr && $expr->operator === '.') {
+            return 'tphp_parse_int(' . $expr->accept($this) . ')';
+        }
+
+        // 变量：根据类型推导
+        $code = $expr->accept($this);
+        if ($expr instanceof VariableExpr) {
+            $vn = self::varName($expr->name);
+            $vt = $this->varTypes[$vn] ?? 't_int';
+            return match ($vt) {
+                't_int'    => $code,
+                't_float'  => "(t_int)({$code})",
+                't_bool'   => $code,
+                't_string' => "tphp_parse_int({$code})",
+                'null'     => '0',
+                't_array*' => "(({$vn} && tphp_arr_count({$vn}) > 0) ? 1 : 0)",
+                default    => throw new RuntimeException(
+                    sprintf("[%d:%d] 对象不能转换为整数", $expr->line, $expr->column)
+                ),
+            };
+        }
+
+        return "(t_int)({$code})";
+    }
+
+    /** 将任意表达式转为 t_float（用于 (float) 转换） */
+    private function castToFloat(ExprNode $expr): string
+    {
+        if ($expr instanceof FloatLiteralExpr) return $expr->accept($this);
+        if ($expr instanceof IntLiteralExpr) return '(t_float)(' . $expr->accept($this) . ')';
+        if ($expr instanceof BoolLiteralExpr) return $expr->value ? '1.0' : '0.0';
+        if ($expr instanceof NullLiteralExpr) return '0.0';
+        if ($expr instanceof StringLiteralExpr) {
+            return 'tphp_parse_float(' . $expr->accept($this) . ')';
+        }
+        if ($expr instanceof ArrayLiteralExpr) {
+            return empty($expr->elements) ? '0.0' : '1.0';
+        }
+        if ($expr instanceof NewExpr) {
+            throw new RuntimeException(
+                sprintf("[%d:%d] 对象不能转换为浮点数", $expr->line, $expr->column)
+            );
+        }
+        if ($expr instanceof UnaryExpr) {
+            return $expr->accept($this);
+        }
+        if ($expr instanceof BinaryExpr && $expr->operator === '.') {
+            return 'tphp_parse_float(' . $expr->accept($this) . ')';
+        }
+
+        $code = $expr->accept($this);
+        if ($expr instanceof VariableExpr) {
+            $vn = self::varName($expr->name);
+            $vt = $this->varTypes[$vn] ?? 't_int';
+            return match ($vt) {
+                't_float'  => $code,
+                't_int'    => "(t_float)({$code})",
+                't_bool'   => "(t_float)({$code})",
+                't_string' => "tphp_parse_float({$code})",
+                'null'     => '0.0',
+                't_array*' => "(({$vn} && tphp_arr_count({$vn}) > 0) ? 1.0 : 0.0)",
+                default    => throw new RuntimeException(
+                    sprintf("[%d:%d] 对象不能转换为浮点数", $expr->line, $expr->column)
+                ),
+            };
+        }
+
+        return "(t_float)({$code})";
+    }
+
+    /** 将任意表达式转为 t_bool（用于 (bool) 转换） */
+    private function castToBool(ExprNode $expr): string
+    {
+        if ($expr instanceof BoolLiteralExpr) return $expr->accept($this);
+        if ($expr instanceof IntLiteralExpr) return $expr->value ? 'true' : 'false';
+        if ($expr instanceof FloatLiteralExpr) return $expr->value != 0.0 ? 'true' : 'false';
+        if ($expr instanceof NullLiteralExpr) return 'false';
+        if ($expr instanceof StringLiteralExpr) {
+            $v = $expr->value;
+            return ($v === '' || $v === '0') ? 'false' : 'true';
+        }
+        if ($expr instanceof ArrayLiteralExpr) {
+            return empty($expr->elements) ? 'false' : 'true';
+        }
+        if ($expr instanceof NewExpr) {
+            return 'true'; // 任何对象转 bool 为 true
+        }
+        if ($expr instanceof UnaryExpr) {
+            $code = $expr->accept($this);
+            return "((bool)({$code}))";
+        }
+
+        $code = $expr->accept($this);
+        if ($expr instanceof VariableExpr) {
+            $vn = self::varName($expr->name);
+            $vt = $this->varTypes[$vn] ?? 't_int';
+            return match ($vt) {
+                't_bool'   => $code,
+                't_int'    => "({$code} != 0)",
+                't_float'  => "({$code} != 0.0)",
+                't_string' => "!tphp_str_is_falsy({$code})",
+                'null'     => 'false',
+                't_array*' => "({$vn} != NULL && tphp_arr_count({$vn}) > 0)",
+                default    => 'true', // 对象
+            };
+        }
+
+        return "((bool)({$code}))";
+    }
+
+    /** 将标量/对象转为单元素数组 */
+    private function castToArray(ExprNode $expr): string
+    {
+        if ($expr instanceof NullLiteralExpr) return 'tphp_arr_create()';
+
+        $tmp = "_arr_cast_" . (++$this->tmpVarCounter);
+        $val = $this->wrapVar($expr);
+        return "({ t_array* {$tmp} = tphp_arr_create(); if ({$tmp} != NULL) { tphp_arr_push({$tmp}, {$val}); } {$tmp}; })";
+    }
+
+    public function visitArrayAccess(ArrayAccessExpr $node): string
+    {
+        $arr  = $node->array->accept($this);
+        $idx  = $node->index->accept($this);
+        $vn   = $node->array instanceof VariableExpr ? self::varName($node->array->name) : '';
+        $vt   = $this->varTypes[$vn] ?? 't_int';
+
+        return match ($vt) {
+            't_int'    => "tphp_arr_item_int({$arr}, (int)({$idx}))",
+            't_float'  => "tphp_arr_item_float({$arr}, (int)({$idx}))",
+            't_string' => "tphp_arr_item_str({$arr}, (int)({$idx}))",
+            't_bool'   => "tphp_arr_item_bool({$arr}, (int)({$idx}))",
+            default    => "tphp_arr_item_int({$arr}, (int)({$idx}))",
+        };
+    }
+
+    /** 将任意表达式转为 t_string（用于 (string) 转换和 . 拼接）
+     *  @param bool $strict true=显式转换时数组/对象报错，false=.拼接时静默转 "Array"/"Object" */
+    private function castToStr(ExprNode $expr, bool $strict = false): string
+    {
+        if ($expr instanceof StringLiteralExpr) return $expr->accept($this);
+        if ($expr instanceof ArrayAccessExpr) {
+            $code = $expr->accept($this);
+            $type = $this->inferType($expr);
+            return match ($type) {
+                't_string' => $code,
+                't_float'  => "tphp_str_from_float({$code})",
+                default    => "tphp_str_from_int({$code})",
+            };
+        }
+        if ($expr instanceof CastExpr) {
+            $code = $expr->accept($this);
+            return match ($expr->castType) {
+                'string' => $code,
+                'float'  => "tphp_str_from_float({$code})",
+                default  => "tphp_str_from_int({$code})",
+            };
+        }
+
+        if ($expr instanceof IntLiteralExpr) {
+            return 'tphp_str_from_int(' . $expr->accept($this) . ')';
+        }
+        if ($expr instanceof FloatLiteralExpr) {
+            return 'tphp_str_from_float(' . $expr->accept($this) . ')';
+        }
+        if ($expr instanceof BoolLiteralExpr) {
+            return $expr->value ? 'STR_LIT("1")' : 'STR_LIT("")';
+        }
+        if ($expr instanceof NullLiteralExpr) {
+            return 'STR_LIT("")';
+        }
+        if ($expr instanceof ArrayLiteralExpr) {
+            if ($strict) {
+                throw new RuntimeException(
+                    sprintf("[%d:%d] 数组不能转换为字符串", $expr->line, $expr->column)
+                );
+            }
+            return 'STR_LIT("Array")';
+        }
+        if ($expr instanceof NewExpr) {
+            if ($strict) {
+                throw new RuntimeException(
+                    sprintf("[%d:%d] 对象不能转换为字符串", $expr->line, $expr->column)
+                );
+            }
+            return 'STR_LIT("Object")';
+        }
+
+        // 变量 / 表达式：根据推导类型转换
+        $code = $expr->accept($this);
+        if ($expr instanceof VariableExpr) {
+            $vn = self::varName($expr->name);
+            $vt = $this->varTypes[$vn] ?? 't_int';
+            return match ($vt) {
+                't_string'   => $code,
+                't_int'      => "tphp_str_from_int({$code})",
+                't_float'    => "tphp_str_from_float({$code})",
+                't_bool'     => "({$code} ? STR_LIT(\"1\") : STR_LIT(\"\"))",
+                'null'       => 'STR_LIT("")',
+                't_array*'   => $strict
+                    ? throw new RuntimeException(sprintf("[%d:%d] 数组不能转换为字符串", $expr->line, $expr->column))
+                    : 'STR_LIT("Array")',
+                default      => $strict
+                    ? throw new RuntimeException(sprintf("[%d:%d] 对象不能转换为字符串", $expr->line, $expr->column))
+                    : 'STR_LIT("Object")',
+            };
+        }
+
+        // BinaryExpr — 根据运算符推导类型
+        if ($expr instanceof BinaryExpr) {
+            if ($expr->operator === '.') return $code; // 已经是 t_string
+            return "tphp_str_from_int({$code})";
+        }
+
+        // 其他表达式（CallExpr 等）默认假设返回 int
+        return "tphp_str_from_int({$code})";
+    }
 
     public static function mapType(string $t): string { return self::$typeMap[$t] ?? "{$t}*"; }
     public static function varName(string $v): string { return $v === '$this' ? 'self' : ltrim($v, '$'); }

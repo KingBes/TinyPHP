@@ -155,6 +155,31 @@ static inline t_var* tphp_arr_index(t_array* a, int idx) {
     return a->entries[idx].value;
 }
 
+/** 按位置获取 int 值 */
+static inline t_int tphp_arr_item_int(t_array* a, int idx) {
+    t_var* v = tphp_arr_index(a, idx);
+    if (v == NULL || v->type != TYPE_INT) return 0;
+    return v->value._int;
+}
+/** 按位置获取 float 值 */
+static inline t_float tphp_arr_item_float(t_array* a, int idx) {
+    t_var* v = tphp_arr_index(a, idx);
+    if (v == NULL || v->type != TYPE_FLOAT) return 0.0;
+    return v->value._float;
+}
+/** 按位置获取 string 值 */
+static inline t_string tphp_arr_item_str(t_array* a, int idx) {
+    t_var* v = tphp_arr_index(a, idx);
+    if (v == NULL || v->type != TYPE_STRING) return (t_string){NULL, 0};
+    return v->value._string;
+}
+/** 按位置获取 bool 值 */
+static inline t_bool tphp_arr_item_bool(t_array* a, int idx) {
+    t_var* v = tphp_arr_index(a, idx);
+    if (v == NULL || v->type != TYPE_BOOL) return false;
+    return v->value._bool;
+}
+
 /** 按 int 键查找 */
 static inline t_var* tphp_arr_get_int(t_array* a, t_int key) {
     if (a == NULL) return NULL;

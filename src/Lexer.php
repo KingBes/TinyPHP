@@ -32,6 +32,7 @@ class Lexer
         '__construct' => TokenType::CONSTRUCT,
         '__destruct'  => TokenType::DESTRUCT,
         'var_dump'    => TokenType::VAR_DUMP,
+        'count'       => TokenType::COUNT,
         'namespace'   => TokenType::NAMESPACE,
         'use'         => TokenType::USE,
         'as'          => TokenType::AS_KW,
@@ -71,15 +72,22 @@ class Lexer
     {
         $ch = $this->peek();
 
-        // 空白
-        if ($ch === ' ' || $ch === "\t" || $ch === "\r") {
+        // 空白 / 换行（CRLF → 一次 line++，\r 单独视为换行）
+        if ($ch === ' ' || $ch === "\t") {
             $this->advance();
+            return;
+        }
+        if ($ch === "\r") {
+            if ($this->peek(1) === "\n") $this->advance(); // skip \n of CRLF
+            $this->line++;
+            $this->column = 1;
+            $this->pos++;
             return;
         }
         if ($ch === "\n") {
             $this->line++;
             $this->column = 1;
-            $this->advance();
+            $this->pos++;
             return;
         }
 
@@ -135,6 +143,7 @@ class Lexer
             ';' => TokenType::SEMICOLON,
             ',' => TokenType::COMMA,
             '=' => TokenType::EQUALS,
+            '.' => TokenType::DOT,
         ];
         // \ 命名空间分隔符
         if ($ch === '\\') {
@@ -224,29 +233,90 @@ class Lexer
     {
         $quote = $this->peek();
         $this->advance(); // skip opening quote
-        $start = $this->pos;
-        $escaped = '';
+
+        // 单引号：简单扫描，无插值
+        if ($quote === "'") {
+            $escaped = '';
+            while ($this->pos < strlen($this->source) && $this->peek() !== $quote) {
+                $ch = $this->peek();
+                if ($ch === '\\' && $this->peek(1) !== "\0") {
+                    $this->advance();
+                    $next = $this->peek();
+                    $escaped .= '\\' . $next;
+                    $this->advance();
+                } else {
+                    $escaped .= $ch;
+                    $this->advance();
+                }
+            }
+            if ($this->peek() !== $quote) $this->error('未闭合的字符串');
+            $this->advance();
+            $this->addToken(TokenType::STRING_LIT, $escaped, $escaped);
+            return;
+        }
+
+        // 双引号：支持 $var / {$var} 插值，各段之间自动插入 DOT
+        $buf = '';
+        $needDot = false; // 是否需要在下一段前插入 DOT
 
         while ($this->pos < strlen($this->source) && $this->peek() !== $quote) {
             $ch = $this->peek();
+
             if ($ch === '\\' && $this->peek(1) !== "\0") {
-                $this->advance(); // skip backslash
+                $this->advance();
                 $next = $this->peek();
-                // 转义序列 → C 字面量中保持原样，让 C 编译器处理
-                $escaped .= '\\' . $next;
+                $buf .= '\\' . $next;
                 $this->advance();
-            } else {
-                $escaped .= $ch;
-                $this->advance();
+                continue;
             }
+
+            // 插值：$var 或 {$var}
+            if ($ch === '$') {
+                $this->advance(); // skip $
+                // {$var} 语法：去掉 buf 末尾的 {
+                if ($buf !== '' && $buf[strlen($buf) - 1] === '{') {
+                    $buf = substr($buf, 0, -1);
+                }
+                // 先输出累积的文本段
+                if ($buf !== '') {
+                    if ($needDot) $this->addToken(TokenType::DOT, '.');
+                    $this->addToken(TokenType::STRING_LIT, $buf, $buf);
+                    $buf = '';
+                    $needDot = true;
+                }
+
+                if ($needDot) $this->addToken(TokenType::DOT, '.');
+
+                // {$var} 语法
+                if ($this->peek() === '{') $this->advance();
+
+                $varName = '';
+                while ($this->pos < strlen($this->source) && (ctype_alnum($this->peek()) || $this->peek() === '_')) {
+                    $varName .= $this->peek();
+                    $this->advance();
+                }
+
+                if ($this->peek() === '}') $this->advance(); // skip }
+
+                $this->addToken(TokenType::IDENTIFIER, '$' . $varName);
+                $needDot = true;
+                continue;
+            }
+
+            $buf .= $ch;
+            $this->advance();
         }
 
-        if ($this->peek() !== $quote) {
-            $this->error('未闭合的字符串');
-        }
+        if ($this->peek() !== $quote) $this->error('未闭合的字符串');
         $this->advance(); // skip closing quote
 
-        $this->addToken(TokenType::STRING_LIT, $escaped, $escaped);
+        if ($buf !== '') {
+            if ($needDot) $this->addToken(TokenType::DOT, '.');
+            $this->addToken(TokenType::STRING_LIT, $buf, $buf);
+        } elseif (!$needDot) {
+            // 空字符串 "" — 至少输出一个空 STRING_LIT
+            $this->addToken(TokenType::STRING_LIT, '', '');
+        }
     }
 
     private function scanNumber(): void

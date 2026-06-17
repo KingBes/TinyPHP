@@ -164,7 +164,11 @@ class ExprStmtNode extends StmtNode
 
 // === 表达式 ===
 
-abstract class ExprNode extends ASTNode {}
+abstract class ExprNode extends ASTNode
+{
+    public int $line = 0;
+    public int $column = 0;
+}
 
 // 字符串字面量
 class StringLiteralExpr extends ExprNode
@@ -242,6 +246,20 @@ class ArrayLiteralExpr extends ExprNode
     }
 }
 
+// 数组访问: $arr[0] 或 $arr["key"]
+class ArrayAccessExpr extends ExprNode
+{
+    public function __construct(
+        public readonly ExprNode $array,
+        public readonly ExprNode $index,
+    ) {}
+
+    public function accept(ASTVisitor $visitor): string
+    {
+        return $visitor->visitArrayAccess($this);
+    }
+}
+
 // 匿名函数 / 闭包: function(): int { return 10; }
 class ClosureExpr extends ExprNode
 {
@@ -270,6 +288,20 @@ class VariableExpr extends ExprNode
     public function accept(ASTVisitor $visitor): string
     {
         return $visitor->visitVariable($this);
+    }
+}
+
+// 一元运算
+class UnaryExpr extends ExprNode
+{
+    public function __construct(
+        public readonly string $operator,   // '-'
+        public readonly ExprNode $expr,
+    ) {}
+
+    public function accept(ASTVisitor $visitor): string
+    {
+        return $visitor->visitUnary($this);
     }
 }
 
@@ -359,4 +391,6 @@ interface ASTVisitor
     public function visitNew(NewExpr $node): string;
     public function visitArrayLiteral(ArrayLiteralExpr $node): string;
     public function visitClosure(ClosureExpr $node): string;
+    public function visitUnary(UnaryExpr $node): string;
+    public function visitArrayAccess(ArrayAccessExpr $node): string;
 }

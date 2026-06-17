@@ -40,6 +40,7 @@ enum TokenType: string
 
     // 关键字 (继续)
     case VAR_DUMP   = 'var_dump';
+    case COUNT      = 'count';
     case NAMESPACE  = 'namespace';
     case USE        = 'use';
     case AS_KW      = 'as';
@@ -63,4 +64,5 @@ enum TokenType: string
     case ARROW        = '->';
     case DOUBLE_COLON = '::';
     case NS_SEP       = '\\';
+    case DOT          = '.';
 }

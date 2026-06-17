@@ -271,11 +271,8 @@ class Parser
 
         $this->consume(TokenType::FUNCTION, '期望 function 关键字');
 
-        // name: IDENTIFIER | CONSTRUCT | DESTRUCT
-        $nameToken = $this->advance();
-        if (!in_array($nameToken->type, [TokenType::IDENTIFIER, TokenType::CONSTRUCT, TokenType::DESTRUCT], true)) {
-            $this->error("期望方法名，得到 '{$nameToken->lexeme}'");
-        }
+        // name: IDENTIFIER | CONSTRUCT | DESTRUCT | 类型关键字（可用作方法名）
+        $nameToken = $this->parseMethodName();
         $name = $nameToken->lexeme;
 
         // 参数
@@ -383,14 +380,14 @@ class Parser
         return $this->parseAdditive();
     }
 
-    // additive → multiplicative ((PLUS|MINUS) multiplicative)*
+    // additive → multiplicative ((PLUS|MINUS|DOT) multiplicative)*
     private function parseAdditive(): ExprNode
     {
         $left = $this->parseMultiplicative();
-        while ($this->match(TokenType::PLUS) || $this->match(TokenType::MINUS)) {
+        while ($this->match(TokenType::PLUS) || $this->match(TokenType::MINUS) || $this->match(TokenType::DOT)) {
             $op = $this->previous()->lexeme;
             $right = $this->parseMultiplicative();
-            $left = new BinaryExpr($left, $op, $right);
+            $left = $this->setPos(new BinaryExpr($left, $op, $right), $left->line, $left->column);
         }
         return $left;
     }
@@ -402,45 +399,54 @@ class Parser
         while ($this->match(TokenType::STAR) || $this->match(TokenType::SLASH)) {
             $op = $this->previous()->lexeme;
             $right = $this->parsePrimary();
-            $left = new BinaryExpr($left, $op, $right);
+            $left = $this->setPos(new BinaryExpr($left, $op, $right), $left->line, $left->column);
         }
         return $left;
     }
 
     private function parsePrimary(): ExprNode
     {
+        $line = $this->peek()->line;
+        $col  = $this->peek()->column;
+
+        // 一元负号
+        if ($this->match(TokenType::MINUS)) {
+            $expr = $this->parsePrimary();
+            return $this->setPos(new UnaryExpr('-', $expr), $line, $col);
+        }
+
         // 字符串
         if ($this->match(TokenType::STRING_LIT)) {
-            return new StringLiteralExpr((string)$this->previous()->literal);
+            return $this->setPos(new StringLiteralExpr((string)$this->previous()->literal), $line, $col);
         }
         // 数字
         if ($this->match(TokenType::INT_LIT)) {
-            return new IntLiteralExpr((int)$this->previous()->literal);
+            return $this->setPos(new IntLiteralExpr((int)$this->previous()->literal), $line, $col);
         }
         if ($this->match(TokenType::FLOAT_LIT)) {
-            return new FloatLiteralExpr((float)$this->previous()->literal);
+            return $this->setPos(new FloatLiteralExpr((float)$this->previous()->literal), $line, $col);
         }
         // 布尔 / null
         if ($this->match(TokenType::TRUE_KW)) {
-            return new BoolLiteralExpr(true);
+            return $this->setPos(new BoolLiteralExpr(true), $line, $col);
         }
         if ($this->match(TokenType::FALSE_KW)) {
-            return new BoolLiteralExpr(false);
+            return $this->setPos(new BoolLiteralExpr(false), $line, $col);
         }
         if ($this->match(TokenType::NULL_KW)) {
-            return new NullLiteralExpr();
+            return $this->setPos(new NullLiteralExpr(), $line, $col);
         }
         // 匿名函数 / 闭包: function(): type { ... }
         if ($this->match(TokenType::FUNCTION)) {
-            return $this->parseClosure();
+            return $this->setPos($this->parseClosure(), $line, $col);
         }
         // 数组字面量: [ expr, expr, ... ]
         if ($this->match(TokenType::LBRACKET)) {
-            return $this->parseArrayLiteral();
+            return $this->setPos($this->parseArrayLiteral(), $line, $col);
         }
         // new ClassName(args)
         if ($this->match(TokenType::NEW_KW)) {
-            return $this->parseNewExpr();
+            return $this->setPos($this->parseNewExpr(), $line, $col);
         }
         // 类型转换: (type) expr
         if ($this->check(TokenType::LPAREN)) {
@@ -450,20 +456,20 @@ class Parser
                 TokenType::TYPE_BOOL, TokenType::TYPE_ARRAY,
             ];
             if (in_array($nextType->type, $typeTokens, true)) {
-                return $this->parseCastExpr();
+                return $this->setPos($this->parseCastExpr(), $line, $col);
             }
         }
         // 变量
-        if ($this->check(TokenType::IDENTIFIER) || $this->check(TokenType::VAR_DUMP)) {
+        if ($this->check(TokenType::IDENTIFIER) || $this->check(TokenType::VAR_DUMP) || $this->check(TokenType::COUNT)) {
             $name = $this->advance()->lexeme;
 
             // 方法调用: $obj->method(args) 或 Class::method(args)
             if ($this->match(TokenType::ARROW) || $this->match(TokenType::DOUBLE_COLON)) {
-                $methodName = $this->consume(TokenType::IDENTIFIER, '期望方法名')->lexeme;
+                $methodName = $this->parseMethodName()->lexeme;
                 $this->consume(TokenType::LPAREN, '期望 (');
                 $args = $this->parseArgs();
                 $this->consume(TokenType::RPAREN, '期望 )');
-                return new CallExpr(new VariableExpr($name), $methodName, $args);
+                return $this->setPos(new CallExpr(new VariableExpr($name), $methodName, $args), $line, $col);
             }
 
             // 函数调用（含 var_dump、闭包调用 $var()）
@@ -472,19 +478,33 @@ class Parser
                 $this->consume(TokenType::RPAREN, '期望 )');
                 // $var() → 闭包调用
                 if (str_starts_with($name, '$')) {
-                    return new CallExpr(new VariableExpr($name), '__invoke', $args);
+                    return $this->setPos(new CallExpr(new VariableExpr($name), '__invoke', $args), $line, $col);
                 }
                 // 内置函数不解析命名空间
-                if ($name !== 'var_dump') {
+                if ($name !== 'var_dump' && $name !== 'count') {
                     $name = $this->resolveFunctionName($name);
                 }
-                return new CallExpr(null, $name, $args);
+                return $this->setPos(new CallExpr(null, $name, $args), $line, $col);
             }
 
-            return new VariableExpr($name);
+            // 数组访问: $var[expr]
+            if ($this->match(TokenType::LBRACKET)) {
+                $index = $this->parseExpr();
+                $this->consume(TokenType::RBRACKET, '期望 ]');
+                return $this->setPos(new ArrayAccessExpr(new VariableExpr($name), $index), $line, $col);
+            }
+
+            return $this->setPos(new VariableExpr($name), $line, $col);
         }
 
         $this->error("期望表达式，得到 '{$this->peek()->lexeme}'");
+    }
+
+    private function setPos(ExprNode $node, int $line, int $col): ExprNode
+    {
+        $node->line = $line;
+        $node->column = $col;
+        return $node;
     }
 
     /** 数组字面量: [ expr (, expr)* ] */
@@ -548,17 +568,34 @@ class Parser
 
     private function parseCastExpr(): CastExpr
     {
+        $line = $this->peek()->line;
+        $col  = $this->peek()->column;
         $this->consume(TokenType::LPAREN, '期望 (');
         $typeToken = $this->advance();
         $castType = $typeToken->lexeme; // int, float, string, bool, array
         $this->consume(TokenType::RPAREN, '期望 )');
-        $expr = $this->parseExpr();
-        return new CastExpr($castType, $expr);
+        $expr = $this->parsePrimary(); // 只转换紧邻表达式，不吞掉 . 运算符
+        return $this->setPos(new CastExpr($castType, $expr), $line, $col);
     }
 
     // ============================================================
     // 辅助方法
     // ============================================================
+
+    /** 解析方法名（IDENTIFIER | 类型关键字 | CONSTRUCT | DESTRUCT） */
+    private function parseMethodName(): Token
+    {
+        $tok = $this->advance();
+        $valid = [
+            TokenType::IDENTIFIER, TokenType::CONSTRUCT, TokenType::DESTRUCT,
+            TokenType::TYPE_INT, TokenType::TYPE_FLOAT, TokenType::TYPE_STRING,
+            TokenType::TYPE_BOOL, TokenType::TYPE_VOID, TokenType::TYPE_ARRAY,
+        ];
+        if (!in_array($tok->type, $valid, true)) {
+            $this->error("期望方法名，得到 '{$tok->lexeme}'");
+        }
+        return $tok;
+    }
 
     private function parseVisibility(): string
     {
