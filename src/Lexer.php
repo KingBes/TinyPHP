@@ -2,568 +2,285 @@
 
 declare(strict_types=1);
 
-namespace Tphp;
-
-final class Lexer
+class Lexer
 {
     private string $source;
     private int $pos = 0;
     private int $line = 1;
     private int $column = 1;
-    private int $length;
-
-    private const array KEYWORDS = [
-        'namespace' => TokenType::Namespace, 'function' => TokenType::Function,
-        'return' => TokenType::Return, 'print' => TokenType::Print,
-        'echo' => TokenType::Echo_,
-        'var_dump' => TokenType::VarDump,
-        'count' => TokenType::Count, 'array' => TokenType::Array,
-        'unset' => TokenType::Unset,
-        'if' => TokenType::If, 'else' => TokenType::Else,
-        'while' => TokenType::While, 'for' => TokenType::For,
-        'foreach' => TokenType::Foreach, 'as' => TokenType::As,
-        'switch' => TokenType::Switch_, 'case' => TokenType::Case_,
-        'default' => TokenType::Default_, 'break' => TokenType::Break_,
-        'use' => TokenType::Use, 'class' => TokenType::Class_,
-        'enum' => TokenType::Enum,
-        'public' => TokenType::Public, 'private' => TokenType::Private,
-        'new' => TokenType::New, 'const' => TokenType::Const,
-        'int' => TokenType::Int, 'float' => TokenType::Float,
-        'string' => TokenType::String_, 'bool' => TokenType::Bool_,
-        'void' => TokenType::Void_, 'null' => TokenType::Null_,
-        'true' => TokenType::True_, 'false' => TokenType::False_,
-    ];
 
     /** @var Token[] */
     private array $tokens = [];
-    private int $tokenPos = 0;
+
+    private static array $keywords = [
+        'class'       => TokenType::CLASS_KW,
+        'public'      => TokenType::PUBLIC_KW,
+        'private'     => TokenType::PRIVATE_KW,
+        'function'    => TokenType::FUNCTION,
+        'return'      => TokenType::RETURN_KW,
+        'echo'        => TokenType::ECHO_KW,
+        'new'         => TokenType::NEW_KW,
+        'null'        => TokenType::NULL_KW,
+        'true'        => TokenType::TRUE_KW,
+        'false'       => TokenType::FALSE_KW,
+        'int'         => TokenType::TYPE_INT,
+        'float'       => TokenType::TYPE_FLOAT,
+        'string'      => TokenType::TYPE_STRING,
+        'bool'        => TokenType::TYPE_BOOL,
+        'void'        => TokenType::TYPE_VOID,
+        'array'       => TokenType::TYPE_ARRAY,
+        '__construct' => TokenType::CONSTRUCT,
+        '__destruct'  => TokenType::DESTRUCT,
+    ];
 
     public function __construct(string $source)
     {
         $this->source = $source;
-        $this->length = strlen($source);
     }
 
     /** @return Token[] */
     public function tokenize(): array
     {
-        $this->tokens = [];
         $this->pos = 0;
         $this->line = 1;
         $this->column = 1;
-        $this->tokenPos = 0;
-        $this->scanLoop();
-        $this->tokens[] = new Token(TokenType::Eof, '', $this->line, $this->column);
+        $this->tokens = [];
+
+        // 必须在最开头
+        if (str_starts_with($this->source, '<?php')) {
+            $this->addToken(TokenType::PHP_OPEN, '<?php');
+            $this->pos = 5; // skip <?php
+            $this->column = 6;
+        } else {
+            $this->error('源文件必须以 <?php 开头');
+        }
+
+        while ($this->pos < strlen($this->source)) {
+            $this->scanToken();
+        }
+
+        $this->addToken(TokenType::EOF, '');
         return $this->tokens;
     }
 
-    private function scanLoop(): void
+    private function scanToken(): void
     {
-        while ($this->pos < $this->length) {
-            $ch = $this->source[$this->pos];
+        $ch = $this->peek();
 
-            if ($ch === ' ' || $ch === "\t" || $ch === "\r") {
-                $this->advance();
-                continue;
+        // 空白
+        if ($ch === ' ' || $ch === "\t" || $ch === "\r") {
+            $this->advance();
+            return;
+        }
+        if ($ch === "\n") {
+            $this->line++;
+            $this->column = 1;
+            $this->advance();
+            return;
+        }
+
+        // 注释 / 除号
+        if ($ch === '/') {
+            if ($this->peek(1) === '/') {
+                $this->skipLineComment();
+                return;
             }
-            if ($ch === "\n") {
+            $this->addToken(TokenType::SLASH, '/');
+            $this->advance();
+            return;
+        }
+
+        // -> (必须在单字符运算符之前检查)
+        if ($ch === '-' && $this->peek(1) === '>') {
+            $this->addToken(TokenType::ARROW, '->');
+            $this->advance(2);
+            return;
+        }
+
+        // 运算符
+        $opChars = [
+            '+' => TokenType::PLUS,
+            '-' => TokenType::MINUS,
+            '*' => TokenType::STAR,
+        ];
+        if (isset($opChars[$ch])) {
+            $this->addToken($opChars[$ch], $ch);
+            $this->advance();
+            return;
+        }
+
+        // 字符串
+        if ($ch === '"' || $ch === "'") {
+            $this->scanString();
+            return;
+        }
+
+        // 符号
+        $singleChars = [
+            '(' => TokenType::LPAREN,
+            ')' => TokenType::RPAREN,
+            '{' => TokenType::LBRACE,
+            '}' => TokenType::RBRACE,
+            ':' => TokenType::COLON,
+            ';' => TokenType::SEMICOLON,
+            ',' => TokenType::COMMA,
+            '=' => TokenType::EQUALS,
+        ];
+        if (isset($singleChars[$ch])) {
+            $this->addToken($singleChars[$ch], $ch);
+            $this->advance();
+            return;
+        }
+
+        // $ 变量
+        if ($ch === '$') {
+            $this->scanVariable();
+            return;
+        }
+
+        // ::
+        if ($ch === ':' && $this->peek(1) === ':') {
+            $this->addToken(TokenType::DOUBLE_COLON, '::');
+            $this->advance(2);
+            return;
+        }
+
+        // 数字
+        if (ctype_digit($ch)) {
+            $this->scanNumber();
+            return;
+        }
+
+        // 标识符/关键字
+        if (ctype_alpha($ch) || $ch === '_') {
+            $this->scanIdentifier();
+            return;
+        }
+
+        $this->error("意外的字符: '{$ch}'");
+    }
+
+    private function peek(int $offset = 0): string
+    {
+        $idx = $this->pos + $offset;
+        return ($idx < strlen($this->source)) ? $this->source[$idx] : "\0";
+    }
+
+    private function advance(int $n = 1): void
+    {
+        for ($i = 0; $i < $n; $i++) {
+            if ($this->pos < strlen($this->source) && $this->source[$this->pos] === "\n") {
                 $this->line++;
                 $this->column = 1;
-                $this->pos++;
-                continue;
+            } else {
+                $this->column++;
             }
-            if ($this->tryExtern($ch)) continue;
-            if ($this->tryComment($ch)) continue;
-            if ($this->tryOpenTag($ch)) continue;
-            if ($this->tryCloseTag($ch)) continue;
-            if ($this->tryDot($ch)) continue;
-            if ($this->tryVariable($ch)) continue;
-            if ($this->tryStringLiteral($ch)) continue;
-            if ($this->tryNumber($ch)) continue;
-            if ($this->tryIdentifier($ch)) continue;
-            if ($this->tryDoubleChar($ch)) continue;
-            if ($this->trySingleChar($ch)) continue;
-
-            throw new \RuntimeException(
-                sprintf("Unexpected character '%s' at line %d, column %d", $ch, $this->line, $this->column)
-            );
+            $this->pos++;
         }
     }
 
-    private function advance(): void { $this->pos++; $this->column++; }
-    private function peekAhead(): string { return ($this->pos + 1 < $this->length) ? $this->source[$this->pos + 1] : "\0"; }
-
-    private function addToken(TokenType $type, string $value): void
+    private function addToken(TokenType $type, string $lexeme, mixed $literal = null): void
     {
-        $this->tokens[] = new Token($type, $value, $this->line, $this->column);
+        $this->tokens[] = new Token($type, $lexeme, $this->line, $this->column, $literal);
     }
 
-    private function tryExtern(string $ch): bool
+    private function skipLineComment(): void
     {
-        // Check for #extern keyword
-        if ($ch === '#' && $this->pos + 6 < $this->length
-            && $this->source[$this->pos + 1] === 'e'
-            && $this->source[$this->pos + 2] === 'x'
-            && $this->source[$this->pos + 3] === 't'
-            && $this->source[$this->pos + 4] === 'e'
-            && $this->source[$this->pos + 5] === 'r'
-            && $this->source[$this->pos + 6] === 'n'
-        ) {
-            $this->addToken(TokenType::Extrn, '#extern');
-            $this->pos += 7; $this->column += 7;
-            return true;
-        }
-        return false;
-    }
-
-    private function tryComment(string $ch): bool
-    {
-        if (($ch === '/' && $this->peekAhead() === '/') || $ch === '#') {
-            while ($this->pos < $this->length && $this->source[$this->pos] !== "\n") {
-                $this->pos++; $this->column++;
-            }
-            return true;
-        }
-        if ($ch === '/' && $this->peekAhead() === '*') {
-            $this->pos += 2; $this->column += 2;
-            while ($this->pos < $this->length) {
-                if ($this->source[$this->pos] === '*' && $this->peekAhead() === '/') {
-                    $this->pos += 2; $this->column += 2;
-                    return true;
-                }
-                if ($this->source[$this->pos] === "\n") { $this->line++; $this->column = 1; }
-                else { $this->column++; }
-                $this->pos++;
-            }
-            return true;
-        }
-        return false;
-    }
-
-    private function tryOpenTag(string $ch): bool
-    {
-        if ($ch === '<' && $this->pos + 4 < $this->length
-            && $this->source[$this->pos + 1] === '?'
-            && $this->source[$this->pos + 2] === 'p'
-            && $this->source[$this->pos + 3] === 'h'
-            && $this->source[$this->pos + 4] === 'p'
-        ) {
-            $this->addToken(TokenType::OpenTag, '<?php');
-            $this->pos += 5; $this->column += 5;
-            return true;
-        }
-        return false;
-    }
-
-    private function tryCloseTag(string $ch): bool
-    {
-        if ($ch === '?' && $this->peekAhead() === '>') {
-            $this->addToken(TokenType::Eof, '?>');
-            $this->pos += 2; $this->column += 2;
-            return true;
-        }
-        return false;
-    }
-
-    private function tryDot(string $ch): bool
-    {
-        if ($ch === '.') {
-            if ($this->peekAhead() === '=') {
-                $this->addToken(TokenType::ConcatAssign, '.=');
-                $this->pos += 2; $this->column += 2;
-                return true;
-            }
-            if ($this->pos + 1 < $this->length && ctype_digit($this->source[$this->pos + 1])) {
-                $this->readNumber();
-                return true;
-            }
-            $this->addToken(TokenType::Concat, '.');
+        while ($this->pos < strlen($this->source) && $this->peek() !== "\n") {
             $this->advance();
-            return true;
         }
-        return false;
     }
 
-    private function tryVariable(string $ch): bool
+    private function scanString(): void
     {
-        if ($ch !== '$') return false;
-        $startCol = $this->column;
-        $this->advance();
+        $quote = $this->peek();
+        $this->advance(); // skip opening quote
         $start = $this->pos;
-        while ($this->pos < $this->length && (ctype_alnum($this->source[$this->pos]) || $this->source[$this->pos] === '_')) {
-            $this->advance();
+        $escaped = '';
+
+        while ($this->pos < strlen($this->source) && $this->peek() !== $quote) {
+            $ch = $this->peek();
+            if ($ch === '\\' && $this->peek(1) !== "\0") {
+                $this->advance(); // skip backslash
+                $next = $this->peek();
+                // 转义序列 → C 字面量中保持原样，让 C 编译器处理
+                $escaped .= '\\' . $next;
+                $this->advance();
+            } else {
+                $escaped .= $ch;
+                $this->advance();
+            }
         }
-        $name = substr($this->source, $start, $this->pos - $start);
-        $this->tokens[] = new Token(TokenType::Variable, '$' . $name, $this->line, $startCol);
-        return true;
+
+        if ($this->peek() !== $quote) {
+            $this->error('未闭合的字符串');
+        }
+        $this->advance(); // skip closing quote
+
+        $this->addToken(TokenType::STRING_LIT, $escaped, $escaped);
     }
 
-    private function tryStringLiteral(string $ch): bool
+    private function scanNumber(): void
     {
-        if ($ch !== '\'' && $ch !== '"') return false;
-        $quote = $ch;
-        $startCol = $this->column;
-        $this->advance();
-
-        // Single-quoted strings: no interpolation, keep as-is
-        if ($quote === '\'') {
-            $value = '';
-            while ($this->pos < $this->length) {
-                $c = $this->source[$this->pos];
-                if ($c === $quote) { $this->advance(); break; }
-                if ($c === '\\') {
-                    $this->advance();
-                    if ($this->pos < $this->length) {
-                        $esc = $this->source[$this->pos];
-                        if ($esc === 'n') $value .= "\n";
-                        elseif ($esc === 't') $value .= "\t";
-                        elseif ($esc === 'r') $value .= "\r";
-                        elseif ($esc === '\\') $value .= "\\";
-                        elseif ($esc === '\'') $value .= "'";
-                        else $value .= '\\' . $esc;
-                        $this->advance();
-                    }
-                    continue;
-                }
-                $value .= $c;
-                $this->advance();
-            }
-            $this->tokens[] = new Token(TokenType::StringLiteral, $value, $this->line, $startCol);
-            return true;
-        }
-
-        // Double-quoted strings: support $var and {$expr} interpolation
-        // Split into StringLiteral + Concat + Variable + Concat + ... tokens
-        $value = '';
-        $hasInterpolation = false;
-
-        while ($this->pos < $this->length) {
-            $c = $this->source[$this->pos];
-            if ($c === $quote) { $this->advance(); break; }
-            if ($c === '\\') {
-                $this->advance();
-                if ($this->pos < $this->length) {
-                    $esc = $this->source[$this->pos];
-                    if ($esc === 'n') $value .= "\n";
-                    elseif ($esc === 't') $value .= "\t";
-                    elseif ($esc === 'r') $value .= "\r";
-                    elseif ($esc === '\\') $value .= "\\";
-                    elseif ($esc === '"') $value .= '"';
-                    elseif ($esc === '$') $value .= '$';
-                    else $value .= '\\' . $esc;
-                    $this->advance();
-                }
-                continue;
-            }
-            // {$...} complex interpolation: {$var}, {$var[idx]}
-            if ($c === '{' && $this->pos + 1 < $this->length && $this->source[$this->pos + 1] === '$') {
-                $hasInterpolation = true;
-                // Emit the accumulated string part before {$...}
-                if ($value !== '') {
-                    $this->tokens[] = new Token(TokenType::StringLiteral, $value, $this->line, $startCol);
-                    $this->tokens[] = new Token(TokenType::Concat, '.', $this->line, $this->column);
-                    $value = '';
-                }
-                // Skip '{'
-                $this->advance();
-                // Parse $var (same as simple interpolation)
-                $this->advance(); // skip $
-                $vs = $this->pos;
-                while ($this->pos < $this->length && (ctype_alnum($this->source[$this->pos]) || $this->source[$this->pos] === '_')) {
-                    $this->advance();
-                }
-                $varName = '$' . substr($this->source, $vs, $this->pos - $vs);
-                $this->tokens[] = new Token(TokenType::Variable, $varName, $this->line, $startCol);
-                // Parse optional [idx]
-                if ($this->pos < $this->length && $this->source[$this->pos] === '[') {
-                    $this->tokens[] = new Token(TokenType::LBracket, '[', $this->line, $this->column);
-                    $this->advance(); // skip [
-                    // Parse index expression (number or variable)
-                    if ($this->pos < $this->length && $this->source[$this->pos] === '$') {
-                        $this->advance(); // skip $
-                        $ivs = $this->pos;
-                        while ($this->pos < $this->length && (ctype_alnum($this->source[$this->pos]) || $this->source[$this->pos] === '_')) {
-                            $this->advance();
-                        }
-                        $idxName = '$' . substr($this->source, $ivs, $this->pos - $ivs);
-                        $this->tokens[] = new Token(TokenType::Variable, $idxName, $this->line, $this->column);
-                    } else {
-                        // Numeric index
-                        $numStart = $this->pos;
-                        while ($this->pos < $this->length && ctype_digit($this->source[$this->pos])) {
-                            $this->advance();
-                        }
-                        $num = substr($this->source, $numStart, $this->pos - $numStart);
-                        $this->tokens[] = new Token(TokenType::IntegerLiteral, $num, $this->line, $this->column);
-                    }
-                    if ($this->pos < $this->length && $this->source[$this->pos] === ']') {
-                        $this->tokens[] = new Token(TokenType::RBracket, ']', $this->line, $this->column);
-                        $this->advance(); // skip ]
-                    }
-                }
-                // Skip closing '}'
-                if ($this->pos < $this->length && $this->source[$this->pos] === '}') {
-                    $this->advance();
-                }
-                // If more string content follows, emit concat for the next part
-                if ($this->pos < $this->length && $this->source[$this->pos] !== $quote) {
-                    $this->tokens[] = new Token(TokenType::Concat, '.', $this->line, $this->column);
-                }
-                continue;
-            }
-            if ($c === '$') {
-                $hasInterpolation = true;
-                // Always emit, even empty, to preserve concat AST
-                $this->tokens[] = new Token(TokenType::StringLiteral, $value, $this->line, $startCol);
-                $this->tokens[] = new Token(TokenType::Concat, '.', $this->line, $this->column);
-                $value = '';
-                // Parse variable name
-                $this->advance();
-                $vs = $this->pos;
-                while ($this->pos < $this->length && (ctype_alnum($this->source[$this->pos]) || $this->source[$this->pos] === '_')) {
-                    $this->advance();
-                }
-                $varName = '$' . substr($this->source, $vs, $this->pos - $vs);
-                $this->tokens[] = new Token(TokenType::Variable, $varName, $this->line, $startCol);
-
-                // If more string content follows (not end quote), emit concat for the next part
-                if ($this->pos < $this->length && $this->source[$this->pos] !== $quote) {
-                    $this->tokens[] = new Token(TokenType::Concat, '.', $this->line, $this->column);
-                }
-                continue;
-            }
-            $value .= $c;
-            $this->advance();
-        }
-
-        if ($hasInterpolation) {
-            // Emit remaining accumulated value (if any) after the last $var
-            if ($value !== '') {
-                $this->tokens[] = new Token(TokenType::StringLiteral, $value, $this->line, $startCol);
-            }
-        } else {
-            // No interpolation: emit as single string literal (may be empty)
-            $this->tokens[] = new Token(TokenType::StringLiteral, $value, $this->line, $startCol);
-        }
-        return true;
-    }
-
-    private function tryNumber(string $ch): bool
-    {
-        if (!ctype_digit($ch)) return false;
-        $this->readNumber();
-        return true;
-    }
-
-    private function readNumber(): void
-    {
-        $start = $this->pos;
-        $startCol = $this->column;
+        $num = '';
         $isFloat = false;
-        while ($this->pos < $this->length && ctype_digit($this->source[$this->pos])) {
-            $this->advance();
-        }
-        if ($this->pos < $this->length && $this->source[$this->pos] === '.') {
-            $isFloat = true;
-            $this->advance();
-            while ($this->pos < $this->length && ctype_digit($this->source[$this->pos])) {
-                $this->advance();
+        while ($this->pos < strlen($this->source) && (ctype_digit($this->peek()) || $this->peek() === '.')) {
+            if ($this->peek() === '.') {
+                if ($isFloat) break;
+                $isFloat = true;
             }
+            $num .= $this->peek();
+            $this->advance();
         }
-        $value = substr($this->source, $start, $this->pos - $start);
-        $this->tokens[] = new Token(
-            $isFloat ? TokenType::FloatLiteral : TokenType::IntegerLiteral,
-            $value, $this->line, $startCol
+
+        if ($isFloat) {
+            $this->addToken(TokenType::FLOAT_LIT, $num, (float)$num);
+        } else {
+            $this->addToken(TokenType::INT_LIT, $num, (int)$num);
+        }
+    }
+
+    private function scanIdentifier(): void
+    {
+        $name = '';
+        while ($this->pos < strlen($this->source) && (ctype_alnum($this->peek()) || $this->peek() === '_')) {
+            $name .= $this->peek();
+            $this->advance();
+        }
+
+        // 检查是否为关键字
+        $type = self::$keywords[$name] ?? TokenType::IDENTIFIER;
+        $literal = null;
+        if ($type === TokenType::TRUE_KW) {
+            $literal = true;
+        } elseif ($type === TokenType::FALSE_KW) {
+            $literal = false;
+        } elseif ($type === TokenType::NULL_KW) {
+            $literal = null;
+        }
+
+        $this->addToken($type, $name, $literal);
+    }
+
+    private function scanVariable(): void
+    {
+        $this->advance(); // skip $
+        $name = '';
+        while ($this->pos < strlen($this->source) && (ctype_alnum($this->peek()) || $this->peek() === '_')) {
+            $name .= $this->peek();
+            $this->advance();
+        }
+        if ($name === 'this') {
+            $this->addToken(TokenType::IDENTIFIER, '$this');
+        } else {
+            $this->addToken(TokenType::IDENTIFIER, '$' . $name);
+        }
+    }
+
+    private function error(string $msg): never
+    {
+        throw new RuntimeException(
+            sprintf("Lexer 错误 [%d:%d]: %s", $this->line, $this->column, $msg)
         );
-    }
-
-    private function tryIdentifier(string $ch): bool
-    {
-        if (!ctype_alpha($ch) && $ch !== '_') return false;
-        $start = $this->pos;
-        $startCol = $this->column;
-        while ($this->pos < $this->length && (ctype_alnum($this->source[$this->pos]) || $this->source[$this->pos] === '_')) {
-            $this->advance();
-        }
-        $value = substr($this->source, $start, $this->pos - $start);
-        $type = self::KEYWORDS[$value] ?? TokenType::Identifier;
-        $this->tokens[] = new Token($type, $value, $this->line, $startCol);
-        return true;
-    }
-
-    private function trySingleChar(string $ch): bool
-    {
-        $map = [
-            '(' => TokenType::LParen,   ')' => TokenType::RParen,
-            '{' => TokenType::LBrace,   '}' => TokenType::RBrace,
-            '[' => TokenType::LBracket, ']' => TokenType::RBracket,
-            ',' => TokenType::Comma,    ';' => TokenType::Semicolon,
-            '+' => TokenType::Plus,     '*' => TokenType::Star,
-            '/' => TokenType::Slash,    '%' => TokenType::Percent,
-            '\\' => TokenType::Backslash,
-            '!' => TokenType::Not_,
-        ];
-        if (isset($map[$ch])) {
-            $this->addToken($map[$ch], $ch);
-            $this->advance();
-            return true;
-        }
-        return false;
-    }
-
-    private function tryDoubleChar(string $ch): bool
-    {
-        if ($ch === '=') {
-            // Check for ===
-            if ($this->peekAhead() === '=') {
-                if ($this->pos + 2 < $this->length && $this->source[$this->pos + 2] === '=') {
-                    $this->addToken(TokenType::StrictEq, '===');
-                    $this->pos += 3; $this->column += 3;
-                    return true;
-                }
-                $this->addToken(TokenType::Eq, '==');
-                $this->pos += 2; $this->column += 2;
-                return true;
-            }
-            if ($this->peekAhead() === '>') {
-                $this->addToken(TokenType::Arrow, '=>');
-                $this->pos += 2; $this->column += 2;
-                return true;
-            }
-            $this->addToken(TokenType::Assign, '=');
-            $this->advance();
-            return true;
-        }
-        if ($ch === '!' && $this->peekAhead() === '=') {
-            if ($this->pos + 2 < $this->length && $this->source[$this->pos + 2] === '=') {
-                $this->addToken(TokenType::StrictNeq, '!==');
-                $this->pos += 3; $this->column += 3;
-                return true;
-            }
-            $this->addToken(TokenType::Neq, '!=');
-            $this->pos += 2; $this->column += 2;
-            return true;
-        }
-        if ($ch === '&' && $this->peekAhead() === '&') {
-            $this->addToken(TokenType::And_, '&&');
-            $this->pos += 2; $this->column += 2;
-            return true;
-        }
-        if ($ch === '|' && $this->peekAhead() === '|') {
-            $this->addToken(TokenType::Or_, '||');
-            $this->pos += 2; $this->column += 2;
-            return true;
-        }
-        if ($ch === '+' && $this->peekAhead() === '=') {
-            $this->addToken(TokenType::PlusAssign, '+=');
-            $this->pos += 2; $this->column += 2;
-            return true;
-        }
-        if ($ch === '-' && $this->peekAhead() === '=') {
-            $this->addToken(TokenType::MinusAssign, '-=');
-            $this->pos += 2; $this->column += 2;
-            return true;
-        }
-        if ($ch === '<') {
-            if ($this->peekAhead() === '=') {
-                $this->addToken(TokenType::Lte, '<=');
-                $this->pos += 2; $this->column += 2;
-                return true;
-            }
-            $this->addToken(TokenType::Lt, '<');
-            $this->advance();
-            return true;
-        }
-        if ($ch === '>') {
-            if ($this->peekAhead() === '=') {
-                $this->addToken(TokenType::Gte, '>=');
-                $this->pos += 2; $this->column += 2;
-                return true;
-            }
-            $this->addToken(TokenType::Gt, '>');
-            $this->advance();
-            return true;
-        }
-        if ($ch === '-') {
-            if ($this->peekAhead() === '>') {
-                $this->addToken(TokenType::ObjectArrow, '->');
-                $this->pos += 2; $this->column += 2;
-                return true;
-            }
-            $this->addToken(TokenType::Minus, '-');
-            $this->advance();
-            return true;
-        }
-        if ($ch === '+' && $this->peekAhead() === '+') {
-            $this->addToken(TokenType::Increment, '++');
-            $this->pos += 2; $this->column += 2;
-            return true;
-        }
-        if ($ch === '-' && $this->peekAhead() === '-') {
-            $this->addToken(TokenType::Decrement, '--');
-            $this->pos += 2; $this->column += 2;
-            return true;
-        }
-        if ($ch === ':') {
-            if ($this->peekAhead() === ':') {
-                $this->addToken(TokenType::DoubleColon, '::');
-                $this->pos += 2; $this->column += 2;
-                return true;
-            }
-            $this->addToken(TokenType::Colon, ':');
-            $this->advance();
-            return true;
-        }
-        return false;
-    }
-
-    // ---- Stream interface ----
-
-    public function current(): Token
-    {
-        return $this->tokens[$this->tokenPos] ?? end($this->tokens);
-    }
-
-    public function peek(): Token
-    {
-        $idx = $this->tokenPos + 1;
-        return $this->tokens[$idx] ?? end($this->tokens);
-    }
-
-    /** Peek N tokens ahead (1 = next token) */
-    public function peekAt(int $n): Token
-    {
-        $idx = $this->tokenPos + $n;
-        return $this->tokens[$idx] ?? end($this->tokens);
-    }
-
-    public function next(): Token
-    {
-        $tok = $this->current();
-        if (!$tok->isType(TokenType::Eof)) $this->tokenPos++;
-        return $tok;
-    }
-
-    public function expect(TokenType $type): Token
-    {
-        $tok = $this->current();
-        if (!$tok->isType($type)) {
-            throw new \RuntimeException(sprintf(
-                "Expected %s but got %s at line %d",
-                $type->value, $tok->__toString(), $tok->line
-            ));
-        }
-        return $this->next();
-    }
-
-    public function match(TokenType $type): bool
-    {
-        if ($this->current()->isType($type)) { $this->next(); return true; }
-        return false;
-    }
-
-    public function isEof(): bool
-    {
-        return $this->current()->isType(TokenType::Eof);
     }
 }

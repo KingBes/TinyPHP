@@ -2,46 +2,324 @@
 
 declare(strict_types=1);
 
-namespace Tphp\AST;
+// ============================================================
+// AST 节点定义
+// ============================================================
 
-// ---- Base ----
-
-abstract readonly class ASTNode
+abstract class ASTNode
 {
-    public int $line;
-    public function __construct(int $line) { $this->line = $line; }
+    abstract public function accept(ASTVisitor $visitor): string;
 }
 
-// ---- Types ----
-
-enum TphpType: string
+// 整个程序 = 入口类 Main + 辅助类 + 独立函数
+class ProgramNode extends ASTNode
 {
-    case Int    = 'int';
-    case Float  = 'float';
-    case String = 'string';
-    case Bool   = 'bool';
-    case Null   = 'null';
-    case Void   = 'void';
-    case Callable_ = 'callable';
-    case Array_ = 'array';
+    /** @param ClassNode[] $extraClasses */
+    /** @param FunctionNode[] $functions */
+    public function __construct(
+        public readonly ClassNode $mainClass,
+        /** @var ClassNode[] */
+        public readonly array $extraClasses = [],
+        public readonly array $functions = [],
+    ) {}
 
-    public function size(): int
+    public function accept(ASTVisitor $visitor): string
     {
-        return match ($this) {
-            self::Int    => 8,  // i64
-            self::Float  => 8,  // f64
-            self::String => 16, // pointer(8) + length(8)
-            self::Bool   => 1,
-            self::Null   => 8,
-            self::Void   => 0,
-            self::Callable_ => 8, // function pointer
-            self::Array_ => 0,    // variable size, depends on element type
-        };
+        return $visitor->visitProgram($this);
     }
 }
 
-// ---- Base Expr/Stmt markers ----
+// 独立函数 function name(params): ret { body }
+class FunctionNode extends ASTNode
+{
+    /** @param ParamNode[] $params */
+    public function __construct(
+        public readonly string $name,
+        /** @var ParamNode[] */
+        public readonly array $params,
+        public readonly string $returnType,
+        /** @var StmtNode[] */
+        public readonly array $body,
+    ) {}
 
-abstract readonly class ExprNode extends ASTNode {}
+    public function accept(ASTVisitor $visitor): string
+    {
+        return $visitor->visitFunction($this);
+    }
+}
 
-abstract readonly class StmtNode extends ASTNode {}
+// class Main { ... }
+class ClassNode extends ASTNode
+{
+    /** @param MethodNode[] $methods */
+    public function __construct(
+        public readonly string $name,
+        public readonly array $methods,
+    ) {}
+
+    public function accept(ASTVisitor $visitor): string
+    {
+        return $visitor->visitClass($this);
+    }
+}
+
+// public function name(params): returnType { body }
+class MethodNode extends ASTNode
+{
+    /** @param ParamNode[] $params */
+    public function __construct(
+        public readonly string $name,
+        public readonly string $visibility,  // public | private
+        /** @var ParamNode[] */
+        public readonly array $params,
+        public readonly string $returnType,
+        /** @var StmtNode[] */
+        public readonly array $body,
+    ) {}
+
+    public function accept(ASTVisitor $visitor): string
+    {
+        return $visitor->visitMethod($this);
+    }
+
+    public function isMagic(): bool
+    {
+        return $this->name === '__construct' || $this->name === '__destruct';
+    }
+}
+
+// 参数: type $name
+class ParamNode extends ASTNode
+{
+    public function __construct(
+        public readonly string $type,
+        public readonly string $name,
+    ) {}
+
+    public function accept(ASTVisitor $visitor): string
+    {
+        return $visitor->visitParam($this);
+    }
+}
+
+// === 语句 ===
+
+abstract class StmtNode extends ASTNode {}
+
+// echo expr;
+class EchoStmtNode extends StmtNode
+{
+    public function __construct(
+        /** @var ExprNode[] */
+        public readonly array $exprs,
+    ) {}
+
+    public function accept(ASTVisitor $visitor): string
+    {
+        return $visitor->visitEchoStmt($this);
+    }
+}
+
+// return expr;
+class ReturnStmtNode extends StmtNode
+{
+    public function __construct(
+        public readonly ?ExprNode $expr,
+    ) {}
+
+    public function accept(ASTVisitor $visitor): string
+    {
+        return $visitor->visitReturnStmt($this);
+    }
+}
+
+// $var = expr;
+class AssignStmtNode extends StmtNode
+{
+    public function __construct(
+        public readonly string $varName,
+        public readonly ExprNode $expr,
+    ) {}
+
+    public function accept(ASTVisitor $visitor): string
+    {
+        return $visitor->visitAssignStmt($this);
+    }
+}
+
+// expr;
+class ExprStmtNode extends StmtNode
+{
+    public function __construct(
+        public readonly ExprNode $expr,
+    ) {}
+
+    public function accept(ASTVisitor $visitor): string
+    {
+        return $visitor->visitExprStmt($this);
+    }
+}
+
+// === 表达式 ===
+
+abstract class ExprNode extends ASTNode {}
+
+// 字符串字面量
+class StringLiteralExpr extends ExprNode
+{
+    public function __construct(
+        public readonly string $value,
+    ) {}
+
+    public function accept(ASTVisitor $visitor): string
+    {
+        return $visitor->visitStringLiteral($this);
+    }
+}
+
+// 整数
+class IntLiteralExpr extends ExprNode
+{
+    public function __construct(
+        public readonly int $value,
+    ) {}
+
+    public function accept(ASTVisitor $visitor): string
+    {
+        return $visitor->visitIntLiteral($this);
+    }
+}
+
+// 浮点
+class FloatLiteralExpr extends ExprNode
+{
+    public function __construct(
+        public readonly float $value,
+    ) {}
+
+    public function accept(ASTVisitor $visitor): string
+    {
+        return $visitor->visitFloatLiteral($this);
+    }
+}
+
+// 布尔
+class BoolLiteralExpr extends ExprNode
+{
+    public function __construct(
+        public readonly bool $value,
+    ) {}
+
+    public function accept(ASTVisitor $visitor): string
+    {
+        return $visitor->visitBoolLiteral($this);
+    }
+}
+
+// null
+class NullLiteralExpr extends ExprNode
+{
+    public function accept(ASTVisitor $visitor): string
+    {
+        return $visitor->visitNullLiteral($this);
+    }
+}
+
+// 变量
+class VariableExpr extends ExprNode
+{
+    public function __construct(
+        public readonly string $name, // 含 $ 前缀
+    ) {}
+
+    public function accept(ASTVisitor $visitor): string
+    {
+        return $visitor->visitVariable($this);
+    }
+}
+
+// 二元运算
+class BinaryExpr extends ExprNode
+{
+    public function __construct(
+        public readonly ExprNode $left,
+        public readonly string $operator,
+        public readonly ExprNode $right,
+    ) {}
+
+    public function accept(ASTVisitor $visitor): string
+    {
+        return $visitor->visitBinary($this);
+    }
+}
+
+// 函数调用 / 方法调用
+class CallExpr extends ExprNode
+{
+    public function __construct(
+        public readonly ?ExprNode $callee,
+        public readonly string $name,
+        /** @var ExprNode[] */
+        public readonly array $args,
+    ) {}
+
+    public function accept(ASTVisitor $visitor): string
+    {
+        return $visitor->visitCall($this);
+    }
+}
+
+// 类型转换 (int)$x
+class CastExpr extends ExprNode
+{
+    public function __construct(
+        public readonly string $castType,
+        public readonly ExprNode $expr,
+    ) {}
+
+    public function accept(ASTVisitor $visitor): string
+    {
+        return $visitor->visitCast($this);
+    }
+}
+
+// new ClassName(args)
+class NewExpr extends ExprNode
+{
+    public function __construct(
+        public readonly string $className,
+        /** @var ExprNode[] */
+        public readonly array $args,
+    ) {}
+
+    public function accept(ASTVisitor $visitor): string
+    {
+        return $visitor->visitNew($this);
+    }
+}
+
+// ============================================================
+// Visitor 接口
+// ============================================================
+interface ASTVisitor
+{
+    public function visitProgram(ProgramNode $node): string;
+    public function visitClass(ClassNode $node): string;
+    public function visitFunction(FunctionNode $node): string;
+    public function visitMethod(MethodNode $node): string;
+    public function visitParam(ParamNode $node): string;
+    public function visitEchoStmt(EchoStmtNode $node): string;
+    public function visitReturnStmt(ReturnStmtNode $node): string;
+    public function visitAssignStmt(AssignStmtNode $node): string;
+    public function visitExprStmt(ExprStmtNode $node): string;
+    public function visitStringLiteral(StringLiteralExpr $node): string;
+    public function visitIntLiteral(IntLiteralExpr $node): string;
+    public function visitFloatLiteral(FloatLiteralExpr $node): string;
+    public function visitBoolLiteral(BoolLiteralExpr $node): string;
+    public function visitNullLiteral(NullLiteralExpr $node): string;
+    public function visitVariable(VariableExpr $node): string;
+    public function visitBinary(BinaryExpr $node): string;
+    public function visitCall(CallExpr $node): string;
+    public function visitCast(CastExpr $node): string;
+    public function visitNew(NewExpr $node): string;
+}

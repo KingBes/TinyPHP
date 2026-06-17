@@ -3,3 +3,8 @@
 *.pdb
 *.lib
 *.o
+*.a
+*.so
+*.dylib
+*.log
+*.tmp

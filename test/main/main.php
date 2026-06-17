@@ -1,30 +1,79 @@
-<?php // 开头必须是 <?php
+<?php // 开头必须是 <?php 否则报错
 
-namespace Main; // 入口命名空间必须是 Main
+// 不接受任何游离代码，会在解析的时候报出错误
 
-// 不接受任何游离代码
-
-// 入口函数必须是 main, 且返回值必须是 void, 必须是php 强类型声明。 类似 c 语言的int main()
-function main(): void
+// 必须写入口 class Main
+class Main
 {
-    var_dump('hello world'); // 输出 (string) hello world
+    // 构造函数
+    public function __construct(int $argc, array $argv) {} // 和php一样可以不写，但是默认存在
 
-    /**
-     * print 是 php 的输出函数, 可以输出字符串, 浮点数, 整数, 布尔值等，但是不能直接输出对象和数组
-     * 双引号支持变量替换和花括号{}, 单引号不支持
-     */
-    print("hello world\n"); // 输出 hello world
-    $a = 123;
-    print("$a\n"); // 输出 123
-    $b = true;
-    print("$b\n"); // 输出 1
-    $c = 12.32;
-    print("$c\n"); // 输出 12.32
-    $arr = array("int", [123, 456]);
-    // print $arr; // 报错 不能直接显示数组
-    print($arr[0]); // 输出 123
+    // 入口函数必须是 main, 且返回值必须是 void, 必须是php 强类型声明。
+    public function main(): void
+    {
+        echo "hello world\n"; // 输出 hello world
+        test();
+        echo test2();
+        $c = new Demo();
+        $c->hello();
+        // 当使用完后默认自动清理的
 
-    print("{$arr[1]}\n"); // 输出 456
+    }
 
-    // ... 以此类推
+    // 析构函数
+    public function __destruct() {} // 和php一样可以不写，但是默认存在
+}
+
+
+// 其他函数
+function test(): void // 必须是 php 强类型声明 ，否则报错
+{
+    echo "test\n";
+    // 在函数作用域中，当用完后c会自动清理保证内存安全的
+}
+
+function test2(): int
+{
+    $a = 10;
+    $b = 20;
+    $c = $a + $b;
+
+    // 在函数作用域中，当用完后c会自动清理保证内存安全的
+    // free(a);
+    // free(b);
+
+    return $c;
+}
+
+function test3(string $str): string
+{
+    $a = "hello";
+
+    $c = "$a $str\n";
+
+    // 在函数作用域中，当用完后c会自动清理保证内存安全的
+    // free(a);
+
+    return $c;
+}
+
+// 其他类
+class Demo
+{
+    public function __construct()
+    {
+        echo "new Demo\n";
+    }
+
+    public function hello(): void // 必须是 php 强类型声明
+    {
+        echo "hello\n";
+        // 在函数作用域中，当用完后c会自动清理保证内存安全的
+    }
+
+    public function __destruct()
+    {
+        echo "delete Demo\n";
+        // 在c中 当使用完后默认自动清理的
+    }
 }

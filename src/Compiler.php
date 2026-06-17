@@ -2,298 +2,88 @@
 
 declare(strict_types=1);
 
-namespace Tphp;
-
-use Tphp\AST\{ProgramNode, FunctionDeclNode, UseImportNode, ConstDeclNode, ExternFuncNode,
-    ClassDeclNode, EnumDeclNode};
-
 /**
- * Main tphp AOT compiler: .php → PE (Windows) or ELF (Linux).
- *
- * No external compilers or linkers required.
- *
- * Supports multi-file compilation with namespaces.
+ * Compiler — 编排整个转译流程
+ *   PHP 源文件 → Lexer → Parser → CodeGenerator → .c 文件 → (可选) TCC 编译
  */
-final class Compiler
+class Compiler
 {
-    /** @var string[] */
-    private array $inputFiles;
-    private string $outputFile;
-    private string $target;
-    /** @var string[] */
-    private array $libPaths;
+    private string $tccPath;
 
-    /** @var string[] */
-    private array $errors = [];
-
-    /**
-     * @param string[] $inputFiles
-     * @param string[] $libPaths
-     */
-    public function __construct(
-        array $inputFiles,
-        string $outputFile = '',
-        string $target = 'linux',
-        array $libPaths = [],
-    ) {
-        $this->inputFiles = $inputFiles;
-        $this->outputFile = $outputFile !== '' ? $outputFile : $this->defaultOutput($target);
-        $this->target     = $target;
-        $this->libPaths   = $libPaths;
-    }
-
-    private function defaultOutput(string $target): string
+    public function __construct(string $tccPath = '')
     {
-        $mainFile = $this->inputFiles[0] ?? 'main';
-        $base = pathinfo($mainFile, PATHINFO_FILENAME);
-        if ($base === '' || $base === '.') $base = 'main';
-        return $base . ($target === 'windows' ? '.exe' : '');
-    }
-
-    public function compile(): void
-    {
-        // 1. Parse all input files
-        $allPrograms = [];
-        foreach ($this->inputFiles as $file) {
-            if (!file_exists($file)) {
-                throw new \RuntimeException("File not found: {$file}");
-            }
-            $source = file_get_contents($file);
-            if ($source === false) {
-                throw new \RuntimeException("Cannot read file: {$file}");
-            }
-            if (strlen($source) > 1024 * 1024) {
-                throw new \RuntimeException("Source file too large (>1MB): {$file}");
-            }
-
-            $lexer = new Lexer($source);
-            $lexer->tokenize();
-
-            $parser = new Parser($lexer);
-            try {
-                $program = $parser->parse();
-            } catch (\Throwable $e) {
-                throw new \RuntimeException(
-                    "{$file}: " . $e->getMessage(),
-                    previous: $e
-                );
-            }
-            $this->errors = array_merge($this->errors, $parser->getErrors());
-            $allPrograms[] = $program;
-        }
-
-        // 2. Collect known function names and imports from all programs
-        $knownFqns = [];
-        $importMap = [];
-        foreach ($allPrograms as $program) {
-            $ns = $program->namespace ?? '';
-            foreach ($program->functions as $fn) {
-                // 空命名空间 → 全局可用（短名）；其余命名空间（含 Main）→ FQN
-                $fqn = ($ns === '') ? $fn->name : $ns . '\\' . $fn->name;
-                $knownFqns[$fqn] = true;
-            }
-            foreach ($program->imports as $import) {
-                if ($import->importType === 'function') {
-                    $importMap[$import->alias] = $import->fullName;
-                }
-            }
-        }
-
-        // 3. Validate each file individually
-        foreach ($this->inputFiles as $i => $file) {
-            Validator::validateFile($file, $allPrograms[$i], $knownFqns, $importMap, $this->errors);
-        }
-
-        // 4. Merge: build merged program with import resolution
-        $merged = $this->mergePrograms($allPrograms);
-
-        // 5. Validate entry point (main existence, etc.)
-        Validator::validateEntryPoint($merged, $this->errors);
-
-        // Stop if any errors found
-        if (!empty($this->errors)) {
-            return;
-        }
-
-        // 4. Code generation + write (target-specific)
-        if ($this->target === 'windows') {
-            $this->compileWindows($merged);
-        } else {
-            $this->compileLinux($merged);
-        }
-
-        // Make executable on Linux
-        if ($this->target === 'linux' && !str_starts_with(PHP_OS_FAMILY, 'Windows')) {
-            chmod($this->outputFile, 0755);
-        }
+        $this->tccPath = $tccPath;
     }
 
     /**
-     * Merge multiple ProgramNodes from different files into one.
-     *
-     * Strategy:
-     * - Collect all functions with their namespace-qualified names (FQNs)
-     * - Main namespace functions keep their short names
-     * - Non-Main namespace functions get FQN (namespace\name)
-     * - Build import map from Main's 'use function' statements
-     * - Build import map for class 'use' statements (for step 2)
+     * 编译单个 PHP 文件 → C 文件
+     * @return string 生成的 .c 文件路径
      */
-    private function mergePrograms(array $allPrograms): ProgramNode
+    public function compile(string $phpFile, string $outputDir): string
     {
-        /** @var FunctionDeclNode[] $mergedFunctions */
-        $mergedFunctions = [];
-        /** @var UseImportNode[] $mergedImports */
-        $mergedImports = [];
-        /** @var ConstDeclNode[] $mergedConsts */
-        $mergedConsts = [];
-        /** @var ExternFuncNode[] $mergedExterns */
-        $mergedExterns = [];
-        /** @var ClassDeclNode[] $mergedClasses */
-        $mergedClasses = [];
-        /** @var EnumDeclNode[] $mergedEnums */
-        $mergedEnums = [];
-        $mainProgram = null;
-
-        foreach ($allPrograms as $program) {
-            $ns = $program->namespace ?? '';
-
-            // Collect imports from all files
-            foreach ($program->imports as $import) {
-                $mergedImports[] = $import;
-            }
-
-            // Collect extern declarations
-            foreach ($program->externs as $ext) {
-                $mergedExterns[] = $ext;
-            }
-
-            // Collect enum declarations
-            foreach ($program->enums as $e) {
-                $fqn = ($ns === '') ? $e->name : $ns . '\\' . $e->name;
-                $mergedEnums[] = ($fqn === $e->name) ? $e : new EnumDeclNode(
-                    $e->line, $fqn, $e->backingType, $e->cases,
-                );
-            }
-
-            // Collect const declarations
-            foreach ($program->consts as $c) {
-                if ($ns === '') {
-                    // 空命名空间 → 全局可用
-                    $mergedConsts[] = $c;
-                } else {
-                    $mergedConsts[] = new ConstDeclNode(
-                        $c->line,
-                        $ns . '\\' . $c->name,
-                        $c->init,
-                    );
-                }
-            }
-
-            foreach ($program->functions as $fn) {
-                if ($ns === 'Main') {
-                    $mainProgram = $program;
-                }
-                // 空命名空间 → 短名（全局）；其余（含 Main）→ FQN
-                $fqn = ($ns === '') ? $fn->name : $ns . '\\' . $fn->name;
-                $mergedFunctions[] = ($fqn === $fn->name) ? $fn : new FunctionDeclNode(
-                    $fn->line,
-                    $fqn,
-                    $fn->returnType,
-                    $fn->params,
-                    $fn->body,
-                );
-            }
-
-            // Merge class declarations
-            foreach ($program->classes as $cls) {
-                if ($ns === '') {
-                    $mergedClasses[] = $cls;
-                } else {
-                    $mergedClasses[] = new ClassDeclNode(
-                        $cls->line,
-                        $ns . '\\' . $cls->name,
-                        $cls->methods,
-                    );
-                }
-            }
+        if (!file_exists($phpFile)) {
+            throw new RuntimeException("文件不存在: {$phpFile}");
         }
 
-        if ($mainProgram === null) {
-            throw new \RuntimeException("No Main namespace found. Entry file must use 'namespace Main;'");
+        // 确保输出目录存在
+        if (!is_dir($outputDir)) {
+            mkdir($outputDir, 0777, true);
         }
 
-        return new ProgramNode(1, 'Main', $mergedImports, $mergedConsts, $mergedEnums, $mergedExterns, $mergedFunctions, $mergedClasses);
+        $source = file_get_contents($phpFile);
+        if ($source === false || trim($source) === '') {
+            throw new RuntimeException("文件为空: {$phpFile}");
+        }
+
+        // Phase 1: Lex
+        $lexer = new Lexer($source);
+        $tokens = $lexer->tokenize();
+
+        // Phase 2: Parse
+        $parser = new Parser($tokens);
+        $ast = $parser->parse();
+
+        // Phase 3: Generate C code
+        $gen = new CodeGenerator();
+        $cFile = $gen->generate($ast, $phpFile, $outputDir);
+
+        return $cFile;
     }
 
-    private function compileLinux(ProgramNode $program): void
+    /**
+     * 编译 PHP → .exe (调用 TCC)
+     * @return string 生成的 .exe 路径
+     */
+    public function compileToExe(string $phpFile, string $outputDir, string $includeDir = ''): string
     {
-        $cg = new CodeGenerator();
-        $cg->generate($program);
-        $builder = $cg->getBuilder();
+        $cFile = $this->compile($phpFile, $outputDir);
 
-        $writer = new ELFWriter($this->outputFile);
-        $writer->setCode($builder->getCode());
-        $writer->write();
-    }
-
-    private function compileWindows(ProgramNode $program): void
-    {
-        // ---- Phase 1: Generate code with default IAT ----
-        $cg = new CodeGeneratorWindows();
-        $cg->setLibPaths($this->libPaths);
-        $cg->generate($program);
-
-        $builder  = $cg->getBuilder();
-        $strings  = $builder->getStrings();
-        $iatSlots = $builder->getIatSlots();
-
-        // Merge required IAT functions (order matters)
-        $requiredIat = ['LoadLibraryA', 'GetProcAddress', 'GetStdHandle', 'WriteFile', 'ExitProcess', 'SetConsoleOutputCP', 'HeapAlloc', 'GetProcessHeap'];
-        $finalIat = [];
-        $seen = [];
-        foreach ($requiredIat as $fn) {
-            $finalIat[] = $fn;
-            $seen[$fn] = true;
-        }
-        foreach ($iatSlots as $idx => $fn) {
-            if (!isset($seen[$fn])) {
-                $finalIat[] = $fn;
-                $seen[$fn] = true;
-            }
+        if (empty($this->tccPath)) {
+            throw new RuntimeException('TCC 路径未配置，无法生成可执行文件');
         }
 
-        // ---- Phase 2: Prepare PE layout (computes rdataRva + import table + string RVAs) ----
-        $code = $builder->getCode();
-        $writer = new PEWriter($this->outputFile);
-        $writer->setPayload($code, $strings, $finalIat);
-        $stringRvas = $writer->prepare();
+        $exeFile = $outputDir . '/' . pathinfo($phpFile, PATHINFO_FILENAME) . '.exe';
+        $includeDir = $includeDir ?: dirname(__DIR__) . '/include';
 
-        // ---- Phase 3: If rdataRva shifted, offset IAT patch targets ----
-        $actualIatBase = $writer->getIatRva();
-        $defaultIatBase = 0x3070;
-        $iatDelta = $actualIatBase - $defaultIatBase;
-        if ($iatDelta !== 0) {
-            $builder->offsetIatPatches($iatDelta);
+        // 调用 TCC 编译
+        $cmd = sprintf(
+            '%s -I"%s" -o "%s" "%s"',
+            escapeshellarg($this->tccPath),
+            $includeDir,
+            $exeFile,
+            $cFile
+        );
+
+        $output = [];
+        $retval = 0;
+        exec($cmd . ' 2>&1', $output, $retval);
+
+        if ($retval !== 0) {
+            throw new RuntimeException(
+                "TCC 编译失败:\n" . implode("\n", $output)
+            );
         }
 
-        // ---- Phase 4: Resolve patches in the builder's code buffer ----
-        $writer->resolveIatPatches($builder);
-        $writer->resolveStringPatches($builder);
-
-        // ---- Phase 5: Re-set payload with patched code, then write ----
-        $patchedCode = $builder->getCode();
-        $writer->setPayload($patchedCode, $strings, $finalIat);
-        $writer->write();
-    }
-
-    public function getOutputPath(): string
-    {
-        return $this->outputFile;
-    }
-
-    /** @return string[] */
-    public function getErrors(): array
-    {
-        return $this->errors;
+        return $exeFile;
     }
 }
