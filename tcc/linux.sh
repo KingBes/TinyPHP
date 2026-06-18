@@ -24,7 +24,7 @@ echo "=== 2. 兼容 glibc 2.34+（__malloc_hook 等已移除） ==="
 
 echo "=== 3. 配置 TCC（关键：--crtprefix 和 --libpaths 烧入二进制） ==="
 rm -f config.mak config.h
-./configure \
+sh configure \
     --prefix="$TCC_HOME" \
     --bindir="$TCC_HOME" \
     --tccdir="$TCC_HOME/lib/tcc" \

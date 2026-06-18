@@ -50,13 +50,14 @@ jobs:
         shell: pwsh
         run: |
           mkdir dist
-          Copy-Item tcc/win32/tcc.exe dist/
+          Copy-Item tcc/win32 -Recurse -Destination dist/tcc/win32
           Copy-Item php.exe dist/
           Copy-Item tphp.php dist/
           Copy-Item src -Recurse -Destination dist/src
           Copy-Item include -Recurse -Destination dist/include
           Copy-Item tphp.sh dist/
-          7z a tinyphp-win-x86_64.zip ./dist/*
+          Rename-Item dist tphp
+          7z a tinyphp-win-x86_64.zip ./tphp
 
       - uses: actions/upload-artifact@v4
         with:
@@ -96,14 +97,15 @@ jobs:
 
       - name: Package
         run: |
-          mkdir -p dist
-          cp tcc/tcc dist/
+          mkdir -p dist/tcc
+          cp -r tcc/* dist/tcc/ 2>/dev/null || true
+          rm -rf dist/tcc/win32 dist/tcc/tcc-dist
           cp php dist/
           cp tphp.php dist/
           cp -r src dist/
           cp -r include dist/
           cp tphp.sh dist/
-          tar czf tinyphp-linux-x86_64.tar.gz -C dist .
+          mv dist tphp && tar czf tinyphp-linux-x86_64.tar.gz tphp
 
       - uses: actions/upload-artifact@v4
         with:
@@ -143,14 +145,15 @@ jobs:
 
       - name: Package
         run: |
-          mkdir -p dist
-          cp tcc/tcc dist/
+          mkdir -p dist/tcc
+          cp -r tcc/* dist/tcc/ 2>/dev/null || true
+          rm -rf dist/tcc/win32 dist/tcc/tcc-dist
           cp php dist/
           cp tphp.php dist/
           cp -r src dist/
           cp -r include dist/
           cp tphp.sh dist/
-          tar czf tinyphp-linux-aarch64.tar.gz -C dist .
+          mv dist tphp && tar czf tinyphp-linux-aarch64.tar.gz tphp
 
       - uses: actions/upload-artifact@v4
         with:
@@ -176,7 +179,7 @@ jobs:
           cd tcc
           SDK=$(xcrun --show-sdk-path 2>/dev/null || echo "/Library/Developer/CommandLineTools/SDKs/MacOSX.sdk")
           rm -f config.mak config.h
-          ./configure \
+          sh configure \
             --prefix=./tcc-dist \
             --bindir=./tcc-dist \
             --tccdir=./tcc-dist/lib/tcc \
@@ -200,14 +203,15 @@ jobs:
 
       - name: Package
         run: |
-          mkdir -p dist
-          cp tcc/tcc dist/
+          mkdir -p dist/tcc
+          cp -r tcc/* dist/tcc/ 2>/dev/null || true
+          rm -rf dist/tcc/win32 dist/tcc/tcc-dist
           cp php dist/
           cp tphp.php dist/
           cp -r src dist/
           cp -r include dist/
           cp tphp.sh dist/
-          tar czf tinyphp-macos-aarch64.tar.gz -C dist .
+          mv dist tphp && tar czf tinyphp-macos-aarch64.tar.gz tphp
 
       - uses: actions/upload-artifact@v4
         with:
@@ -233,7 +237,7 @@ jobs:
           cd tcc
           SDK=$(xcrun --show-sdk-path 2>/dev/null || echo "/Library/Developer/CommandLineTools/SDKs/MacOSX.sdk")
           rm -f config.mak config.h
-          ./configure \
+          sh configure \
             --prefix=./tcc-dist \
             --bindir=./tcc-dist \
             --tccdir=./tcc-dist/lib/tcc \
@@ -257,14 +261,15 @@ jobs:
 
       - name: Package
         run: |
-          mkdir -p dist
-          cp tcc/tcc dist/
+          mkdir -p dist/tcc
+          cp -r tcc/* dist/tcc/ 2>/dev/null || true
+          rm -rf dist/tcc/win32 dist/tcc/tcc-dist
           cp php dist/
           cp tphp.php dist/
           cp -r src dist/
           cp -r include dist/
           cp tphp.sh dist/
-          tar czf tinyphp-macos-x86_64.tar.gz -C dist .
+          mv dist tphp && tar czf tinyphp-macos-x86_64.tar.gz tphp
 
       - uses: actions/upload-artifact@v4
         with:
