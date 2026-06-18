@@ -37,10 +37,15 @@ echo "=== 4. 编译 & 安装到独立目录 ==="
 make
 make install
 
-echo "=== 5. 补充 CRT 文件 ==="
+echo "=== 5. 补充 CRT 文件和 arch 头文件到安装目录 ==="
 cp /usr/lib/$ARCH/crt1.o  "$TCC_HOME/lib/" 2>/dev/null || true
 cp /usr/lib/$ARCH/crti.o  "$TCC_HOME/lib/" 2>/dev/null || true
 cp /usr/lib/$ARCH/crtn.o  "$TCC_HOME/lib/" 2>/dev/null || true
+
+# 将 arch 头文件复制到 includedir（TCC 搜索系统头文件的位置）
+cp -r /usr/include/$ARCH/bits "$TCC_HOME/include/" 2>/dev/null || true
+cp -r /usr/include/$ARCH/sys  "$TCC_HOME/include/" 2>/dev/null || true
+cp -r /usr/include/$ARCH/gnu  "$TCC_HOME/include/" 2>/dev/null || true
 
 echo "=== 6. 复制 tcc（tphp.php Linux 路径: tcc/tcc） ==="
 cp "$TCC_HOME/tcc" ./tcc
