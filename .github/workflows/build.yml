@@ -55,20 +55,18 @@ jobs:
       - name: Package
         shell: pwsh
         run: |
-          mkdir dist
-          Copy-Item tcc/win32 -Recurse -Destination dist/tcc/win32
-          Copy-Item php.exe dist/
-          Copy-Item tphp.php dist/
-          Copy-Item src -Recurse -Destination dist/src
-          Copy-Item include -Recurse -Destination dist/include
-          Copy-Item tphp.sh dist/
-          Rename-Item dist tphp
-          7z a tinyphp-win-x86_64.zip ./tphp
+          mkdir tphp
+          Copy-Item tcc/win32 -Recurse -Destination tphp/tcc/win32
+          Copy-Item php.exe tphp/
+          Copy-Item tphp.php tphp/
+          Copy-Item src -Recurse -Destination tphp/src
+          Copy-Item include -Recurse -Destination tphp/include
+          Copy-Item tphp.sh tphp/
 
       - uses: actions/upload-artifact@v4
         with:
           name: tinyphp-win-x86_64
-          path: tinyphp-win-x86_64.zip
+          path: tphp
 
   # ============================================================
   # Linux x86_64 — GCC 编译 TCC (mob 分支)
@@ -103,19 +101,20 @@ jobs:
 
       - name: Package
         run: |
-          mkdir -p dist/tcc
-          cp tcc/tcc dist/tcc/ 2>/dev/null || true
-          cp php dist/
-          cp tphp.php dist/
-          cp -r src dist/
-          cp -r include dist/
-          cp tphp.sh dist/
-          mv dist tphp && tar czf tinyphp-linux-x86_64.tar.gz tphp
+          mkdir -p tphp/tcc
+          cp -r tcc/tcc-dist/* tphp/tcc/ 2>/dev/null || true
+          cp tcc/tcc tphp/tcc/ 2>/dev/null || true
+          rm -rf tphp/tcc/win32 tphp/tcc/tinycc-src 2>/dev/null || true
+          cp php tphp/
+          cp tphp.php tphp/
+          cp -r src tphp/
+          cp -r include tphp/
+          cp tphp.sh tphp/
 
       - uses: actions/upload-artifact@v4
         with:
           name: tinyphp-linux-x86_64
-          path: tinyphp-linux-x86_64.tar.gz
+          path: tphp
 
   # ============================================================
   # Linux aarch64 — GCC 编译 TCC (mob 分支)
@@ -150,19 +149,20 @@ jobs:
 
       - name: Package
         run: |
-          mkdir -p dist/tcc
-          cp tcc/tcc dist/tcc/ 2>/dev/null || true
-          cp php dist/
-          cp tphp.php dist/
-          cp -r src dist/
-          cp -r include dist/
-          cp tphp.sh dist/
-          mv dist tphp && tar czf tinyphp-linux-aarch64.tar.gz tphp
+          mkdir -p tphp/tcc
+          cp -r tcc/tcc-dist/* tphp/tcc/ 2>/dev/null || true
+          cp tcc/tcc tphp/tcc/ 2>/dev/null || true
+          rm -rf tphp/tcc/win32 tphp/tcc/tinycc-src 2>/dev/null || true
+          cp php tphp/
+          cp tphp.php tphp/
+          cp -r src tphp/
+          cp -r include tphp/
+          cp tphp.sh tphp/
 
       - uses: actions/upload-artifact@v4
         with:
           name: tinyphp-linux-aarch64
-          path: tinyphp-linux-aarch64.tar.gz
+          path: tphp
 
   # ============================================================
   # macOS aarch64 — clang 编译 TCC (mob 分支)
@@ -206,16 +206,17 @@ jobs:
 
       - name: Package
         run: |
-          mkdir -p dist/tcc
-          cp tcc/tcc dist/tcc/ 2>/dev/null || true
-          cp php dist/
-          cp tphp.php dist/
-          cp -r src dist/
-          cp -r include dist/
-          cp tphp.sh dist/
-          mv dist tphp && tar czf tinyphp-macos-aarch64.tar.gz tphp
+          mkdir -p tphp/tcc
+          cp tcc/tcc tphp/tcc/ 2>/dev/null || true
+          cp -r tcc/lib tcc/include tcc/bin  tphp/tcc/ 2>/dev/null || true
+          rm -rf tphp/tcc/win32 tphp/tcc/tinycc-src 2>/dev/null || true
+          cp php tphp/
+          cp tphp.php tphp/
+          cp -r src tphp/
+          cp -r include tphp/
+          cp tphp.sh tphp/
 
       - uses: actions/upload-artifact@v4
         with:
           name: tinyphp-macos-aarch64
-          path: tinyphp-macos-aarch64.tar.gz
+          path: tphp
