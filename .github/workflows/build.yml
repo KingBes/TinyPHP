@@ -55,7 +55,7 @@ jobs:
           Copy-Item tphp.php dist/
           Copy-Item src -Recurse -Destination dist/src
           Copy-Item include -Recurse -Destination dist/include
-          Copy-Item tphp.sh dist/
+          Copy-Item tphp.cmd dist/
           Rename-Item dist tphp
           7z a tinyphp-win-x86_64.zip ./tphp
 
