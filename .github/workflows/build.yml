@@ -83,7 +83,7 @@ jobs:
         run: |
           cd tcc
           bash linux.sh
-          ./tcc --version
+          ./tcc -v
 
       - name: Download PHP
         run: |
@@ -131,7 +131,7 @@ jobs:
         run: |
           cd tcc
           bash linux.sh
-          ./tcc --version
+          ./tcc -v
 
       - name: Download PHP
         run: |
@@ -178,6 +178,7 @@ jobs:
         run: |
           cd tcc
           SDK=$(xcrun --show-sdk-path 2>/dev/null || echo "/Library/Developer/CommandLineTools/SDKs/MacOSX.sdk")
+          rm -rf sys bits gnu 2>/dev/null
           rm -f config.mak config.h
           sh configure \
             --prefix=./tcc-dist \
