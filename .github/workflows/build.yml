@@ -105,7 +105,7 @@ jobs:
           cp tphp.php release/tphp/
           cp -r src release/tphp/
           cp -r include release/tphp/
-          cp tphp.sh release/tphp/
+          cp tphp release/tphp/
 
       - uses: actions/upload-artifact@v4
         with:
@@ -155,7 +155,7 @@ jobs:
           cp tphp.php release/tphp/
           cp -r src release/tphp/
           cp -r include release/tphp/
-          cp tphp.sh release/tphp/
+          cp tphp release/tphp/
 
       - uses: actions/upload-artifact@v4
         with:
@@ -199,11 +199,6 @@ jobs:
           chmod +x php
           ./php -v
 
-      - name: UPX compress PHP
-        run: |
-          brew install upx
-          upx --best php
-
       - name: Test
         run: ./php tphp.php test/main/min.php
 
@@ -215,7 +210,7 @@ jobs:
           cp tphp.php release/tphp/
           cp -r src release/tphp/
           cp -r include release/tphp/
-          cp tphp.sh release/tphp/
+          cp tphp release/tphp/
 
       - uses: actions/upload-artifact@v4
         with:
