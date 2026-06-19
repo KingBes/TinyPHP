@@ -289,9 +289,9 @@ function showHelp(): never
 TinyPHP — PHP → C 转译编译器（支持多文件）
 
 用法:
-  php tphp.php <file.php> [<file2.php> ...] [-o <output>] [-cc <compiler>]
-  php tphp.php -f <file.php> [-o <output>]
-  php tphp.php .                     编译当前目录所有 .php
+  tphp <file.php> [<file2.php> ...] [-o <output>] [-cc <compiler>]
+  tphp -f <file.php> [-o <output>]
+  tphp .                     编译当前目录所有 .php
 
 选项:
   -o <output>       输出文件路径（默认执行目录下以入口文件名命名）
@@ -299,11 +299,11 @@ TinyPHP — PHP → C 转译编译器（支持多文件）
   -h, --help        显示帮助
 
 示例:
-  php tphp.php main.php demo.php
-  php tphp.php .
-  php tphp.php main.php -o app.exe
-  php tphp.php main.php -cc gcc
-  php tphp.php main.php -cc "clang -O2"
+  tphp main.php demo.php
+  tphp .
+  tphp main.php -o app.exe
+  tphp main.php -cc gcc
+  tphp main.php -cc "clang -O2"
 
 HELP;
     exit(0);
