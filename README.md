@@ -6,20 +6,20 @@
 
 ```bash
 # 编译单文件
-php tphp.php test/var/var.php
+tphp test/var/var.php
 
 # 编译多文件
-php tphp.php main.php demo.php lib/helper.php
+tphp main.php demo.php lib/helper.php
 
 # 扫描当前目录所有 .php 编译
-php tphp.php .
+tphp .
 
 # 指定输出
-php tphp.php main.php -o app.exe
+tphp main.php -o app.exe
 
 # 指定编译器（默认内置 TCC）
-php tphp.php main.php -cc gcc
-php tphp.php main.php -cc clang
+tphp main.php -cc gcc
+tphp main.php -cc clang
 ```
 
 编译后直接运行生成的产物即可（Windows 为 `.exe`，Linux/macOS 为无后缀可执行文件）。
