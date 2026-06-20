@@ -10,6 +10,7 @@
 #include <stdio.h>
 #include <string.h>
 #include <stdlib.h>
+#include <math.h>
 #include "types.h"
 
 #ifdef _WIN32
@@ -190,4 +191,25 @@ static inline void tphp_rt_object_free(t_object *obj) {
         obj->vtable->dtor(obj);
     }
     free(obj);
+}
+
+// ============================================================
+// 幂运算
+// ============================================================
+
+/** tphp_rt_pow_int — 整数幂 (a^b)，简单循环，b >= 0 */
+static inline t_int tphp_rt_pow_int(t_int base, t_int exp) {
+    if (exp < 0) return 0;
+    t_int result = 1;
+    while (exp > 0) {
+        if (exp & 1) result *= base;
+        base *= base;
+        exp >>= 1;
+    }
+    return result;
+}
+
+/** tphp_rt_pow_float — 浮点幂，直接调 libc pow */
+static inline t_float tphp_rt_pow_float(t_float base, t_float exp) {
+    return (t_float)pow(base, exp);
 }

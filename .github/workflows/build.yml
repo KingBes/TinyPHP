@@ -29,11 +29,8 @@ jobs:
             git
 
       - name: Build TCC
-        shell: msys2 {0}
-        run: |
-          export PATH="/mingw64/bin:$PATH"
-          bash build.cmd
-          ls -la tcc/win32/tcc.exe
+        shell: pwsh
+        run: .\build.cmd
 
       - name: Download PHP
         shell: pwsh

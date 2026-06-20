@@ -7,9 +7,9 @@ declare(strict_types=1);
 // TinyPHP — PHP → C 转译编译器（支持多文件）
 //
 // 用法:
-//   php tphp.php <file.php> [<file2.php> ...] [-o <output.exe>]
-//   php tphp.php .                      编译当前目录所有 .php
-//   php tphp.php -f <file.php> [-o <output.exe>]
+//   tphp <file.php> [<file2.php> ...] [-o <output.exe>]
+//   tphp .                      编译当前目录所有 .php
+//   tphp -f <file.php> [-o <output.exe>]
 // ============================================================
 
 spl_autoload_register(function (string $class): void {

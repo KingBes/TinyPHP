@@ -857,11 +857,11 @@ class Parser
         return $left;
     }
 
-    // == !=
+    // == != <=>
     private function parseEquality(): ExprNode
     {
         $left = $this->parseComparison();
-        while ($this->match(TokenType::EQ) || $this->match(TokenType::NE)) {
+        while ($this->match(TokenType::EQ) || $this->match(TokenType::NE) || $this->match(TokenType::SPACESHIP)) {
             $op = $this->previous()->lexeme;
             $right = $this->parseComparison();
             $left = $this->setPos(new BinaryExpr($left, $op, $right), $left->line, $left->column);
@@ -909,11 +909,22 @@ class Parser
     // * / %
     private function parseMultiplicative(): ExprNode
     {
-        $left = $this->parseUnary();
+        $left = $this->parsePower();
         while ($this->match(TokenType::STAR) || $this->match(TokenType::SLASH) || $this->match(TokenType::MOD)) {
             $op = $this->previous()->lexeme;
-            $right = $this->parseUnary();
+            $right = $this->parsePower();
             $left = $this->setPos(new BinaryExpr($left, $op, $right), $left->line, $left->column);
+        }
+        return $left;
+    }
+
+    // ** （右结合，幂运算）
+    private function parsePower(): ExprNode
+    {
+        $left = $this->parseUnary();
+        if ($this->match(TokenType::STAR_STAR)) {
+            $right = $this->parsePower();
+            $left = $this->setPos(new BinaryExpr($left, '**', $right), $left->line, $left->column);
         }
         return $left;
     }

@@ -578,6 +578,8 @@ class CodeGenerator implements ASTVisitor
         }
         if ($expr instanceof BinaryExpr) {
             if ($expr->operator === '.') return 't_string';
+            if ($expr->operator === '<=>') return 't_int';
+            if ($expr->operator === '**') return $this->inferType($expr->left);
             // 比较/逻辑运算符返回 bool
             if (in_array($expr->operator, ['<', '>', '<=', '>=', '==', '!=', '&&', '||'], true)) {
                 return 't_bool';
@@ -941,6 +943,29 @@ class CodeGenerator implements ASTVisitor
             $left  = $this->castToStr($node->left);
             $right = $this->castToStr($node->right);
             return 'tphp_rt_str_concat(' . $left . ', ' . $right . ')';
+        }
+
+        // <=> 太空船: (a < b) ? -1 : ((a > b) ? 1 : 0)
+        if ($node->operator === '<=>') {
+            $l = $node->left->accept($this);
+            $r = $node->right->accept($this);
+            $lt = $this->inferType($node->left);
+            $rt = $this->inferType($node->right);
+            if ($lt === 't_string' || $rt === 't_string') {
+                return '(tphp_rt_str_lt(' . $this->castToStr($node->left) . ', ' . $this->castToStr($node->right) . ') ? -1 : (tphp_rt_str_gt(' . $this->castToStr($node->left) . ', ' . $this->castToStr($node->right) . ') ? 1 : 0))';
+            }
+            return '((' . $l . ') < (' . $r . ') ? -1 : ((' . $l . ') > (' . $r . ') ? 1 : 0))';
+        }
+
+        // ** 幂运算
+        if ($node->operator === '**') {
+            $l = $node->left->accept($this);
+            $r = $node->right->accept($this);
+            $lt = $this->inferType($node->left);
+            if ($lt === 't_float') {
+                return 'tphp_rt_pow_float(' . $l . ', ' . $r . ')';
+            }
+            return 'tphp_rt_pow_int(' . $l . ', ' . $r . ')';
         }
 
         // null 比较: null == null → true, null == x → false

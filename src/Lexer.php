@@ -141,6 +141,13 @@ class Lexer
             return;
         }
 
+        // <=> 太空船（3 字符，必须在 <= 之前检测）
+        if ($ch === '<' && $this->peek(1) === '=' && $this->peek(2) === '>') {
+            $this->addToken(TokenType::SPACESHIP, '<=>');
+            $this->advance(3);
+            return;
+        }
+
         // 多字符运算符 (必须在单字符之前检查)
         $multiOps = [
             '->' => TokenType::ARROW,
@@ -149,6 +156,7 @@ class Lexer
             '!=' => TokenType::NE,
             '<=' => TokenType::LE,
             '>=' => TokenType::GE,
+            '**' => TokenType::STAR_STAR,
             '&&' => TokenType::AND_AND,
             '||' => TokenType::OR_OR,
             '++' => TokenType::INC,

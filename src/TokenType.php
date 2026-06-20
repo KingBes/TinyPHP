@@ -116,5 +116,7 @@ enum TokenType: string
     case STAR_EQ      = '*=';
     case SLASH_EQ     = '/=';
     case DOT_EQ       = '.=';
+    case STAR_STAR    = '**';
+    case SPACESHIP    = '<=>';
     case DOT          = '.';
 }
