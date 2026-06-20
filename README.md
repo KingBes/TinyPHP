@@ -195,6 +195,7 @@ function myFunc(): void { ... }
 | `error($msg)` | 报错 + 清资源 + 退出 |
 
 > 详见 [FUNCTIONS.md](FUNCTIONS.md) — 每个函数与 PHP 的差异对照及后续实现建议。
+> 性能优化路线：[ROADMAP.md](ROADMAP.md)
 
 ### 控制流完整列表
 
