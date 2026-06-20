@@ -105,7 +105,7 @@ echo "[1/2] 转译 {$allFilesStr} → C 代码...\n";
     foreach ($files as $file) {
         // 快速检测文件是否包含 class Main（全局命名空间）
         $src = file_get_contents($file);
-        if (preg_match('/^\s*class\s+Main\s*\{/m', (string)$src)) {
+        if (preg_match('/^\s*class\s+Main\b/m', (string)$src)) {
             $mainFile = $file;
         } else {
             $otherFiles[] = $file;
@@ -135,18 +135,21 @@ echo "[1/2] 转译 {$allFilesStr} → C 代码...\n";
         $parser->setKnownEnums($knownEnumNames);
         $ast    = $parser->parse();
 
-        // 合并 AST —— 只有全局 class Main 才能作为入口
-        if ($ast->mainClass !== null) {
-            if ($ast->mainClass->name === 'Main' && $ast->mainClass->namespace === '') {
+        // 合并 AST —— 从主类和辅助类中找出全局 class Main 作为入口
+        $candidates = array_merge(
+            $ast->mainClass ? [$ast->mainClass] : [],
+            $ast->extraClasses
+        );
+        foreach ($candidates as $cls) {
+            if ($cls->name === 'Main' && $cls->namespace === '') {
                 if ($mainClass !== null) {
                     die("错误: 发现多个全局 class Main 声明\n");
                 }
-                $mainClass = $ast->mainClass;
+                $mainClass = $cls;
             } else {
-                $extraClasses[] = $ast->mainClass;
+                $extraClasses[] = $cls;
             }
         }
-        $extraClasses = array_merge($extraClasses, $ast->extraClasses);
         $functions    = array_merge($functions, $ast->functions);
         $constants    = array_merge($constants, $ast->constants);
         $enums        = array_merge($enums, $ast->enums);

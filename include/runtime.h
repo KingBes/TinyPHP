@@ -213,3 +213,66 @@ static inline t_int tphp_rt_pow_int(t_int base, t_int exp) {
 static inline t_float tphp_rt_pow_float(t_float base, t_float exp) {
     return (t_float)pow(base, exp);
 }
+
+// ============================================================
+// 全局资源追踪（error 时自动清理）
+// ============================================================
+
+typedef struct tphp_rt_alloc {
+    void  *ptr;
+    int    type;          // 0=object 1=array 2=heap_str
+    struct tphp_rt_alloc *next;
+} tphp_rt_alloc;
+
+static tphp_rt_alloc *tphp_alloc_head = NULL;
+
+static inline void tphp_rt_register(void *ptr, int type) {
+    if (ptr == NULL) return;
+    tphp_rt_alloc *n = (tphp_rt_alloc *)malloc(sizeof(tphp_rt_alloc));
+    if (n == NULL) return;
+    n->ptr  = ptr;
+    n->type = type;
+    n->next = tphp_alloc_head;
+    tphp_alloc_head = n;
+}
+
+static inline void tphp_rt_unregister(void *ptr) {
+    tphp_rt_alloc **pp = &tphp_alloc_head;
+    while (*pp) {
+        if ((*pp)->ptr == ptr) {
+            tphp_rt_alloc *d = *pp;
+            *pp = d->next;
+            free(d);
+            return;
+        }
+        pp = &(*pp)->next;
+    }
+}
+
+static inline void tphp_rt_free_all(void) {
+    tphp_rt_alloc *n = tphp_alloc_head;
+    while (n) {
+        tphp_rt_alloc *next = n->next;
+        if (n->ptr) {
+            switch (n->type) {
+                case 0: tphp_rt_object_free((t_object *)n->ptr); break;
+                case 1: tphp_fn_arr_free((t_array *)n->ptr);    break;
+                case 2: { t_string *s = (t_string *)n->ptr; free(s->data); free(s); } break;
+            }
+        }
+        free(n);
+        n = next;
+    }
+    tphp_alloc_head = NULL;
+}
+
+// ============================================================
+// error() — 报错并安全退出
+// ============================================================
+
+static inline void tphp_fn_error(t_string msg, const char *php_file, int php_line) {
+    tphp_rt_free_all();
+    fprintf(stderr, "\nFatal error: %.*s\n  in %s on line %d\n\n",
+            msg.length > 0 ? msg.length : 0, msg.data ? msg.data : "", php_file, php_line);
+    exit(1);
+}

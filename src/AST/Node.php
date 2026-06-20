@@ -177,11 +177,15 @@ class AssignStmtNode extends StmtNode
 // list($a, $b) = expr;
 class ListStmtNode extends StmtNode
 {
-    /** @param string[] $vars (不含 $ 前缀的变量名) */
+    /**
+     * @param array $vars  元素: null=跳过, string=变量名, ListStmtNode=嵌套解构
+     * @param bool  $short  是否短语法 []（仅 Parser 标记用）
+     */
     public function __construct(
-        /** @var string[] */
+        /** @var array */
         public readonly array $vars,
         public readonly ExprNode $expr,
+        public readonly bool $short = false,
     ) {}
 
     public function accept(ASTVisitor $visitor): string
@@ -201,6 +205,20 @@ class AssignPropStmtNode extends StmtNode
     public function accept(ASTVisitor $visitor): string
     {
         return $visitor->visitAssignPropStmt($this);
+    }
+}
+
+// $arr[$i] = value
+class AssignArrayStmtNode extends StmtNode
+{
+    public function __construct(
+        public readonly ArrayAccessExpr $target,
+        public readonly ExprNode $value,
+    ) {}
+
+    public function accept(ASTVisitor $visitor): string
+    {
+        return $visitor->visitAssignArrayStmt($this);
     }
 }
 
@@ -764,6 +782,7 @@ interface ASTVisitor
     public function visitReturnStmt(ReturnStmtNode $node): string;
     public function visitAssignStmt(AssignStmtNode $node): string;
     public function visitAssignPropStmt(AssignPropStmtNode $node): string;
+    public function visitAssignArrayStmt(AssignArrayStmtNode $node): string;
     public function visitExprStmt(ExprStmtNode $node): string;
     public function visitStringLiteral(StringLiteralExpr $node): string;
     public function visitIntLiteral(IntLiteralExpr $node): string;

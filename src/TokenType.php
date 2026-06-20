@@ -65,6 +65,12 @@ enum TokenType: string
     case EMPTY_KW   = 'empty';
     case UNSET      = 'unset';
     case LIST_KW    = 'list';
+    case TIME       = 'time';
+    case DATE       = 'date';
+    case SLEEP      = 'sleep';
+    case USLEEP     = 'usleep';
+    case HRTIME     = 'hrtime';
+    case ERROR      = 'error';
     case NAMESPACE  = 'namespace';
     case USE        = 'use';
     case AS_KW      = 'as';

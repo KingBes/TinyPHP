@@ -40,6 +40,12 @@ class Lexer
         'isset'       => TokenType::ISSET,
         'empty'       => TokenType::EMPTY_KW,
         'unset'       => TokenType::UNSET,
+        'error'       => TokenType::ERROR,
+        'time'        => TokenType::TIME,
+        'date'        => TokenType::DATE,
+        'sleep'       => TokenType::SLEEP,
+        'usleep'      => TokenType::USLEEP,
+        'hrtime'      => TokenType::HRTIME,
         'list'        => TokenType::LIST_KW,
         'namespace'   => TokenType::NAMESPACE,
         'use'         => TokenType::USE,
@@ -348,12 +354,15 @@ class Lexer
                 continue;
             }
 
-            // 插值：$var 或 {$var}
+            // 插值：$var 或 {$var} 或 {$var->prop}
             if ($ch === '$') {
                 $this->advance(); // skip $
+
+                $inBrace = false;
                 // {$var} 语法：去掉 buf 末尾的 {
                 if ($buf !== '' && $buf[strlen($buf) - 1] === '{') {
                     $buf = substr($buf, 0, -1);
+                    $inBrace = true;
                 }
                 // 先输出累积的文本段
                 if ($buf !== '') {
@@ -366,17 +375,32 @@ class Lexer
                 if ($needDot) $this->addToken(TokenType::DOT, '.');
 
                 // {$var} 语法
-                if ($this->peek() === '{') $this->advance();
+                if ($this->peek() === '{') {
+                    $this->advance();
+                    $inBrace = true;
+                }
 
                 $varName = '';
                 while ($this->pos < strlen($this->source) && (ctype_alnum($this->peek()) || $this->peek() === '_')) {
                     $varName .= $this->peek();
                     $this->advance();
                 }
-
-                if ($this->peek() === '}') $this->advance(); // skip }
-
                 $this->addToken(TokenType::IDENTIFIER, '$' . $varName);
+
+                // {$var->prop->prop} 语法：花括号内支持链式属性访问
+                while ($inBrace && $this->peek() === '-' && $this->peek(1) === '>') {
+                    $this->advance(2);
+                    $propName = '';
+                    while ($this->pos < strlen($this->source) && (ctype_alnum($this->peek()) || $this->peek() === '_')) {
+                        $propName .= $this->peek();
+                        $this->advance();
+                    }
+                    $this->addToken(TokenType::ARROW, '->');
+                    $this->addToken(TokenType::IDENTIFIER, $propName);
+                }
+
+                if ($inBrace && $this->peek() === '}') $this->advance(); // skip }
+
                 $needDot = true;
                 continue;
             }
@@ -581,7 +605,7 @@ class Lexer
                 // 检测变量名
                 $j = $i + 1;
                 if ($j < $len && $str[$j] === '{') {
-                    // {$var} 语法
+                    // {$var} 或 {$var->prop} 语法
                     $varEnd = strpos($str, '}', $j + 1);
                     if ($varEnd !== false) {
                         if ($buf !== '') {
@@ -591,14 +615,20 @@ class Lexer
                             $needDot = true;
                         }
                         if ($needDot) $this->addToken(TokenType::DOT, '.');
-                        $varName = substr($str, $j + 1, $varEnd - $j - 1);
-                        $this->addToken(TokenType::IDENTIFIER, '$' . $varName);
+                        $inner = substr($str, $j + 1, $varEnd - $j - 1);
+                        // 支持 $var->prop->prop 链
+                        $parts = explode('->', $inner);
+                        $this->addToken(TokenType::IDENTIFIER, '$' . $parts[0]);
+                        for ($p = 1; $p < count($parts); $p++) {
+                            $this->addToken(TokenType::ARROW, '->');
+                            $this->addToken(TokenType::IDENTIFIER, $parts[$p]);
+                        }
                         $needDot = true;
                         $i = $varEnd + 1;
                         continue;
                     }
                 } elseif ($j < $len && (ctype_alpha($str[$j]) || $str[$j] === '_')) {
-                    // $var 语法
+                    // $var 语法（可能包含 ->prop）
                     $k = $j;
                     while ($k < $len && (ctype_alnum($str[$k]) || $str[$k] === '_')) $k++;
                     if ($buf !== '') {
@@ -610,6 +640,17 @@ class Lexer
                     if ($needDot) $this->addToken(TokenType::DOT, '.');
                     $varName = substr($str, $j, $k - $j);
                     $this->addToken(TokenType::IDENTIFIER, '$' . $varName);
+                    // 支持 $var->prop->prop 链
+                    while ($k + 1 < $len && $str[$k] === '-' && $str[$k + 1] === '>') {
+                        $this->addToken(TokenType::ARROW, '->');
+                        $k += 2;
+                        $propName = '';
+                        while ($k < $len && (ctype_alnum($str[$k]) || $str[$k] === '_')) {
+                            $propName .= $str[$k];
+                            $k++;
+                        }
+                        $this->addToken(TokenType::IDENTIFIER, $propName);
+                    }
                     $needDot = true;
                     $i = $k;
                     continue;

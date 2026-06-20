@@ -6,6 +6,7 @@ class CodeGenerator implements ASTVisitor
 {
     private string $className = '';
     private int $indent = 0;
+    private string $phpFile = '';
 
     /** 变量类型追踪：varName → className（对象）或 C 类型（基础类型） */
     private array $varTypes = [];
@@ -56,6 +57,7 @@ class CodeGenerator implements ASTVisitor
     // ============================================================
     public function generate(ProgramNode $program, string $phpFile, string $outputDir): string
     {
+        $this->phpFile = $phpFile;
         $this->className = $program->mainClass ? self::classCName($program->mainClass) : '';
         $this->resetState();
         $outPath = $outputDir . '/' . pathinfo($phpFile, PATHINFO_FILENAME) . '.c';
@@ -515,15 +517,17 @@ class CodeGenerator implements ASTVisitor
         $expr = $node->expr->accept($this);
         $this->declaredVars[$var] = true;
 
-        // new ClassName(...) → tphp_ClassName* var = expr; + 记录为对象变量
+        // new ClassName(...) → tphp_ClassName* var = expr; + 注册到全局资源表
         if ($node->expr instanceof NewExpr) {
             $cn = self::classRefName($node->expr->className);
             $this->varTypes[$var] = $cn;
-            $this->scopeObjects[] = $var;
-            if ($isDeclared) {
-                return "{$var} = {$expr};";
+            if ($this->indent == 1) {
+                $this->scopeObjects[] = $var;  // 仅顶层作用域自动析构
             }
-            return "{$cn}* {$var} = {$expr};";
+            if ($isDeclared) {
+                return "{$var} = {$expr}; tphp_rt_register((void*){$var}, 0);";
+            }
+            return "{$cn}* {$var} = {$expr}; tphp_rt_register((void*){$var}, 0);";
         }
 
         // (array)xxx → 标量转单元素数组
@@ -657,6 +661,12 @@ class CodeGenerator implements ASTVisitor
     /** 推导 CallExpr 的返回类型 */
     private function inferCallReturnType(CallExpr $expr): string
     {
+        // 内置函数返回类型
+        if ($expr->callee === null) {
+            if ($expr->name === 'time')   return 't_int';
+            if ($expr->name === 'hrtime') return 't_int';
+            if ($expr->name === 'date')   return 't_string';
+        }
         // 闭包调用 → 查 closureSigs
         if ($expr->name === '__invoke' && $expr->callee instanceof VariableExpr) {
             $varName = self::varName($expr->callee->name);
@@ -696,13 +706,25 @@ class CodeGenerator implements ASTVisitor
     {
         $target = $node->target->accept($this);
         $val = $node->value->accept($this);
-        // 字符串属性赋值：深拷贝到堆（防止栈/临时内存悬空）
         $propType = $this->getPropType($node->target);
         if ($propType === 't_string') {
-            // 如果之前已有堆数据，先释放再赋值
             return "tphp_rt_str_free(&{$target}); {$target} = tphp_rt_str_dup({$val});";
         }
         return "{$target} = {$val};";
+    }
+
+    public function visitAssignArrayStmt(AssignArrayStmtNode $node): string
+    {
+        $arr   = $node->target->array->accept($this);
+        $idx   = $node->target->index->accept($this);
+        $vCode = $node->value->accept($this);
+        $val   = $this->wrapArrayElement($node->value, $vCode);
+
+        $idxType = $this->inferType($node->target->index);
+        if ($idxType === 't_string' || $node->target->index instanceof StringLiteralExpr) {
+            return "tphp_fn_arr_set_str({$arr}, {$idx}, {$val});";
+        }
+        return "tphp_fn_arr_set_int({$arr}, {$idx}, {$val});";
     }
 
     /** 获取属性类型（通过 classPropTypes 查找） */
@@ -767,7 +789,7 @@ class CodeGenerator implements ASTVisitor
     private function genArrayLiteralInline(ArrayLiteralExpr $node, string $varName): string
     {
         $parts = [];
-        $parts[] = "t_array* {$varName} = tphp_fn_arr_create();";
+        $parts[] = "t_array* {$varName} = tphp_fn_arr_create(); tphp_rt_register((void*){$varName}, 1);";
         $parts[] = "if ({$varName} != NULL) {";
         foreach ($node->entries as $entry) {
             $valCode = $entry->value->accept($this);
@@ -1097,6 +1119,46 @@ class CodeGenerator implements ASTVisitor
             return 'tphp_fn_exit(' . $code . ')';
         }
 
+        // error($msg) → 报错 + 清理所有资源 + 退出
+        if ($node->callee === null && $node->name === 'error') {
+            $msg  = !empty($node->args) ? $this->castToStr($node->args[0]) : 'STR_LIT("")';
+            $line = !empty($node->args) ? ($node->args[0]->line ?? 0) : 0;
+            $file = '"' . str_replace(['\\', '"'], ['/', '\"'], $this->phpFile) . '"';
+            return 'tphp_fn_error(' . $msg . ', ' . $file . ', ' . $line . ')';
+        }
+
+        // time() → Unix 时间戳
+        if ($node->callee === null && $node->name === 'time') {
+            return 'tphp_fn_time()';
+        }
+
+        // date($format, $ts?) → 格式化时间
+        if ($node->callee === null && $node->name === 'date') {
+            $args = array_map(fn($a) => $a->accept($this), $node->args);
+            $fmt  = $args[0] ?? 'STR_LIT("%c")';
+            $ts   = $args[1] ?? '0';
+            return 'tphp_fn_date(' . $fmt . ', ' . $ts . ')';
+        }
+
+        // sleep($seconds)
+        if ($node->callee === null && $node->name === 'sleep') {
+            $args = array_map(fn($a) => $a->accept($this), $node->args);
+            $sec  = $args[0] ?? '0';
+            return 'tphp_fn_sleep(' . $sec . ')';
+        }
+
+        // usleep($microseconds)
+        if ($node->callee === null && $node->name === 'usleep') {
+            $args = array_map(fn($a) => $a->accept($this), $node->args);
+            $us = $args[0] ?? '0';
+            return 'tphp_fn_usleep(' . $us . ')';
+        }
+
+        // hrtime() → 高分辨率时间（纳秒）
+        if ($node->callee === null && $node->name === 'hrtime') {
+            return 'tphp_fn_hrtime()';
+        }
+
         // isset($var) → 非 null 检测（非指针类型始终 true）
         if ($node->callee === null && $node->name === 'isset') {
             $args = array_map(fn($a) => $a->accept($this), $node->args);
@@ -1131,13 +1193,12 @@ class CodeGenerator implements ASTVisitor
                 $type = $this->inferType($arg);
                 $lines[] = match ($type) {
                     't_string' => "{$code} = (t_string){NULL, 0};",
-                    't_array*' => "if ({$code} != NULL) { tphp_fn_arr_free({$code}); {$code} = NULL; }",
+                    't_array*' => "tphp_rt_unregister((void*){$code}); if ({$code} != NULL) { tphp_fn_arr_free({$code}); {$code} = NULL; }",
                     'null'     => "{$code} = NULL;",
                     default    => "{$code} = 0;",
                 };
                 if (str_starts_with($type, 'tphp_class_') || str_starts_with($type, 'tphp_enum_')) {
-                    $lines[count($lines)-1] = "tphp_fn_unset_obj((t_object**)&{$code});";
-                    // 从 scopeObjects 移除，防止重复析构
+                    $lines[count($lines)-1] = "tphp_rt_unregister((void*){$code}); tphp_fn_unset_obj((t_object**)&{$code});";
                     $vn = self::varName($arg->name);
                     $this->scopeObjects = array_values(array_filter($this->scopeObjects, fn($o) => $o !== $vn));
                 }
@@ -1515,17 +1576,43 @@ class CodeGenerator implements ASTVisitor
     {
         $lines = [];
         $arrName = '_lst_' . (++$this->tmpVarCounter);
-        $idxName  = '_li_' . (++$this->tmpVarCounter);
         $expr = $node->expr->accept($this);
         $lines[] = "t_array* {$arrName} = {$expr};";
-        foreach ($node->vars as $i => $var) {
+        $this->generateListAssign($lines, $arrName, 0, $node->vars);
+        return implode("\n", $lines);
+    }
+
+    /** 递归生成 list 赋值代码
+     * @param array $vars (null|string|ListStmtNode)[]
+     */
+    private function generateListAssign(array &$lines, string $arrName, int $baseIdx, array $vars): void
+    {
+        $idx = $baseIdx;
+        foreach ($vars as $item) {
+            if ($item === null) {
+                // 跳过当前元素
+                $idx++;
+                continue;
+            }
+            if ($item instanceof ListStmtNode) {
+                // 嵌套 list：先取 t_var*，再取 .value._array
+                $subArr = '_sublst_' . (++$this->tmpVarCounter);
+                $tv     = '_tv_' . (++$this->tmpVarCounter);
+                $lines[] = "t_var* {$tv} = ({$arrName} && {$arrName}->length > {$idx}) ? tphp_fn_arr_get_int({$arrName}, {$idx}) : NULL;";
+                $lines[] = "t_array* {$subArr} = ({$tv} && {$tv}->type == TYPE_ARRAY) ? {$tv}->value._array : NULL;";
+                $this->generateListAssign($lines, $subArr, 0, $item->vars);
+                $idx++;
+                continue;
+            }
+            // 普通变量
+            $var = $item;
             $isDeclared = isset($this->declaredVars[$var]);
             $this->declaredVars[$var] = true;
             $this->varTypes[$var] = 't_int';
             $prefix = $isDeclared ? '' : 't_int ';
-            $lines[] = "{$prefix}{$var} = ({$arrName} && {$arrName}->length > {$i}) ? tphp_arr_item_int({$arrName}, {$i}) : 0;";
+            $lines[] = "{$prefix}{$var} = ({$arrName} && {$arrName}->length > {$idx}) ? tphp_arr_item_int({$arrName}, {$idx}) : 0;";
+            $idx++;
         }
-        return implode("\n", $lines);
     }
 
     public function visitForStmt(ForStmtNode $node): string
@@ -1959,16 +2046,25 @@ class CodeGenerator implements ASTVisitor
             }
         }
 
-        // CallExpr：查找方法返回类型
-        if ($expr instanceof CallExpr && $expr->callee !== null) {
-            $objKey = ($expr->callee instanceof VariableExpr) ? self::varName($expr->callee->name) : '';
-            $objType = ($objKey === '$this' || $objKey === 'self')
-                ? $this->className
-                : ($this->varTypes[$objKey] ?? '');
-            if ($objType !== '' && isset($this->classMethodRetTypes[$objType])) {
-                $retType = $this->classMethodRetTypes[$objType][$expr->name] ?? '';
-                if ($retType === 't_string') return $code;
-                if ($retType === 't_float') return "tphp_rt_str_from_float({$code})";
+        // CallExpr：查找返回类型（内置函数 + 方法调用）
+        if ($expr instanceof CallExpr) {
+            // 内置函数返回 t_string（date 等）
+            if ($expr->callee === null) {
+                $rt = $this->inferCallReturnType($expr);
+                if ($rt === 't_string') return $code;
+                if ($rt === 't_float') return "tphp_rt_str_from_float({$code})";
+            }
+            // 方法调用
+            if ($expr->callee !== null) {
+                $objKey = ($expr->callee instanceof VariableExpr) ? self::varName($expr->callee->name) : '';
+                $objType = ($objKey === '$this' || $objKey === 'self')
+                    ? $this->className
+                    : ($this->varTypes[$objKey] ?? '');
+                if ($objType !== '' && isset($this->classMethodRetTypes[$objType])) {
+                    $retType = $this->classMethodRetTypes[$objType][$expr->name] ?? '';
+                    if ($retType === 't_string') return $code;
+                    if ($retType === 't_float') return "tphp_rt_str_from_float({$code})";
+                }
             }
         }
 

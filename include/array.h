@@ -22,10 +22,23 @@ static int tphp_fn_str_hash(t_string s);
 
 // ── 生命周期 ─────────────────────────────────────────────
 
-/** 创建空数组 */
+// ── t_array 对象池（避免频繁 calloc/free） ──────────
+#define T_ARRAY_POOL_MAX 256
+static t_array *t_array_pool[T_ARRAY_POOL_MAX];
+static int      t_array_pool_top = -1;
+
+/** 创建空数组（优先从对象池复用） */
 static inline t_array* tphp_fn_arr_create(void) {
-    t_array* a = (t_array*)calloc(1, sizeof(t_array));
-    if (a != NULL) a->refcount = 1;
+    t_array *a;
+    if (t_array_pool_top >= 0) {
+        a = t_array_pool[t_array_pool_top--];
+        memset(a, 0, sizeof(t_array));
+    } else {
+        a = (t_array*)malloc(sizeof(t_array));
+        if (a == NULL) return NULL;
+        memset(a, 0, sizeof(t_array));
+    }
+    a->refcount = 1;
     return a;
 }
 
@@ -231,13 +244,10 @@ void tphp_fn_arr_free(t_array* a) {
     if (--a->refcount > 0) return;
     for (int i = 0; i < a->length; i++) {
         if (a->entries[i].key != NULL) {
-            // 如果 key 是 string 且 data 不在 .rodata，需要释放
-            // （当前简化：全部 free key 结构体，不释放 string.data）
             free(a->entries[i].key);
         }
         if (a->entries[i].value != NULL) {
             t_var* v = a->entries[i].value;
-            // 递归释放嵌套数组
             if (v->type == TYPE_ARRAY && v->value._array != NULL) {
                 tphp_fn_arr_free(v->value._array);
             }
@@ -245,7 +255,13 @@ void tphp_fn_arr_free(t_array* a) {
         }
     }
     free(a->entries);
-    free(a);
+
+    // 回收到对象池
+    if (t_array_pool_top < T_ARRAY_POOL_MAX - 1) {
+        t_array_pool[++t_array_pool_top] = a;
+    } else {
+        free(a);
+    }
 }
 
 // ── 辅助函数 ────────────────────────────────────────

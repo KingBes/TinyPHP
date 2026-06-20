@@ -483,6 +483,11 @@ class Parser
         if ($this->match(TokenType::FOREACH_KW))    return $this->parseForeachStmt();
         if ($this->match(TokenType::DO_KW))         return $this->parseDoWhileStmt();
         if ($this->match(TokenType::LIST_KW))       return $this->parseListStmt();
+        // 短语法: [$a, $b] = expr
+        if ($this->check(TokenType::LBRACKET) && $this->isShortList()) {
+            $this->advance(); // consume LBRACKET
+            return $this->parseListStmt();
+        }
         if ($this->match(TokenType::SWITCH_KW))     return $this->parseSwitchStmt();
         if ($this->match(TokenType::GOTO))          return $this->parseGotoStmt();
         if ($this->match(TokenType::BREAK_KW))      { $this->consume(TokenType::SEMICOLON, '期望 ;'); return new BreakStmtNode(); }
@@ -597,19 +602,60 @@ class Parser
     }
 
     // list($a, $b) = expr;
-    private function parseListStmt(): ListStmtNode
+    private function parseListStmt(bool $nested = false): ListStmtNode
     {
-        $this->consume(TokenType::LPAREN, '期望 (');
-        $vars = [];
-        do {
-            $varName = $this->consume(TokenType::IDENTIFIER, '期望变量名')->lexeme;
-            $vars[] = ltrim($varName, '$');
-        } while ($this->match(TokenType::COMMA));
-        $this->consume(TokenType::RPAREN, '期望 )');
+        $short = $this->previous()->type === TokenType::LBRACKET;
+        if (!$short) {
+            $this->consume(TokenType::LPAREN, '期望 (');
+        }
+        $vars = $this->parseListVars();
+        if ($short) {
+            $this->consume(TokenType::RBRACKET, '期望 ]');
+        } else {
+            $this->consume(TokenType::RPAREN, '期望 )');
+        }
+        if ($nested) {
+            // 嵌套 list 无 = expr
+            return new ListStmtNode($vars, new NullLiteralExpr(), $short);
+        }
         $this->consume(TokenType::EQUALS, '期望 =');
         $expr = $this->parseExpr();
         $this->consume(TokenType::SEMICOLON, '期望 ;');
-        return new ListStmtNode($vars, $expr);
+        return new ListStmtNode($vars, $expr, $short);
+    }
+
+    /** @return array (null|string|ListStmtNode)[] */
+    private function parseListVars(): array
+    {
+        $vars = [];
+        while (true) {
+            // 空位：COMMA
+            if ($this->check(TokenType::COMMA)) {
+                $vars[] = null;
+                $this->advance();
+                continue;
+            }
+            // 闭合括号：结束解析
+            if ($this->check(TokenType::RPAREN) || $this->check(TokenType::RBRACKET)) {
+                break;
+            }
+            // 嵌套 list() 或 []
+            if ($this->check(TokenType::LIST_KW) || $this->check(TokenType::LBRACKET)) {
+                $this->advance();
+                $vars[] = $this->parseListStmt(true);
+                // 跳过后续逗号
+                if ($this->check(TokenType::COMMA)) $this->advance();
+                continue;
+            }
+            // 普通变量
+            $varName = $this->consume(TokenType::IDENTIFIER, '期望变量名')->lexeme;
+            $vars[] = ltrim($varName, '$');
+
+            // 逗号继续，否则结束
+            if (!$this->check(TokenType::COMMA)) break;
+            $this->advance();
+        }
+        return $vars;
     }
 
     // for (init; cond; step) { body }
@@ -752,6 +798,13 @@ class Parser
     private function parseExprStmt(): StmtNode
     {
         $expr = $this->parseExpr();
+        // 数组元素赋值: $arr[$i] = value
+        if ($expr instanceof ArrayAccessExpr && $this->check(TokenType::EQUALS)) {
+            $this->advance();
+            $val = $this->parseExpr();
+            $this->consume(TokenType::SEMICOLON, '期望 ;');
+            return new AssignArrayStmtNode($expr, $val);
+        }
         // 属性赋值: $this->prop = value
         if ($expr instanceof PropertyAccessExpr && $this->check(TokenType::EQUALS)) {
             $this->advance();
@@ -763,7 +816,7 @@ class Parser
         $compOps = [TokenType::PLUS_EQ, TokenType::MINUS_EQ, TokenType::STAR_EQ, TokenType::SLASH_EQ, TokenType::DOT_EQ];
         foreach ($compOps as $op) {
             if ($this->check($op)) {
-                $this->advance(); // manually advance (bypass possible match() issue)
+                $this->advance();
                 $val = $this->parseExpr();
                 $this->consume(TokenType::SEMICOLON, '期望 ;');
                 return new ExprStmtNode($this->setPos(new CompoundAssignExpr($expr, $op->value, $val), $expr->line, $expr->column));
@@ -1040,7 +1093,7 @@ class Parser
             return $this->setPos($this->parseMatchExpr(), $line, $col);
         }
         // 变量
-        if ($this->check(TokenType::IDENTIFIER) || $this->check(TokenType::VAR_DUMP) || $this->check(TokenType::COUNT) || $this->check(TokenType::EXIT) || $this->check(TokenType::DIE) || $this->check(TokenType::ISSET) || $this->check(TokenType::EMPTY_KW) || $this->check(TokenType::UNSET)) {
+        if ($this->check(TokenType::IDENTIFIER) || $this->check(TokenType::VAR_DUMP) || $this->check(TokenType::COUNT) || $this->check(TokenType::EXIT) || $this->check(TokenType::DIE) || $this->check(TokenType::ISSET) || $this->check(TokenType::EMPTY_KW) || $this->check(TokenType::UNSET) || $this->check(TokenType::ERROR) || $this->check(TokenType::TIME) || $this->check(TokenType::DATE) || $this->check(TokenType::SLEEP) || $this->check(TokenType::USLEEP) || $this->check(TokenType::HRTIME)) {
             $name = $this->advance()->lexeme;
 
             // $obj->xxx 或 Class::xxx
@@ -1076,7 +1129,7 @@ class Parser
                     return $this->setPos(new CallExpr(new VariableExpr($name), '__invoke', $args), $line, $col);
                 }
                 // 内置函数不解析命名空间
-                if ($name !== 'var_dump' && $name !== 'count' && $name !== 'exit' && $name !== 'die' && $name !== 'isset' && $name !== 'empty' && $name !== 'unset') {
+                if ($name !== 'var_dump' && $name !== 'count' && $name !== 'exit' && $name !== 'die' && $name !== 'isset' && $name !== 'empty' && $name !== 'unset' && $name !== 'error' && $name !== 'time' && $name !== 'date' && $name !== 'sleep' && $name !== 'usleep' && $name !== 'hrtime') {
                     $name = $this->resolveFunctionName($name);
                 }
                 return $this->setPos(new CallExpr(null, $name, $args), $line, $col);
@@ -1341,6 +1394,35 @@ class Parser
             return $this->advance();
         }
         $this->error($errMsg . "，得到 '{$this->peek()->lexeme}'");
+    }
+
+    /** 检测 [...] 是否是短语法 list 而非数组字面量 */
+    private function isShortList(): bool
+    {
+        $save = $this->current;
+        $this->advance(); // skip LBRACKET
+        $isList = false;
+        $depth = 1;
+        while ($depth > 0 && $this->current < count($this->tokens)) {
+            $t = $this->advance();
+            if ($t->type === TokenType::LBRACKET) { $depth++; continue; }
+            if ($t->type === TokenType::RBRACKET) {
+                $depth--;
+                // 顶层 ] 闭合后，下一个 token 如果是 = 则是 list
+                if ($depth === 0 && $this->current < count($this->tokens)) {
+                    $n = $this->peek();
+                    if ($n->type === TokenType::EQUALS) { $isList = true; }
+                }
+                continue;
+            }
+            if (in_array($t->type, [
+                TokenType::INT_LIT, TokenType::FLOAT_LIT, TokenType::STRING_LIT,
+                TokenType::TRUE_KW, TokenType::FALSE_KW, TokenType::NULL_KW,
+                TokenType::ARROW,
+            ])) break;
+        }
+        $this->current = $save;
+        return $isList;
     }
 
     private function error(string $msg): never
