@@ -69,16 +69,14 @@ static void tphp_fn_var_dump_rec(t_var v, int depth) {
         t_array* a = v.value._array;
         int count = tphp_fn_arr_count(a);
         fprintf(stdout, "array(%d) {\n", count);
-        if (a != NULL && a->entries != NULL) {
+        if (a != NULL) {
             for (int i = 0; i < count; i++) {
-                t_var* key = a->entries[i].key;
-                t_var* val = a->entries[i].value;
+                t_var* key = &a->entries[i].key;
+                t_var* val = &a->entries[i].val;
 
                 tphp_fn_var_dump_indent(depth + 1);
 
-                if (key == NULL) {
-                    fputs("[NULL_KEY]=>\n", stdout);
-                } else if (key->type == TYPE_INT) {
+                if (key->type == TYPE_INT) {
                     fprintf(stdout, "[%lld]=>\n", (long long)key->value._int);
                 } else if (key->type == TYPE_STRING) {
                     int klen = (key->value._string.length > 0) ? key->value._string.length : 0;
@@ -91,8 +89,8 @@ static void tphp_fn_var_dump_rec(t_var v, int depth) {
 
                 tphp_fn_var_dump_indent(depth + 1);
 
-                if (val == NULL) {
-                    fputs("NULL", stdout);
+                if (val->type == TYPE_NULL) {
+                    fputs("NULL\n", stdout);
                 } else {
                     tphp_fn_var_dump_rec(*val, depth + 1);
                 }

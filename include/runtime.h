@@ -52,14 +52,14 @@ static void tphp_rt_err(const char* msg) {
 
 /** tphp_rt_build_argv — 将 C 的 char** argv 转为 t_array*（万能数组） */
 static inline t_array* tphp_rt_build_argv(int argc, char **argv) {
-    t_array* a = tphp_fn_arr_create();
+    t_array* a = tphp_fn_arr_create(0);
     if (a == NULL) return NULL;
     for (int i = 0; i < argc; i++) {
         if (argv[i] != NULL) {
             t_string s = {argv[i], (int)strlen(argv[i])};
-            tphp_fn_arr_push(a, VAR_STRING(s));
+            a = tphp_fn_arr_push(a, VAR_STRING(s));
         } else {
-            tphp_fn_arr_push(a, VAR_STRING(((t_string){NULL, 0})));
+            a = tphp_fn_arr_push(a, VAR_STRING(((t_string){NULL, 0})));
         }
     }
     return a;

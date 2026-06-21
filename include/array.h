@@ -1,279 +1,237 @@
 #pragma once
+// ============================================================
+// PHP 万能数组 API — yyjson 风格 flat memory
+//
+//   • 所有 entry 在一块 malloc 中（单次分配/释放）
+//   • push 2x 扩容 realloc 无需逐 entry malloc
+//   • 键: int | string，值: 任意 t_var
+//   • 引用计数 + 嵌套数组自动 retain/free
+// ============================================================
 
 #include <stdlib.h>
 #include <string.h>
+#include <stdio.h>
 #include "types.h"
+#include "runtime.h"
 
-// ============================================================
-// PHP 万能数组 API
-//
-//   键: int | string，值: 任意 t_var
-//   堆分配 + 引用计数，递归释放嵌套数组
-//
-// PHP → C 转译示例:
-//   $a = [1, "hi", true];          → t_array* a = ... tphp_fn_arr_push(a, VAR_INT(1)) ...
-//   $a["key"] = 42;                → tphp_fn_arr_set_str(a, STR_LIT("key"), VAR_INT(42))
-//   $b = $a[0];                    → t_var* b = tphp_fn_arr_index(a, 0);
-//   $nested = [1, [2, 3]];         → 嵌套时 t_array* 自动引用计数
-// ============================================================
-
-// ── 辅助函数前向声明（GCC 兼容） ──────────────────────
 static int tphp_fn_str_hash(t_string s);
 
-// ── 生命周期 ─────────────────────────────────────────────
+// === Lifecycle ===
 
-// ── t_array 对象池（避免频繁 calloc/free） ──────────
-#define T_ARRAY_POOL_MAX 256
-static t_array *t_array_pool[T_ARRAY_POOL_MAX];
-static int      t_array_pool_top = -1;
-
-/** 创建空数组（优先从对象池复用） */
-static inline t_array* tphp_fn_arr_create(void) {
-    t_array *a;
-    if (t_array_pool_top >= 0) {
-        a = t_array_pool[t_array_pool_top--];
-        memset(a, 0, sizeof(t_array));
-    } else {
-        a = (t_array*)malloc(sizeof(t_array));
-        if (a == NULL) return NULL;
-        memset(a, 0, sizeof(t_array));
-    }
+static inline t_array* tphp_fn_arr_create(int cap) {
+    if (cap < 4) cap = 4;
+    size_t sz = sizeof(t_array) + (size_t)cap * sizeof(t_arr_entry);
+    t_array *a = (t_array*)calloc(1, sz);
+    if (a == NULL) return NULL;
     a->refcount = 1;
+    a->capacity = cap;
     return a;
 }
 
-/** 保留数组（refcount++) */
-static inline t_array* tphp_fn_arr_retain(t_array* a) {
-    if (a != NULL) a->refcount++;
+static inline t_array* tphp_fn_arr_retain(t_array *a) {
+    if (a) a->refcount++;
     return a;
 }
 
-/** 释放数组（递归释放所有条目，含嵌套数组） */
-void tphp_fn_arr_free(t_array* a);
-// 注：实现在下方，因为递归需要完整定义
+void tphp_fn_arr_free(t_array *a);  // forward decl, implemented below
 
-// ── 写操作 ────────────────────────────────────────
+// === Internal: grow ===
 
-/** 确保容量 */
-static inline void tphp_fn_arr_grow(t_array* a, int need) {
-    if (a == NULL || need <= a->capacity) return;
-    int nc = a->capacity ? a->capacity * 2 : 8;
+static inline t_array* tphp_fn_arr_grow(t_array *a, int need) {
+    if (a == NULL || need <= a->capacity) return a;
+    int nc = a->capacity ? a->capacity * 2 : 4;
     if (nc < need) nc = need;
-    t_entry* ne = (t_entry*)realloc(a->entries, (size_t)nc * sizeof(t_entry));
-    if (ne == NULL) return;
-    a->entries = ne;
-    a->capacity = nc;
+    size_t sz = sizeof(t_array) + (size_t)nc * sizeof(t_arr_entry);
+    t_array *na = (t_array*)realloc(a, sz);
+    if (na == NULL) return a;
+    na->capacity = nc;
+    return na;
 }
 
-/** 追加元素（自动 int 键，类似 $a[] = val） */
-static inline void tphp_fn_arr_push(t_array* a, t_var val) {
-    if (a == NULL) return;
-    tphp_fn_arr_grow(a, a->length + 1);
-    // 分配 key
-    t_var* k = (t_var*)malloc(sizeof(t_var));
-    if (k == NULL) return;
-    k->type = TYPE_INT;
-    k->value._int = (t_int)a->length;
-    // 分配 value
-    t_var* v = (t_var*)malloc(sizeof(t_var));
-    if (v == NULL) { free(k); return; }
-    *v = val;
-    // 如果 push 的是数组，retain 它
-    if (val.type == TYPE_ARRAY && val.value._array != NULL) {
-        tphp_fn_arr_retain(val.value._array);
-    }
-    // 计算 hash
-    int hash = (int)(size_t)a->length;
-    a->entries[a->length] = (t_entry){k, v, hash};
+// === Push (int-key append) ===
+
+static inline t_array* tphp_fn_arr_push(t_array *a, t_var val) {
+    if (a == NULL) return NULL;
+    a = tphp_fn_arr_grow(a, a->length + 1);
+    a->entries[a->length].key.type = TYPE_INT;
+    a->entries[a->length].key.value._int = a->length;
+    a->entries[a->length].val = val;
     a->length++;
+    return a;
 }
 
-/** 设置字符串键 */
-static inline void tphp_fn_arr_set_str(t_array* a, t_string key, t_var val) {
-    if (a == NULL) return;
-    // 查找是否已存在
+// === Set by int key ===
+
+static inline t_array* tphp_fn_arr_set_int(t_array *a, t_int key, t_var val) {
+    if (a == NULL || key < 0) return a;
+    // 线性扫描：如果已存在同键则覆盖
+    for (int i = 0; i < a->length; i++) {
+        if (a->entries[i].key.type == TYPE_INT && a->entries[i].key.value._int == key) {
+            a->entries[i].val = val;
+            return a;
+        }
+    }
+    // 追加
+    a = tphp_fn_arr_grow(a, a->length + 1);
+    a->entries[a->length].key.type = TYPE_INT;
+    a->entries[a->length].key.value._int = key;
+    a->entries[a->length].val = val;
+    a->length++;
+    return a;
+}
+
+// === Set by str key ===
+
+static inline t_array* tphp_fn_arr_set_str(t_array *a, t_string key, t_var val) {
+    if (a == NULL) return a;
+    // 线性扫描：覆盖已存在
+    for (int i = 0; i < a->length; i++) {
+        if (a->entries[i].key.type == TYPE_STRING &&
+            tphp_rt_str_eq(a->entries[i].key.value._string, key)) {
+            a->entries[i].val = val;
+            return a;
+        }
+    }
+    // 追加
+    a = tphp_fn_arr_grow(a, a->length + 1);
+    a->entries[a->length].key.type = TYPE_STRING;
+    a->entries[a->length].key.value._string = tphp_rt_str_dup(key);
+    a->entries[a->length].val = val;
+    a->length++;
+    return a;
+}
+
+// === Get by int key (returns t_var*) ===
+
+static inline t_var* tphp_fn_arr_get_int(t_array *a, t_int key) {
+    if (a == NULL) return NULL;
+    for (int i = 0; i < a->length; i++) {
+        if (a->entries[i].key.type == TYPE_INT && a->entries[i].key.value._int == key)
+            return &a->entries[i].val;
+    }
+    return NULL;
+}
+
+// === Get by str key (returns t_var*) ===
+
+static inline t_var* tphp_fn_arr_get_str(t_array *a, t_string key) {
+    if (a == NULL) return NULL;
     int khash = tphp_fn_str_hash(key);
     for (int i = 0; i < a->length; i++) {
-        if (a->entries[i].key == NULL) continue;
-        if (a->entries[i].hash == khash &&
-            a->entries[i].key->type == TYPE_STRING &&
-            tphp_rt_str_eq(a->entries[i].key->value._string, key)) {
-            // 替换 value
-            if (a->entries[i].value->type == TYPE_ARRAY && a->entries[i].value->value._array != NULL) {
-                tphp_fn_arr_free(a->entries[i].value->value._array);
-            }
-            *a->entries[i].value = val;
-            if (val.type == TYPE_ARRAY && val.value._array != NULL) {
-                tphp_fn_arr_retain(val.value._array);
-            }
-            return;
-        }
+        if (a->entries[i].key.type == TYPE_STRING &&
+            tphp_rt_str_eq(a->entries[i].key.value._string, key))
+            return &a->entries[i].val;
     }
-    // 新增
-    tphp_fn_arr_grow(a, a->length + 1);
-    t_var* k = (t_var*)malloc(sizeof(t_var));
-    if (k == NULL) return;
-    k->type = TYPE_STRING;
-    k->value._string = key;
-    t_var* v = (t_var*)malloc(sizeof(t_var));
-    if (v == NULL) { free(k); return; }
-    *v = val;
-    if (val.type == TYPE_ARRAY && val.value._array != NULL) {
-        tphp_fn_arr_retain(val.value._array);
-    }
-    a->entries[a->length] = (t_entry){k, v, khash};
-    a->length++;
+    return NULL;
 }
 
-/** 设置整数键 */
-static inline void tphp_fn_arr_set_int(t_array* a, t_int key, t_var val) {
-    if (a == NULL) return;
-    int khash = (int)(size_t)key;
-    for (int i = 0; i < a->length; i++) {
-        if (a->entries[i].key == NULL) continue;
-        if (a->entries[i].hash == khash &&
-            a->entries[i].key->type == TYPE_INT &&
-            a->entries[i].key->value._int == key) {
-            if (a->entries[i].value->type == TYPE_ARRAY && a->entries[i].value->value._array != NULL) {
-                tphp_fn_arr_free(a->entries[i].value->value._array);
-            }
-            *a->entries[i].value = val;
-            if (val.type == TYPE_ARRAY && val.value._array != NULL) {
-                tphp_fn_arr_retain(val.value._array);
-            }
-            return;
-        }
-    }
-    tphp_fn_arr_grow(a, a->length + 1);
-    t_var* k = (t_var*)malloc(sizeof(t_var));
-    if (k == NULL) return;
-    k->type = TYPE_INT;
-    k->value._int = key;
-    t_var* v = (t_var*)malloc(sizeof(t_var));
-    if (v == NULL) { free(k); return; }
-    *v = val;
-    if (val.type == TYPE_ARRAY && val.value._array != NULL) {
-        tphp_fn_arr_retain(val.value._array);
-    }
-    a->entries[a->length] = (t_entry){k, v, khash};
-    a->length++;
+// === Typed getters for codegen ===
+
+static inline t_int tphp_arr_item_int(t_array *a, int idx) {
+    if (a == NULL || idx < 0 || idx >= a->length) return 0;
+    t_var *v = &a->entries[idx].val;
+    return (v->type == TYPE_INT) ? v->value._int : 0;
 }
 
-// ── 读操作 ────────────────────────────────────────
+static inline t_float tphp_arr_item_float(t_array *a, int idx) {
+    if (a == NULL || idx < 0 || idx >= a->length) return 0.0;
+    t_var *v = &a->entries[idx].val;
+    return (v->type == TYPE_FLOAT) ? v->value._float : 0.0;
+}
 
-/** 按位置索引获取 */
-static inline t_var* tphp_fn_arr_index(t_array* a, int idx) {
+static inline t_string tphp_arr_item_str(t_array *a, int idx) {
+    if (a == NULL || idx < 0 || idx >= a->length) return (t_string){NULL, 0};
+    t_var *v = &a->entries[idx].val;
+    if (v->type == TYPE_STRING) return v->value._string;
+    if (v->type == TYPE_INT) {
+        static char _b[32];
+        int n = snprintf(_b, sizeof(_b), "%lld", (long long)v->value._int);
+        return (t_string){.data = _b, .length = n};
+    }
+    return (t_string){NULL, 0};
+}
+
+static inline t_bool tphp_arr_item_bool(t_array *a, int idx) {
+    if (a == NULL || idx < 0 || idx >= a->length) return false;
+    t_var *v = &a->entries[idx].val;
+    return (v->type == TYPE_BOOL) ? v->value._bool : (v->type == TYPE_INT && v->value._int != 0);
+}
+
+static inline t_array* tphp_arr_item_array(t_array *a, int idx) {
     if (a == NULL || idx < 0 || idx >= a->length) return NULL;
-    return a->entries[idx].value;
+    t_var *v = &a->entries[idx].val;
+    return (v->type == TYPE_ARRAY) ? v->value._array : NULL;
 }
 
-/** 按位置获取 int 值 */
-static inline t_int tphp_arr_item_int(t_array* a, int idx) {
-    t_var* v = tphp_fn_arr_index(a, idx);
-    if (v == NULL || v->type != TYPE_INT) return 0;
-    return v->value._int;
-}
-/** 按位置获取 float 值 */
-static inline t_float tphp_arr_item_float(t_array* a, int idx) {
-    t_var* v = tphp_fn_arr_index(a, idx);
-    if (v == NULL || v->type != TYPE_FLOAT) return 0.0;
-    return v->value._float;
-}
-/** 按位置获取 string 值 */
-static inline t_string tphp_arr_item_str(t_array* a, int idx) {
-    t_var* v = tphp_fn_arr_index(a, idx);
-    if (v == NULL || v->type != TYPE_STRING) return (t_string){NULL, 0};
-    return v->value._string;
-}
-/** 按位置获取 bool 值 */
-static inline t_bool tphp_arr_item_bool(t_array* a, int idx) {
-    t_var* v = tphp_fn_arr_index(a, idx);
-    if (v == NULL || v->type != TYPE_BOOL) return false;
-    return v->value._bool;
+static inline void* tphp_arr_item_object(t_array *a, int idx) {
+    if (a == NULL || idx < 0 || idx >= a->length) return NULL;
+    t_var *v = &a->entries[idx].val;
+    return (v->type == TYPE_OBJECT) ? v->value._ptr : NULL;
 }
 
-/** 按 int 键查找 */
-static inline t_var* tphp_fn_arr_get_int(t_array* a, t_int key) {
-    if (a == NULL) return NULL;
-    int khash = (int)(size_t)key;
-    for (int i = 0; i < a->length; i++) {
-        if (a->entries[i].key != NULL &&
-            a->entries[i].hash == khash &&
-            a->entries[i].key->type == TYPE_INT &&
-            a->entries[i].key->value._int == key) {
-            return a->entries[i].value;
-        }
-    }
-    return NULL;
+static inline t_callback tphp_arr_item_callback(t_array *a, int idx) {
+    if (a == NULL || idx < 0 || idx >= a->length) return (t_callback){NULL, NULL};
+    t_var *v = &a->entries[idx].val;
+    return (v->type == TYPE_CALLBACK) ? v->value._callback : (t_callback){NULL, NULL};
 }
 
-/** 按 string 键查找 */
-static inline t_var* tphp_fn_arr_get_str(t_array* a, t_string key) {
-    if (a == NULL) return NULL;
-    int khash = tphp_fn_str_hash(key);
-    for (int i = 0; i < a->length; i++) {
-        if (a->entries[i].key != NULL &&
-            a->entries[i].hash == khash &&
-            a->entries[i].key->type == TYPE_STRING &&
-            tphp_rt_str_eq(a->entries[i].key->value._string, key)) {
-            return a->entries[i].value;
-        }
-    }
-    return NULL;
+// === Index access (for foreach) ===
+
+static inline t_var* tphp_fn_arr_index(t_array *a, int idx) {
+    if (a == NULL || idx < 0 || idx >= a->length) return NULL;
+    return &a->entries[idx].val;
 }
 
-/** 元素个数 */
-static inline int tphp_fn_arr_count(t_array* a) {
+// === Count ===
+
+static inline int tphp_fn_arr_count(t_array *a) {
     return a ? a->length : 0;
 }
 
-/** 是否存在 int 键 */
-static inline bool tphp_fn_arr_has_int(t_array* a, t_int key) {
-    return tphp_fn_arr_get_int(a, key) != NULL;
+// === String-key typed getters ===
+
+static inline t_int tphp_fn_arr_get_str_int(t_array *a, t_string key) {
+    t_var *v = tphp_fn_arr_get_str(a, key);
+    if (v == NULL) return 0;
+    if (v->type == TYPE_INT) return v->value._int;
+    if (v->type == TYPE_FLOAT) return (t_int)v->value._float;
+    return 0;
 }
 
-/** 是否存在 str 键 */
-static inline bool tphp_fn_arr_has_str(t_array* a, t_string key) {
-    return tphp_fn_arr_get_str(a, key) != NULL;
+static inline t_string tphp_fn_arr_get_str_str(t_array *a, t_string key) {
+    t_var *v = tphp_fn_arr_get_str(a, key);
+    if (v == NULL) return (t_string){NULL, 0};
+    if (v->type == TYPE_STRING) return v->value._string;
+    if (v->type == TYPE_INT) {
+        static char _b[32];
+        int n = snprintf(_b, sizeof(_b), "%lld", (long long)v->value._int);
+        return (t_string){.data = _b, .length = n};
+    }
+    return (t_string){NULL, 0};
 }
 
-// ── 释放实现 ────────────────────────────────────────
+// === Free (single free for all entries + itself) ===
 
-void tphp_fn_arr_free(t_array* a) {
+void tphp_fn_arr_free(t_array *a) {
     if (a == NULL) return;
     if (--a->refcount > 0) return;
     for (int i = 0; i < a->length; i++) {
-        if (a->entries[i].key != NULL) {
-            free(a->entries[i].key);
-        }
-        if (a->entries[i].value != NULL) {
-            t_var* v = a->entries[i].value;
-            if (v->type == TYPE_ARRAY && v->value._array != NULL) {
-                tphp_fn_arr_free(v->value._array);
-            }
-            free(v);
-        }
+        // 释放 string key（堆分配的）
+        if (a->entries[i].key.type == TYPE_STRING)
+            tphp_rt_str_free(&a->entries[i].key.value._string);
+        // 递归释放嵌套数组
+        if (a->entries[i].val.type == TYPE_ARRAY && a->entries[i].val.value._array != NULL)
+            tphp_fn_arr_free(a->entries[i].val.value._array);
     }
-    free(a->entries);
-
-    // 回收到对象池
-    if (t_array_pool_top < T_ARRAY_POOL_MAX - 1) {
-        t_array_pool[++t_array_pool_top] = a;
-    } else {
-        free(a);
-    }
+    free(a);  // 单次 free
 }
 
-// ── 辅助函数 ────────────────────────────────────────
+// === Hash (unchanged) ===
 
-/** 字符串 hash（djb2） */
 static inline int tphp_fn_str_hash(t_string s) {
-    int hash = 5381;
-    if (s.data == NULL) return hash;
-    for (int i = 0; i < s.length; i++) {
-        hash = ((hash << 5) + hash) + (unsigned char)s.data[i]; // hash * 33 + c
-    }
-    return hash;
+    if (s.data == NULL) return 0;
+    unsigned int h = 5381;
+    for (int i = 0; i < s.length; i++)
+        h = ((h << 5) + h) + (unsigned char)s.data[i];
+    return (int)h;
 }
-
-
