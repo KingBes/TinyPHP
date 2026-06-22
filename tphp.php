@@ -124,7 +124,7 @@ if (!is_dir($includeDir))    die("Error: include directory not found: {$includeD
 
 // --- Phase 1: Transpile all PHP → C ---
 $allFilesStr = implode(', ', array_map(fn($f) => basename($f), $files));
-echo "[1/2] Transpiling {$allFilesStr} → C...\n";
+echo "[1/2] Transpiling {$allFilesStr} => C...\n";
 
     try {
     $mainClass = null;
