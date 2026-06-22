@@ -271,10 +271,23 @@ $tccOutput = [];
 $retval = 0;
 exec($cmd, $tccOutput, $retval);
 
-if ($retval !== 0) {
+if ($retval !== 0 || !file_exists($outExe) || filesize($outExe) < 64) {
     echo "✗ TCC compile failed:\n";
-    echo implode("\n", $tccOutput) . "\n";
-    exit(1);
+    if (!empty($tccOutput)) echo implode("\n", $tccOutput) . "\n";
+    // macOS fallback: try system cc (clang)
+    if (PHP_OS_FAMILY === 'Darwin') {
+        echo "  (retrying with system cc...)\n";
+        $cmd2 = sprintf('cc -I"%s" -o "%s" "%s" 2>&1', $includeDir, $outExe, $cFile);
+        $out2 = [];
+        $rv2 = 0;
+        exec($cmd2, $out2, $rv2);
+        if ($rv2 !== 0 || !file_exists($outExe) || filesize($outExe) < 64) {
+            if (!empty($out2)) echo implode("\n", $out2) . "\n";
+            exit(1);
+        }
+    } else {
+        exit(1);
+    }
 }
 
 echo "       ✓ {$outExe}\n";
