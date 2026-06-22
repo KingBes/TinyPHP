@@ -51,7 +51,9 @@ jobs:
         shell: pwsh
         run: |
           php.exe build.php
-          cmd /c "COPY /b micro.sfx + tphp.phar tphp.exe"
+          $micro = [System.IO.File]::ReadAllBytes('micro.sfx')
+          $phar  = [System.IO.File]::ReadAllBytes('tphp.phar')
+          [System.IO.File]::WriteAllBytes('tphp.exe', $micro + $phar)
 
       - name: Test
         shell: pwsh
@@ -107,7 +109,7 @@ jobs:
 
       - name: BUILD PHAR
         run: |
-          ./php build.php
+          ./php -d "phar.readonly=0" build.php
           cat micro.sfx tphp.phar > tphp
           chmod +x tphp
           ls -la tphp
@@ -165,7 +167,7 @@ jobs:
 
       - name: BUILD PHAR
         run: |
-          ./php build.php
+          ./php -d "phar.readonly=0" build.php
           cat micro.sfx tphp.phar > tphp
           chmod +x tphp
           ls -la tphp
@@ -233,7 +235,7 @@ jobs:
 
       - name: BUILD PHAR
         run: |
-          ./php build.php
+          ./php -d "phar.readonly=0" build.php
           cat micro.sfx tphp.phar > tphp
           chmod +x tphp
           ls -la tphp
