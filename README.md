@@ -57,6 +57,17 @@ PHP 源码 → Lexer → Token[] → Parser → AST → CodeGenerator → .c →
 
 ## 支持的语言特性
 
+### 近期更新
+
+| 日期 | 更新 |
+|------|------|
+| 2026-06 | **闭包捕获变量**：堆分配捕获环境 + 资源追踪，`t_var`/对象/`null` 等全部类型正确推导，`unset` 安全释放 |
+| 2026-06 | **for 循环作用域提升**：`for($i=0;…)` 声明的变量自动提升到函数作用域，循环后仍可访问 |
+| 2026-06 | **foreach 字符串 key**：`foreach($map as $k=>$v)` 自动检测字符串键，`$k` 类型为 `t_string` |
+| 2026-06 | **match 无 default 安全**：无 `default` 分支时自动零值初始化，防止未定义行为 |
+| 2026-06 | **数组/参数尾部逗号**：`[1,2,]` 和 `foo(1,2,)` 尾部逗号解析支持 |
+| 2026-06 | **代码生成质量**：`wrapTvarAssign`/`wrapArrayElement`/`inferType` 增强类型推导精度 |
+
 ### 类型系统
 
 | PHP | C |
@@ -269,3 +280,60 @@ bash build.sh
 ## 许可证
 
 MIT
+
+---
+
+## 语法待完善清单
+
+> 以下为可实现的语法增强项，按难度排序。不包括 `eval/include/throw/try-catch/yield` 等 AOT 不支持特性。
+
+### 低难度（⭐）
+
+| 特性 | 说明 | 涉及文件 |
+|------|------|----------|
+| `===` / `!==` 严格比较 | Lexer 增加 `===` `!==` 三字符 Token，Parser/CodeGen 映射为 `==` `!=` | Lexer, TokenType |
+| `?type` 可空类型标注 | `?int` → Lexer 增加 `?` Token，Parser `parseType` 识别 `?type` 语法 | Lexer, Parser |
+| `&&=` `\|\|=` `??=` 复合赋值 | Lexer 增加三字符 Token，Parser `parseExprStmt` 匹配，CodeGen 生成对应 C | Lexer, Parser, CodeGen |
+| `&=` `\|=` `^=` `<<=` `>>=` `%=` `**=` | 位运算复合赋值，同上流程 | Lexer, Parser, CodeGen |
+| `static` 返回类型 | Parser `parseType` 识别 `static` 关键字 | Parser, CodeGen |
+| `never` 返回类型 | PHP 8.1，Lexer 增加关键字 | Lexer, Parser |
+| `iterable` 伪类型 | Lexer 识别 `iterable`，映射为 `t_array*` | Lexer, CodeGen |
+| `readonly` 属性 | Parser 属性声明中识别 `readonly` 修饰符 | Parser, CodeGen |
+| `final` 关键字 | 类/方法添加 `final` 修饰（编译期检查） | Parser, CodeGen |
+| `intval/floatval/strval/boolval` | 内置类型转换函数，C 实现 ~30 行 | CodeGen, builtin.h |
+| `rand/mt_rand` | 随机数函数 | CodeGen, builtin.h |
+| `defined("CONST")` | 常量是否定义，编译期可知 | CodeGen |
+| `@` 错误抑制符 | 表达式前缀标记，编译期忽略 | Lexer, Parser |
+| 反引号执行 | `` `cmd` `` → `system(cmd)` | Lexer, CodeGen |
+| `$s[0]` 字符串偏移访问 | 单字符读取 | Parser, CodeGen |
+
+### 中等难度（⭐⭐）
+
+| 特性 | 说明 | 涉及文件 |
+|------|------|----------|
+| 参数默认值 | `function foo(int $x = 10)` — Parser 解析默认值，CodeGen 在调用侧补全 | Parser, CodeGen |
+| 构造器属性提升 | `__construct(public int $x)` — Parser 语法糖展开为属性声明+参数 | Parser |
+| 箭头函数 `fn($x) => $x * 2` | Lexer 识别 `fn`，Parser 解析短语法，CodeGen 生成闭包 | Lexer, Parser, CodeGen |
+| 可变参数 `...$args` | 声明侧和调用侧的 spread 语法 | Parser, CodeGen |
+| First-class callable `$fn = strlen(...)` | PHP 8.1 语法 | Parser, CodeGen |
+| 命名参数 `foo(name: "test")` | 调用侧参数名匹配 | Parser, CodeGen |
+| Nullsafe `$obj?->method()` | 链式调用 null 安全 | Parser, CodeGen |
+| foreach key 支持 string+int 混合 | 当前仅支持纯 string 或纯 int key 类型检测 | CodeGen |
+| `strlen/substr/strpos` | 字符串操作函数，C 实现 ~60 行 | CodeGen, builtin.h |
+| `trim/ltrim/rtrim` | 空白字符修剪 | CodeGen, builtin.h |
+| `sprintf` | 格式化字符串 | CodeGen, builtin.h |
+| `file_get_contents/file_put_contents` | 文件 I/O | CodeGen, builtin.h |
+| `array_shift` | 头部弹出 | CodeGen, builtin.h |
+| 枚举方法 | `enum` 内定义方法 | Parser, CodeGen |
+
+### 较高难度（⭐⭐⭐）
+
+| 特性 | 说明 | 涉及文件 |
+|------|------|----------|
+| 类继承 `class B extends A` | 继承链 + VTable 扩展 + `parent::` | Parser, CodeGen, types.h |
+| 接口 `interface` / `implements` | 接口定义 + 实现检查 | Parser, CodeGen |
+| 抽象类 `abstract class` | 抽象方法 + 实例化禁止 | Parser, CodeGen |
+| `t_string` SSO 优化 | 24 字节内联缓冲区，字符串拼接 2-3x 加速 | types.h, runtime.h |
+| `array_filter/array_map/array_reduce` | 闭包作为数组操作参数 | CodeGen, builtin.h |
+| `sort/usort` 系列 | 排序函数 | CodeGen, builtin.h |
+

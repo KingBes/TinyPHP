@@ -1238,7 +1238,7 @@ class Parser
                 } else {
                     $entries[] = new ArrayEntryNode(null, $first);
                 }
-            } while ($this->match(TokenType::COMMA));
+            } while ($this->match(TokenType::COMMA) && !$this->check(TokenType::RBRACKET));
         }
         $this->consume(TokenType::RBRACKET, 'Expected ]');
         return new ArrayLiteralExpr($entries);
@@ -1321,7 +1321,7 @@ class Parser
         if (!$this->check(TokenType::RPAREN)) {
             do {
                 $args[] = $this->parseExpr();
-            } while ($this->match(TokenType::COMMA));
+            } while ($this->match(TokenType::COMMA) && !$this->check(TokenType::RPAREN));
         }
         return $args;
     }

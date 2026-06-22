@@ -521,11 +521,17 @@ $elapsed = hrtime() - $start;
 | **编译期类型折叠** | `is_int(42)` 等静态类型在编译期求值为 `true`/`false` |
 | **嵌套类型追踪** | 2 层数组自动追踪元素类型（`$arr[0][0]`） |
 | **JSON 编解码** | `json_encode`/`json_decode` 支持基本类型+数组+对象+转义 |
-| **常量三作用域** | 全局 `const` / 命名空间 `const` / 类 `public|private const TYPE` |
+| **常量三作用域** | 全局 `const` / 命名空间 `const` / 类 `public\|private const TYPE` |
 | **零堆分配函数** | `time` `date` `hrtime` 使用静态缓冲区 |
 | **error 安全退出** | 遍历全局资源链表释放所有对象/数组/字符串 |
 | **跨平台 + 三编译器** | TCC / GCC / Clang 编译通过，`#ifdef _WIN32` 适配 |
 | **TCC 兼容** | 避免 TCC 不支持的 C99 特性（无隐式声明，无循环 include） |
+| **闭包堆捕获** | `use` 变量堆分配捕获环境 + `tphp_rt_register(type=3)` 资源追踪，内存安全 |
+| **for 作用域提升** | `funcScopeDecls` 机制将 for-init 变量提升到函数作用域 |
+| **foreach 字符串键** | 自动检测 `arrValueTypes`，`foreach($map as $k=>$v)` 支持 `$k` 为 `t_string` |
+| **match 安全性** | 无 `default` 分支时自动零值初始化临时变量 |
+| **尾部逗号** | 数组字面量和函数参数支持 PHP 7.3+ 尾部逗号 |
+| **类型推导增强** | `wrapTvarAssign`/`wrapArrayElement`/`inferType` 覆盖 `PostfixExpr`/`CompoundAssignExpr`/`CastExpr` 等 |
 
 ---
 

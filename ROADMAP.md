@@ -67,13 +67,11 @@ typedef struct {
 
 **实际收益**：已知长度数组零 `realloc`。
 
-### 2.7 for 循环作用域提升
+### 2.7 ✅ for 循环作用域提升（已完成）
 
-**现状**：`for ($i=0; ...)` 声明的 `$i` 出循环体即失效，跨循环需额外声明。
+**做法**：CodeGen 新增 `funcScopeDecls` 收集机制：`visitForStmt` 将未声明变量标记为函数作用域声明，`visitMethod`/`visitFunction` 两阶段生成——先生成 body 填充声明，再将声明注入到函数体开头。
 
-**目标**：CodeGen 自动将 for-init 变量提升到函数作用域（C 兼容）。
-
-**预估收益**：消除编译错误，减少用户心智负担。
+**实际收益**：所有 for-init 变量在函数体内全局可见，消除编译错误。
 
 ---
 
@@ -100,7 +98,7 @@ typedef struct {
 | t_var 对象池 | ⭐ | 中 (5-10x) | ~50 行 C | ✅ 无需（t_var 栈分配） |
 | 批量数组构建 | ⭐⭐ | 中 (5-10x) | ~60 行 CodeGen | ✅ 已完成（预分配容量） |
 | SSO 字符串 | ⭐⭐ | 中 (2-3x) | ~80 行 C + types.h 改 | 短期 |
-| for 作用域提升 | ⭐ | 低 (消除 bug) | ~30 行 CodeGen | 顺手修 |
+| for 作用域提升 | ⭐ | 低 (消除 bug) | ~30 行 CodeGen | ✅ 已完成（funcScopeDecls） |
 
 ---
 

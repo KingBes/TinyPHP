@@ -103,7 +103,7 @@ ExprNode（抽象，含 line/column）
 
 ### 2.4 CodeGenerator（代码生成）
 
-**文件**: `src/CodeGenerator.php`（~2650 行）
+**文件**: `src/CodeGenerator.php`（~2900 行）
 
 **关键内部状态**：
 
@@ -112,9 +112,10 @@ ExprNode（抽象，含 line/column）
 | `$this->className` | 当前类的 C 名 |
 | `$this->varTypes` | `varName → C 类型` 映射 |
 | `$this->declaredVars` | 已声明变量集合 |
+| `$this->funcScopeDecls` | for-init 变量提升到函数作用域的声明集合（`varName → cType`） |
 | `$this->scopeObjects` | 作用域对象列表（方法结尾自动析构） |
 | `$this->arrElementTypes` | 数组元素类型追踪 |
-| `$this->arrValueTypes` | 数组 per-key 类型追踪 |
+| `$this->arrValueTypes` | 数组 per-key 类型追踪（用于 foreach string key 检测） |
 | `$this->arrNestedTypes` | 嵌套数组元素类型追踪（2 层） |
 | `$this->classPropTypes` | 类属性类型表 |
 | `$this->classMethodRetTypes` | 类方法返回类型表 |
@@ -260,15 +261,15 @@ ExprNode（抽象，含 line/column）
 | `src/Token.php` | ~20 | Token 值对象 |
 | `src/AST/Node.php` | ~820 | AST 节点 + Visitor 接口 |
 | `src/Lexer.php` | ~680 | 词法分析（链式属性插值、heredoc、运算符） |
-| `src/Parser.php` | ~1380 | 递归下降解析 |
-| `src/CodeGenerator.php` | ~2650 | C 代码生成（is_*/数组函数/nested_types/arrNestedTypes/propType链式） |
+| `src/Parser.php` | ~1490 | 递归下降解析（尾部逗号支持） |
+| `src/CodeGenerator.php` | ~2900 | C 代码生成（for作用域提升/foreach str key/match安全/闭包堆捕获/类型推导增强） |
 | `include/types.h` | ~130 | C 类型系统 + likely/unlikely 宏 |
 | `include/val.h` | ~45 | 便捷宏 |
 | `include/array.h` | ~310 | PHP 数组（128 槽复用池 + 1.5× 增长因子 + likely/unlikely） |
-| `include/runtime.h` | ~320 | 运行时（64KB 字符串池、资源追踪、error、幂运算） |
+| `include/runtime.h` | ~320 | 运行时（64KB 字符串池、资源追踪、error、type=3 通用堆清理） |
 | `include/builtin.h` | ~330 | 公开内置（类型检测、数组函数、implode/explode） |
 | `include/os/times.h` | ~95 | 系统函数（跨平台） |
 | `include/os/json.h` | ~370 | JSON 编解码（递归编码+递归下降解析+对象检测） |
 | `include/common.h` | ~15 | 总入口 |
-| `test/var/` | 35+ 文件 | 测试用例（array_full/json_test/json_complex/nested_*/bench_*） |
+| `test/var/` | 35+ 文件 | 测试用例（closure_capture/control_flow_advanced/match_expr/bench_*） |
 | `test/files/` | 6+ 文件 | 多文件测试（const 多作用域/demo） |

@@ -280,6 +280,7 @@ static inline void tphp_rt_free_all(void) {
                 case 0: tphp_rt_object_free((t_object *)n->ptr); break;
                 case 1: tphp_fn_arr_free((t_array *)n->ptr);    break;
                 case 2: { t_string *s = (t_string *)n->ptr; free(s->data); free(s); } break;
+                case 3: free(n->ptr); break; /* closure capture env / generic heap */
             }
         }
         free(n);
