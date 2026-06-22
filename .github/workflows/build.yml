@@ -64,7 +64,7 @@ jobs:
       - name: Package
         shell: pwsh
         run: |
-          mkdir release
+          mkdir release/tphp
           Copy-Item tphp.exe release/tphp/
 
       - uses: actions/upload-artifact@v4
@@ -201,6 +201,7 @@ jobs:
 
       - name: Build TCC
         run: |
+          set -e
           SDK=$(xcrun --show-sdk-path)
           git clone --depth 1 --branch mob https://repo.or.cz/tinycc.git tinycc-src
           cd tinycc-src
@@ -216,8 +217,16 @@ jobs:
           make
           make install
           cd ..
-          cp tcc/tcc tcc/tcc 2>/dev/null || true
-          ls -la tcc/tcc
+          # 整理 TCC 目录结构，使 -B 能找到运行时文件（与 build.sh 一致）
+          cp tcc/lib/tcc/libtcc1.a tcc/ 2>/dev/null || true
+          cp tcc/lib/tcc/*.o       tcc/ 2>/dev/null || true
+          mkdir -p tcc/include
+          cp -r tcc/lib/tcc/include/* tcc/include/ 2>/dev/null || true
+          # 补充 SDK CRT 文件
+          cp $SDK/usr/lib/crt1.o tcc/lib/ 2>/dev/null || true
+          # 验证
+          ls -la tcc/tcc tcc/libtcc1.a
+          ./tcc/tcc -v -v 2>&1 | head -5
 
       - name: Download PHP
         run: |
