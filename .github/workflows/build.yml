@@ -50,7 +50,7 @@ jobs:
       - name: BUILD PHAR
         shell: pwsh
         run: |
-          php.exe build.php
+          php.exe -d "phar.readonly=0" build.php
           $micro = [System.IO.File]::ReadAllBytes('micro.sfx')
           $phar  = [System.IO.File]::ReadAllBytes('tphp.phar')
           [System.IO.File]::WriteAllBytes('tphp.exe', $micro + $phar)
