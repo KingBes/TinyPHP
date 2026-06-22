@@ -121,7 +121,7 @@ jobs:
 
       - name: Package
         run: |
-          mkdir -p release
+          mkdir -p release/tphp
           cp tphp release/tphp/
           chmod +x release/tphp/tphp
 
@@ -179,7 +179,7 @@ jobs:
 
       - name: Package
         run: |
-          mkdir -p release
+          mkdir -p release/tphp
           cp tphp release/tphp/
           chmod +x release/tphp/tphp
 
@@ -247,7 +247,7 @@ jobs:
 
       - name: Package
         run: |
-          mkdir -p release
+          mkdir -p release/tphp
           cp tphp release/tphp/
           chmod +x release/tphp/tphp
 
