@@ -252,7 +252,10 @@ jobs:
       - name: Test
         run: |
           ./tphp test/main/min.php
+          file ./min
+          otool -L ./min || true
           ./min
+          echo "EXIT:$?"
 
       - name: Package
         run: |
