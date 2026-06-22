@@ -226,14 +226,14 @@ echo "[1/2] Transpiling {$allFilesStr} → C...\n";
     $gen   = new CodeGenerator();
     $cFile = $gen->generate($merged, $entryFile, $outDir);
 
-    echo "       ✓ {$cFile}\n";
+    echo "       [YES] {$cFile}\n";
 
 } catch (\Throwable $e) {
-    die("✗ Transpile failed: " . $e->getMessage() . "\n" . $e->getTraceAsString() . "\n");
+    die("[NO] Transpile failed: " . $e->getMessage() . "\n" . $e->getTraceAsString() . "\n");
 }
 
 // --- Phase 2: C compile → binary ---
-echo "[2/2] Compiling → {$outExe}...\n";
+echo "[2/2] Compiling => {$outExe}...\n";
 
 // TCC -B flag: tells TCC where to find its lib/ and include/
 $bFlag = '';
@@ -272,7 +272,7 @@ $retval = 0;
 exec($cmd, $tccOutput, $retval);
 
 if ($retval !== 0 || !file_exists($outExe) || filesize($outExe) < 64) {
-    echo "✗ TCC compile failed:\n";
+    echo "[NO] TCC compile failed:\n";
     if (!empty($tccOutput)) echo implode("\n", $tccOutput) . "\n";
     // macOS fallback: try system cc (clang)
     if (PHP_OS_FAMILY === 'Darwin') {
@@ -290,7 +290,7 @@ if ($retval !== 0 || !file_exists($outExe) || filesize($outExe) < 64) {
     }
 }
 
-echo "       ✓ {$outExe}\n";
+echo "       [YES] {$outExe}\n";
 
 // ============================================================
 /** @param string[] $args
