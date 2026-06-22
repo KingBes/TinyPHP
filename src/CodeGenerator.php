@@ -2357,11 +2357,11 @@ class CodeGenerator implements ASTVisitor
         }
         if ($expr instanceof NewExpr) {
             throw new RuntimeException(
-                sprintf("[%d:%d] 对象不能转换为整数", $expr->line, $expr->column)
+                sprintf("[%d:%d] Object cannot be converted to int", $expr->line, $expr->column)
             );
         }
         if ($expr instanceof UnaryExpr) {
-            return $expr->accept($this); // -(inner) 已经是正确的 int
+            return $expr->accept($this); // -(inner) already correct int
         }
         if ($expr instanceof BinaryExpr && $expr->operator === '.') {
             return 'tphp_rt_parse_int(' . $expr->accept($this) . ')';
@@ -2380,7 +2380,7 @@ class CodeGenerator implements ASTVisitor
                 'null'     => '0',
                 't_array*' => "(({$vn} && tphp_fn_arr_count({$vn}) > 0) ? 1 : 0)",
                 default    => throw new RuntimeException(
-                    sprintf("[%d:%d] 对象不能转换为整数", $expr->line, $expr->column)
+                    sprintf("[%d:%d] Object cannot be converted to int", $expr->line, $expr->column)
                 ),
             };
         }
@@ -2407,7 +2407,7 @@ class CodeGenerator implements ASTVisitor
         }
         if ($expr instanceof NewExpr) {
             throw new RuntimeException(
-                sprintf("[%d:%d] 对象不能转换为浮点数", $expr->line, $expr->column)
+                sprintf("[%d:%d] Object cannot be converted to float", $expr->line, $expr->column)
             );
         }
         if ($expr instanceof UnaryExpr) {
@@ -2429,7 +2429,7 @@ class CodeGenerator implements ASTVisitor
                 'null'     => '0.0',
                 't_array*' => "(({$vn} && tphp_fn_arr_count({$vn}) > 0) ? 1.0 : 0.0)",
                 default    => throw new RuntimeException(
-                    sprintf("[%d:%d] 对象不能转换为浮点数", $expr->line, $expr->column)
+                    sprintf("[%d:%d] Object cannot be converted to float", $expr->line, $expr->column)
                 ),
             };
         }
@@ -2620,7 +2620,7 @@ class CodeGenerator implements ASTVisitor
         if ($expr instanceof ArrayLiteralExpr) {
             if ($strict) {
                 throw new RuntimeException(
-                    sprintf("[%d:%d] 数组不能转换为字符串", $expr->line, $expr->column)
+                    sprintf("[%d:%d] Array cannot be converted to string", $expr->line, $expr->column)
                 );
             }
             return 'STR_LIT("Array")';
@@ -2628,7 +2628,7 @@ class CodeGenerator implements ASTVisitor
         if ($expr instanceof NewExpr) {
             if ($strict) {
                 throw new RuntimeException(
-                    sprintf("[%d:%d] 对象不能转换为字符串", $expr->line, $expr->column)
+                    sprintf("[%d:%d] Object cannot be converted to string", $expr->line, $expr->column)
                 );
             }
             return 'STR_LIT("Object")';
@@ -2646,10 +2646,10 @@ class CodeGenerator implements ASTVisitor
                 't_bool'     => "({$code} ? STR_LIT(\"1\") : STR_LIT(\"\"))",
                 'null'       => 'STR_LIT("")',
                 't_array*'   => $strict
-                    ? throw new RuntimeException(sprintf("[%d:%d] 数组不能转换为字符串", $expr->line, $expr->column))
+                    ? throw new RuntimeException(sprintf("[%d:%d] Array cannot be converted to string", $expr->line, $expr->column))
                     : 'STR_LIT("Array")',
                 default      => $strict
-                    ? throw new RuntimeException(sprintf("[%d:%d] 对象不能转换为字符串", $expr->line, $expr->column))
+                    ? throw new RuntimeException(sprintf("[%d:%d] Object cannot be converted to string", $expr->line, $expr->column))
                     : 'STR_LIT("Object")',
             };
         }

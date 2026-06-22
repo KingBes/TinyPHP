@@ -32,7 +32,7 @@ class Compiler
 
         $source = file_get_contents($phpFile);
         if ($source === false || trim($source) === '') {
-            throw new RuntimeException("文件为空: {$phpFile}");
+            throw new RuntimeException("The file is empty : {$phpFile}");
         }
 
         // Phase 1: Lex
@@ -59,7 +59,7 @@ class Compiler
         $cFile = $this->compile($phpFile, $outputDir);
 
         if (empty($this->tccPath)) {
-            throw new RuntimeException('TCC 路径未配置，无法生成可执行文件');
+            throw new RuntimeException('TCC path not configured, cannot generate executable');
         }
 
         $exeFile = $outputDir . '/' . pathinfo($phpFile, PATHINFO_FILENAME) . '.exe';

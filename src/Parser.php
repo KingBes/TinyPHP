@@ -164,7 +164,7 @@ class Parser
         } elseif ($this->match(TokenType::TYPE_STRING)) {
             $bt = 'string';
         } else {
-            $this->error("枚举只支持 int 或 string 类型，得到 '{$this->peek()->lexeme}'");
+            $this->error("Enum only supports int or string type, got '{$this->peek()->lexeme}'");
         }
 
         $this->consume(TokenType::LBRACE, 'Expected {');
@@ -249,7 +249,7 @@ class Parser
         $short = substr(strrchr($baseName, '\\') ?: ('\\' . $baseName), 1);
         // 全大写/下划线名称 → 常量导入，TinyPHP 不支持跨命名空间常量
         if (self::isConstantName($short)) {
-            $this->error("不支持跨命名空间常量导入 'use {$baseName}'（常量只能在定义命名空间内使用）");
+            $this->error("Cross-namespace constant import not supported: 'use {$baseName}' (constants can only be used within their defining namespace)");
         }
         $this->classImports[$short] = $baseName;
         $this->consume(TokenType::SEMICOLON, 'Expected ;');
@@ -264,7 +264,7 @@ class Parser
         $key = ($alias !== '') ? $alias : substr(strrchr($fqName, '\\') ?: ('\\' . $fqName), 1);
         // 全大写/下划线名称 → 常量导入检测
         if (!$function && self::isConstantName($key)) {
-            $this->error("不支持跨命名空间常量导入 'use {$fqName}'（常量只能在定义命名空间内使用）");
+            $this->error("Cross-namespace constant import not supported: 'use {$fqName}' (constants can only be used within their defining namespace)");
         }
         if ($function) {
             $this->functionImports[$key] = $fqName;
@@ -1398,7 +1398,7 @@ class Parser
             $next = $this->advance();
             $ut = [TokenType::TYPE_INT, TokenType::TYPE_FLOAT, TokenType::TYPE_STRING, TokenType::TYPE_BOOL, TokenType::TYPE_ARRAY, TokenType::TYPE_MIXED, TokenType::IDENTIFIER];
             if (!in_array($next->type, $ut, true)) {
-                $this->error("联合类型中不支持 '{$next->lexeme}'");
+                $this->error("Unsupported type in union: '{$next->lexeme}'");
             }
             $result .= '|' . $next->lexeme;
         }

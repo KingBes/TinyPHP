@@ -95,7 +95,7 @@ class Lexer
             $this->pos = 5; // skip <?php
             $this->column = 6;
         } else {
-            $this->error('源文件必须以 <?php 开头');
+            $this->error('The source file must start with <?php');
         }
 
         while ($this->pos < strlen($this->source)) {
@@ -274,7 +274,7 @@ class Lexer
             return;
         }
 
-        $this->error("意外的字符: '{$ch}'");
+        $this->error("Unexpected character: '{$ch}'");
     }
 
     private function peek(int $offset = 0): string
@@ -318,7 +318,7 @@ class Lexer
             }
             $this->advance();
         }
-        $this->error('未闭合的块注释');
+        $this->error('Unterminated block comment');
     }
 
     private function scanString(): void
@@ -341,7 +341,7 @@ class Lexer
                     $this->advance();
                 }
             }
-            if ($this->peek() !== $quote) $this->error('未闭合的字符串');
+            if ($this->peek() !== $quote) $this->error('Unterminated string');
             $this->advance();
             $this->addToken(TokenType::STRING_LIT, $escaped, $escaped);
             return;
@@ -417,7 +417,7 @@ class Lexer
             $this->advance();
         }
 
-        if ($this->peek() !== $quote) $this->error('未闭合的字符串');
+        if ($this->peek() !== $quote) $this->error('Unterminated string');
         $this->advance(); // skip closing quote
 
         if ($buf !== '') {
