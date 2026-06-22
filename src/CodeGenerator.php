@@ -10,6 +10,12 @@ class CodeGenerator implements ASTVisitor
 
     /** 变量类型追踪：varName → className（对象）或 C 类型（基础类型） */
     private array $varTypes = [];
+    /** 常量类型追踪：CONST_NAME → C 类型（用于 wrapVar 选择正确的 VAR_*） */
+    private array $constTypes = [];
+    /** 常量可见性：全限定 const 名 → 'public'|'private'|'protected' */
+    private array $constVis = [];
+    /** 类名映射：原始类名 → C 类名（用于 ClassName::CONST 访问） */
+    private array $classNames = [];
     /** 数组元素类型追踪：varName → C 类型（int key 的默认类型） */
     private array $arrElementTypes = [];
     /** 数组 per-key 类型追踪：arrVarName → [strKey → CType]（字符串键专用） */
@@ -200,6 +206,13 @@ class CodeGenerator implements ASTVisitor
             $o[] = $this->ind("{$ptype} {$pname};");
             $propTypes[$pname] = $ptype;
         }
+        // 数组类常量字段（每个实例持有，简单可靠）
+        foreach ($class->classConsts as $cc) {
+            if ($cc->value instanceof ArrayLiteralExpr) {
+                $fname = '_const_' . $cc->name;
+                $o[] = $this->ind("t_array* {$fname};");
+            }
+        }
         $this->classPropTypes[$cn] = $propTypes;
         // 记录方法返回类型
         $methodRets = ['__construct' => 'void', '__destruct' => 'void'];
@@ -209,6 +222,45 @@ class CodeGenerator implements ASTVisitor
         $this->classMethodRetTypes[$cn] = $methodRets;
         $o[] = "} {$cn};";
         $o[] = '';
+        // 类常量 → #define（简单类型）或 static 变量（array）
+        // 记录类名映射（原始名 → C 名），用于 ClassName::CONST 访问
+        $this->classNames[$class->name] = $cn;
+        foreach ($class->classConsts as $cc) {
+            $cname = 'TPHP_CONST_' . strtoupper($cn . '_' . $cc->name);
+            $fullName = $cn . '_' . $cc->name; // 用于 constTypes 查询
+            $this->constVis[$fullName] = $cc->visibility ?? 'public';
+            $this->constVis[$cname] = $cc->visibility ?? 'public';
+            if ($cc->value instanceof StringLiteralExpr) {
+                $this->constTypes[$cc->name] = 't_string';
+                $this->constTypes[$fullName] = 't_string';
+                $this->constTypes[$cname] = 't_string';
+                $val = str_replace('"', '\\"', $cc->value->value);
+                $o[] = "#define {$cname} STR_LIT(\"{$val}\")";
+            } elseif ($cc->value instanceof IntLiteralExpr) {
+                $this->constTypes[$cc->name] = 't_int';
+                $this->constTypes[$fullName] = 't_int';
+                $this->constTypes[$cname] = 't_int';
+                $o[] = "#define {$cname} {$cc->value->value}";
+            } elseif ($cc->value instanceof FloatLiteralExpr) {
+                $this->constTypes[$cc->name] = 't_float';
+                $this->constTypes[$fullName] = 't_float';
+                $this->constTypes[$cname] = 't_float';
+                $fv = $cc->value->value;
+                $o[] = '#define ' . $cname . ' ' .
+                    (($fv == (float)(int)$fv) ? sprintf('%.1f', $fv) : rtrim(rtrim(sprintf('%.15g', $fv), '0'), '.'));
+            } elseif ($cc->value instanceof BoolLiteralExpr) {
+                $this->constTypes[$cc->name] = 't_bool';
+                $this->constTypes[$fullName] = 't_bool';
+                $this->constTypes[$cname] = 't_bool';
+                $o[] = "#define {$cname} " . ($cc->value->value ? 'true' : 'false');
+            } elseif ($cc->value instanceof ArrayLiteralExpr) {
+                // 数组常量：static 变量
+                $o[] = "static t_array* {$cname} = NULL;";
+                $o[] = "/* initialized on first access via {$cn} class */";
+            }
+        }
+        if (!empty($class->classConsts)) $o[] = '';
+
         // __construct 声明
         if ($isMain) {
             $o[] = "void {$cn}___construct({$cn}* self, t_int argc, t_array* argv);";
@@ -299,6 +351,15 @@ class CodeGenerator implements ASTVisitor
                 } else {
                     $o[] = $this->ind("self->{$pname} = {$def};");
                 }
+            }
+        }
+
+        // 数组类常量初始化（每个实例持有一份拷贝）
+        foreach ($class->classConsts as $cc) {
+            if ($cc->value instanceof ArrayLiteralExpr) {
+                $fname = '_const_' . $cc->name;
+                $tn = '_c_' . $cc->name;
+                $o[] = $this->ind("self->{$fname} = ({ {$this->genArrayLiteralInline($cc->value, $tn)} {$tn}; });");
             }
         }
 
@@ -776,6 +837,8 @@ class CodeGenerator implements ASTVisitor
             if ($expr->name === 'array_merge')  return 't_array*';
             if ($expr->name === 'implode' || $expr->name === 'join') return 't_string';
             if ($expr->name === 'explode') return 't_array*';
+            if ($expr->name === 'json_encode') return 't_string';
+            if ($expr->name === 'json_decode') return 't_var';
         }
         // 闭包调用 → 查 closureSigs
         if ($expr->name === '__invoke' && $expr->callee instanceof VariableExpr) {
@@ -1014,13 +1077,16 @@ class CodeGenerator implements ASTVisitor
         if ($el instanceof ClosureExpr)        return "VAR_CALLBACK({$code})";
         if ($el instanceof VariableExpr) {
             $vn = self::varName($el->name);
+            // 常量引用（不以 $ 开头）→ 加 TPHP_CONST_ 前缀
+            $isConst = !str_starts_with($el->name, '$');
+            $ref = $isConst ? ('TPHP_CONST_' . strtoupper($vn)) : $vn;
             $vt = $this->varTypes[$vn] ?? 't_int';
             return match ($vt) {
-                't_int' => "VAR_INT({$vn})", 't_float' => "VAR_FLOAT({$vn})",
-                't_string' => "VAR_STRING({$vn})", 't_bool' => "VAR_BOOL({$vn})",
-                't_array*' => "VAR_ARRAY({$vn})", 't_callback' => "VAR_CALLBACK({$vn})",
+                't_int' => "VAR_INT({$ref})", 't_float' => "VAR_FLOAT({$ref})",
+                't_string' => "VAR_STRING({$ref})", 't_bool' => "VAR_BOOL({$ref})",
+                't_array*' => "VAR_ARRAY({$ref})", 't_callback' => "VAR_CALLBACK({$ref})",
                 default => (str_contains($vt, 'tphp_class_') || str_contains($vt, 'tphp_enum_'))
-                    ? "VAR_OBJ({$vn})" : "VAR_NULL()",
+                    ? "VAR_OBJ({$ref})" : "VAR_NULL()",
             };
         }
         if ($el instanceof NewExpr) return "VAR_OBJ({$code})";
@@ -1133,6 +1199,8 @@ class CodeGenerator implements ASTVisitor
 
     public function visitVariable(VariableExpr $node): string
     {
+        // 'self' 是关键字，不是常量名
+        if ($node->name === 'self') return 'self';
         // 原始名字判断是否常量
         if (!str_starts_with($node->name, '$')) {
             return 'TPHP_CONST_' . strtoupper($node->name);
@@ -1368,6 +1436,18 @@ class CodeGenerator implements ASTVisitor
             $delim = $node->args[0]->accept($this);
             $str   = $node->args[1]->accept($this);
             return 'tphp_fn_explode(' . $delim . ', ' . $str . ')';
+        }
+
+        // json_encode($val) → JSON 字符串
+        if ($node->callee === null && $node->name === 'json_encode') {
+            $valCode = $this->wrapVar($node->args[0]);
+            return 'tphp_fn_json_encode(' . $valCode . ')';
+        }
+
+        // json_decode($str) → mixed (t_var)
+        if ($node->callee === null && $node->name === 'json_decode') {
+            $strCode = $node->args[0]->accept($this);
+            return 'tphp_fn_json_decode(' . $strCode . ')';
         }
 
         // var_export 内置函数 —— 转换为可读字符串输出
@@ -1641,6 +1721,16 @@ class CodeGenerator implements ASTVisitor
         }
         if ($expr instanceof PropertyAccessExpr) {
             $code = $expr->accept($this);
+            // 类常量访问 → 查 constTypes
+            if (str_starts_with($code, 'TPHP_CONST_')) {
+                $ct = $this->constTypes[$code] ?? $this->constTypes[strtoupper(substr($code, 12))] ?? 't_int';
+                return match ($ct) {
+                    't_string' => "VAR_STRING({$code})",
+                    't_float'  => "VAR_FLOAT({$code})",
+                    't_bool'   => "VAR_BOOL({$code})",
+                    default    => "VAR_INT({$code})",
+                };
+            }
             // 用 getPropType 查类型（含 enum 属性）
             $propType = $this->getPropType($expr);
             if ($propType === '') $propType = 't_int';
@@ -1658,9 +1748,17 @@ class CodeGenerator implements ASTVisitor
             return ($bt === 'string') ? "VAR_STRING(({$code})->value)" : "VAR_INT(({$code})->value)";
         }
         if ($expr instanceof VariableExpr) {
-            // 常量引用（原始名字不以 $ 开头）
+            // 常量引用（原始名字不以 $ 开头）—— 根据类型选择 VAR_*
             if (!str_starts_with($expr->name, '$')) {
-                return "VAR_STRING(TPHP_CONST_" . strtoupper($expr->name) . ")";
+                $cname = 'TPHP_CONST_' . strtoupper($expr->name);
+                $ct = $this->constTypes[$expr->name] ?? 't_string';
+                return match ($ct) {
+                    't_int'    => "VAR_INT({$cname})",
+                    't_float'  => "VAR_FLOAT({$cname})",
+                    't_bool'   => "VAR_BOOL({$cname})",
+                    't_array*' => "VAR_ARRAY({$cname})",
+                    default    => "VAR_STRING({$cname})",
+                };
             }
             $vn = self::varName($expr->name);
             $vt = $this->varTypes[$vn] ?? 't_int';
@@ -1827,6 +1925,27 @@ class CodeGenerator implements ASTVisitor
     {
         $obj = $node->object->accept($this);
         $prop = ltrim($node->property, '$');
+        // 类常量访问: self::CONST 或 ClassName::CONST → TPHP_CONST_ 引用
+        if (ctype_upper($prop[0] ?? '')) {
+            $rawObjName = ($node->object instanceof VariableExpr) ? $node->object->name : '';
+            // self::CONST
+            if ($rawObjName === 'self' || $obj === 'self') {
+                $cn = strtoupper($this->className);
+                return 'TPHP_CONST_' . $cn . '_' . strtoupper($prop);
+            }
+            // ClassName::CONST — 解析类名，检查可见性
+            $cname = $this->classNames[$rawObjName] ?? null;
+            if ($cname !== null) {
+                $fullCName = 'TPHP_CONST_' . strtoupper($cname . '_' . $prop);
+                $vis = $this->constVis[$cname . '_' . $prop] ?? 'public';
+                if ($vis !== 'public' && $vis !== null) {
+                    throw new \RuntimeException(
+                        "Cannot access {$vis} const {$rawObjName}::{$prop}"
+                    );
+                }
+                return $fullCName;
+            }
+        }
         // 加括号防止 &enum->field 被 C 误解析为 &(enum->field)
         if (str_starts_with($obj, '&')) {
             return "({$obj})->{$prop}";
@@ -1843,16 +1962,23 @@ class CodeGenerator implements ASTVisitor
     {
         $name = 'TPHP_CONST_' . strtoupper($node->name);
         if ($node->value instanceof StringLiteralExpr) {
+            $this->constTypes[$node->name] = 't_string';
             $val = str_replace('"', '\\"', $node->value->value);
             return '#define ' . $name . ' STR_LIT("' . $val . '")';
         }
         if ($node->value instanceof IntLiteralExpr) {
+            $this->constTypes[$node->name] = 't_int';
             return '#define ' . $name . ' ' . $node->value->value;
         }
         if ($node->value instanceof FloatLiteralExpr) {
+            $this->constTypes[$node->name] = 't_float';
             $fv = $node->value->value;
             return '#define ' . $name . ' ' .
                 (($fv == (float)(int)$fv) ? sprintf('%.1f', $fv) : rtrim(rtrim(sprintf('%.15g', $fv), '0'), '.'));
+        }
+        if ($node->value instanceof BoolLiteralExpr) {
+            $this->constTypes[$node->name] = 't_bool';
+            return '#define ' . $name . ' ' . ($node->value->value ? 'true' : 'false');
         }
         return '/* const ' . $node->name . ' */';
     }
@@ -2581,6 +2707,11 @@ class CodeGenerator implements ASTVisitor
             if ($idxType === 't_string' || $expr->index instanceof StringLiteralExpr) {
                 return $code;  // tphp_fn_arr_get_str_str 已返回 t_string
             }
+        }
+
+        // TPHP_CONST_ 常量引用 → #define 可能展开为 STR_LIT，直接返回
+        if (str_starts_with($code, 'TPHP_CONST_')) {
+            return $code;
         }
 
         // 其他表达式（CallExpr 等）默认假设返回 int

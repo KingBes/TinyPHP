@@ -159,6 +159,11 @@ class Main {
         sleep(1); usleep(500000);
         $ns = hrtime();
 
+        // JSON
+        $s = json_encode([1, 2, 3]);        // "[1,2,3]"
+        $v = json_decode('{"x":1}');        // mixed
+        $s = json_encode($v);                // "{"x":1}"
+
         // 错误处理
         error("something went wrong");
     }
@@ -218,6 +223,10 @@ function myFunc(): void { ... }
 | `sleep($s)` | 休眠秒数 |
 | `usleep($us)` | 休眠微秒 |
 | `hrtime()` | 高精度纳秒 |
+| `json_encode($val)` | JSON 序列化 |
+| `json_decode($str)` | JSON 解析（返回 mixed） |
+| `const TYPE NAME = val` | 常量定义（全局/命名空间/类三种作用域） |
+| `self::CONST` / `Class::CONST` | 类常量访问（private 外部禁止） |
 | `error($msg)` | 报错 + 清资源 + 退出 |
 
 > 详见 [FUNCTIONS.md](FUNCTIONS.md) — 每个函数与 PHP 的差异对照及后续实现建议。

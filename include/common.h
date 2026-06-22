@@ -11,3 +11,4 @@
 #include "runtime.h"
 #include "builtin.h"
 #include "os/times.h"
+#include "os/json.h"

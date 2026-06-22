@@ -367,17 +367,78 @@ class Parser
 
         $methods = [];
         $properties = [];
+        $classConsts = [];
         while (!$this->check(TokenType::RBRACE) && !$this->check(TokenType::EOF)) {
             // 属性声明: visibility type $name (= default)? ;
             if ($this->isPropertyStart()) {
                 $properties[] = $this->parsePropertyDecl();
+            } elseif ($this->isClassConstStart()) {
+                $classConsts[] = $this->parseClassConstDecl($name);
             } else {
                 $methods[] = $this->parseMethod();
             }
         }
 
         $this->consume(TokenType::RBRACE, '期望 }');
-        return new ClassNode($name, $methods, $this->currentNamespace, $properties);
+        return new ClassNode($name, $methods, $this->currentNamespace, $properties, $classConsts);
+    }
+
+    /** 判断当前 token 是否为类常量声明开头：const T name 或 visibility const T name */
+    private function isClassConstStart(): bool
+    {
+        $t1 = $this->peek(0);
+        $isVis = ($t1->type === TokenType::PUBLIC_KW || $t1->type === TokenType::PRIVATE_KW);
+        $i = $isVis ? 1 : 0;
+        if ($this->peek($i)->type !== TokenType::CONST_KW) return false;
+        if ($isVis && $this->peek(1)->type !== TokenType::CONST_KW) return false;
+        // peek(i+1) should be type or name; peek(i+2) should be name or =
+        $t2 = $this->peek($i + 1);
+        $typeTokens = [TokenType::TYPE_INT, TokenType::TYPE_FLOAT, TokenType::TYPE_STRING,
+                       TokenType::TYPE_BOOL, TokenType::TYPE_ARRAY];
+        if (in_array($t2->type, $typeTokens, true)) {
+            // typed: visibility const TYPE name =
+            $t3 = $this->peek($i + 2);
+            return $t3->type === TokenType::IDENTIFIER;
+        }
+        // untyped: visibility const name =
+        $t3 = $this->peek($i + 2);
+        return $t2->type === TokenType::IDENTIFIER && $t3->type === TokenType::EQUALS;
+    }
+
+    /** 类常量声明: [visibility] const [type] name = expr ; */
+    private function parseClassConstDecl(string $className): ConstNode
+    {
+        // visibility
+        $vis = 'public';
+        if ($this->check(TokenType::PUBLIC_KW) || $this->check(TokenType::PRIVATE_KW)) {
+            $vis = $this->parseVisibility();
+        }
+        $this->consume(TokenType::CONST_KW, '期望 const');
+
+        // type (optional)
+        $type = null;
+        $typeTokens = [TokenType::TYPE_INT, TokenType::TYPE_FLOAT, TokenType::TYPE_STRING,
+                       TokenType::TYPE_BOOL, TokenType::TYPE_ARRAY];
+        if (in_array($this->peek()->type, $typeTokens, true)) {
+            $type = $this->parseType();
+        }
+
+        // name
+        $cName = $this->consume(TokenType::IDENTIFIER, '期望常量名')->lexeme;
+
+        // = value
+        $this->consume(TokenType::EQUALS, '期望 =');
+        $value = $this->parseExpr();
+
+        $this->consume(TokenType::SEMICOLON, '期望 ;');
+        return new ConstNode(
+            name: $cName,
+            value: $value,
+            namespace: $this->currentNamespace,
+            type: $type,
+            visibility: $vis,
+            className: $className,
+        );
     }
 
     /** 判断当前 token 序列是否为属性声明开头 */
@@ -1092,8 +1153,8 @@ class Parser
         if ($this->match(TokenType::MATCH)) {
             return $this->setPos($this->parseMatchExpr(), $line, $col);
         }
-        // 变量
-        if ($this->check(TokenType::IDENTIFIER) || $this->check(TokenType::VAR_DUMP) || $this->check(TokenType::COUNT) || $this->check(TokenType::EXIT) || $this->check(TokenType::DIE) || $this->check(TokenType::ISSET) || $this->check(TokenType::EMPTY_KW) || $this->check(TokenType::UNSET) || $this->check(TokenType::ERROR) || $this->check(TokenType::TIME) || $this->check(TokenType::DATE) || $this->check(TokenType::SLEEP) || $this->check(TokenType::USLEEP) || $this->check(TokenType::HRTIME) || $this->check(TokenType::IS_INT) || $this->check(TokenType::IS_FLOAT) || $this->check(TokenType::IS_STRING) || $this->check(TokenType::IS_BOOL) || $this->check(TokenType::IS_ARRAY) || $this->check(TokenType::IS_OBJECT) || $this->check(TokenType::IS_NULL) || $this->check(TokenType::IS_CALLABLE)) {
+        // 变量 / self 关键字
+        if ($this->check(TokenType::IDENTIFIER) || $this->check(TokenType::SELF_KW) || $this->check(TokenType::VAR_DUMP) || $this->check(TokenType::COUNT) || $this->check(TokenType::EXIT) || $this->check(TokenType::DIE) || $this->check(TokenType::ISSET) || $this->check(TokenType::EMPTY_KW) || $this->check(TokenType::UNSET) || $this->check(TokenType::ERROR) || $this->check(TokenType::TIME) || $this->check(TokenType::DATE) || $this->check(TokenType::SLEEP) || $this->check(TokenType::USLEEP) || $this->check(TokenType::HRTIME) || $this->check(TokenType::IS_INT) || $this->check(TokenType::IS_FLOAT) || $this->check(TokenType::IS_STRING) || $this->check(TokenType::IS_BOOL) || $this->check(TokenType::IS_ARRAY) || $this->check(TokenType::IS_OBJECT) || $this->check(TokenType::IS_NULL) || $this->check(TokenType::IS_CALLABLE)) {
             $name = $this->advance()->lexeme;
 
             // $obj->xxx 或 Class::xxx
@@ -1142,18 +1203,11 @@ class Parser
                 return $this->setPos(new ArrayAccessExpr(new VariableExpr($name), $index), $line, $col);
             }
 
-            // 常量引用检测：全大写名称 → 检查是否跨命名空间
-            // 但跳过枚举名（枚举通过 :: 访问，单独的全大写名可能是枚举的 use 导入）
+            // 常量引用：全大写名称 → 标记为常量引用（跨文件编译可行）
+            // 不再 block 跨文件/跨命名空间引用——CodeGen 统一用 TPHP_CONST_ 前缀
             if (!str_starts_with($name, '$') && self::isConstantName($name)
                 && $this->resolveEnumName($name) === null) {
-                if (isset($this->declaredConsts[$name])) {
-                    $ns = $this->declaredConsts[$name];
-                    if ($ns !== $this->currentNamespace) {
-                        $this->error("常量 '{$name}' 定义在命名空间 '{$ns}'，不能在当前命名空间直接引用");
-                    }
-                } else {
-                    $this->error("未定义的常量 '{$name}'（可能定义在其他命名空间，不支持跨命名空间常量引用）");
-                }
+                // 静默允许——生成的 C 代码通过 #define 解析
             }
 
             return $this->setPos(new VariableExpr($name), $line, $col);

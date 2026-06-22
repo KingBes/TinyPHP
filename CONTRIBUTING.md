@@ -28,7 +28,8 @@ include/                         C 运行时头文件（静态 inline 库）
   ├── runtime.h                  内部辅助（字符串池、资源追踪、error）
   ├── builtin.h                  公开内置（echo, is_*, 数组函数, implode/explode）
   └── os/
-      └── times.h                系统函数（time, date, sleep, usleep, hrtime）
+      ├── times.h                系统函数（time, date, sleep, usleep, hrtime）
+      └── json.h                 JSON 编解码（json_encode / json_decode）
 ```
 
 > TCC 不在仓库中——通过 `build.sh`/`build.cmd` 从 `https://repo.or.cz/tinycc.git` (mob 分支) clone 并编译。
@@ -158,6 +159,7 @@ ExprNode（抽象，含 line/column）
 | `runtime.h` | `tphp_rt_` | 内部辅助、64KB 字符串池、资源追踪、error |
 | `builtin.h` | `tphp_fn_` | 公开内置：类型检测、数组函数、implode/explode |
 | `os/times.h` | `tphp_fn_` | 系统函数（跨平台） |
+| `os/json.h` | `tphp_fn_` | JSON 编解码（递归+递归下降） |
 
 ### 3.2 资源追踪 & error()
 
@@ -266,5 +268,7 @@ ExprNode（抽象，含 line/column）
 | `include/runtime.h` | ~320 | 运行时（64KB 字符串池、资源追踪、error、幂运算） |
 | `include/builtin.h` | ~330 | 公开内置（类型检测、数组函数、implode/explode） |
 | `include/os/times.h` | ~95 | 系统函数（跨平台） |
+| `include/os/json.h` | ~370 | JSON 编解码（递归编码+递归下降解析+对象检测） |
 | `include/common.h` | ~15 | 总入口 |
-| `test/var/` | 35+ 文件 | 测试用例（array_full/is_type/nested_*/bench_*） |
+| `test/var/` | 35+ 文件 | 测试用例（array_full/json_test/json_complex/nested_*/bench_*） |
+| `test/files/` | 6+ 文件 | 多文件测试（const 多作用域/demo） |

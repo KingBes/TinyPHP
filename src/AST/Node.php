@@ -59,13 +59,16 @@ class FunctionNode extends ASTNode
 class ClassNode extends ASTNode
 {
     /** @param MethodNode[] $methods */
-    /** @param PropertyDeclNode[] $properties */
+    /** @param PropertyDeclNode[] $properties
+     *  @param ConstNode[] $classConsts */
     public function __construct(
         public readonly string $name,
         public readonly array $methods,
         public readonly string $namespace = '',
         /** @var PropertyDeclNode[] */
         public readonly array $properties = [],
+        /** @var ConstNode[] 类成员常量 */
+        public readonly array $classConsts = [],
     ) {}
 
     public function accept(ASTVisitor $visitor): string
@@ -532,7 +535,7 @@ class EnumAccessExpr extends ExprNode
     }
 }
 
-// 常量声明
+// 常量声明（全局 const + 类 const）
 class ConstNode extends ASTNode
 {
     public function __construct(
@@ -540,6 +543,12 @@ class ConstNode extends ASTNode
         /** @var ExprNode|null */
         public readonly ?ExprNode $value,
         public readonly string $namespace = '',
+        /** 类型标注：'string'|'int'|'float'|'bool'|'array'，null=无标注 */
+        public readonly ?string $type = null,
+        /** visibility：'public'|'private'|'protected'，null=全局 const */
+        public readonly ?string $visibility = null,
+        /** 所属类名，null=全局 const */
+        public readonly ?string $className = null,
     ) {}
 
     public function accept(ASTVisitor $visitor): string

@@ -335,6 +335,94 @@ list($a, list($b)) = ...;     // 嵌套解构
 
 ---
 
+## JSON
+
+### `json_encode($val)` — JSON 序列化
+
+```
+$s = json_encode([1, 2, 3]);   // "[1,2,3]"
+$s = json_encode(true);        // "true"
+$s = json_encode("hello");     // "\"hello\""
+```
+
+| | PHP | TinyPHP |
+|---|---|---|
+| null / bool / int / float / string | ✅ | ✅ |
+| 数组（纯 int key） | ✅ | ✅（`[1,2,3]`） |
+| 数组（含 string key） | ✅ | ✅（自动检测 → `{"k":"v"}`） |
+| 嵌套数组 | ✅ | ✅（递归，受 C 栈限制，实测数千层） |
+| 字符串转义 `" \n \t \\` | ✅ | ✅ |
+| 对象 | ✅ | ❌（输出 `{}`） |
+| JSON 美化/选项 | ✅ | ❌ |
+
+**差异**：float 使用 `%.14g` 格式避免 `3.1400000000000001` 精度尾巴。对象序列化不支持（输出 `{}`）。
+
+---
+
+### `json_decode($str)` — JSON 解析
+
+```
+$v = json_decode("[1,2,3]");       // mixed (t_var)
+$v = json_decode('{"x":1}');       // t_var → is_array($v) = true
+$v = json_decode("not json");      // NULL（格式错误）
+```
+
+| | PHP | TinyPHP |
+|---|---|---|
+| null / bool / int / float / string | ✅ | ✅ |
+| 数组 `[...]` | ✅ | ✅ |
+| 对象 `{...}` | ✅ | ✅（存为 t_array with string keys） |
+| 嵌套 | ✅ | ✅（递归，无硬编码深度限制） |
+| 字符串转义 `\n \t \\ \" \uXXXX` | ✅ | ✅（`\u` → `?`） |
+| 格式错误安全返回 | ✅（返回 null） | ✅（返回 NULL + 释放已分配内存） |
+| 截断输入 | ✅ | ✅（`[1,2,` → NULL） |
+
+**差异**：返回类型为 `t_var`（mixed），需 `is_array`/`is_int` 等运行时检测。`\uXXXX` 简单映射为 `?`。
+
+---
+
+## 常量
+
+### `const` — 三种作用域常量
+
+**全局常量**（任意 `.php` 文件顶层）：
+```
+const APP_NAME = "MyApp";
+const MAX     = 100;
+```
+
+**命名空间常量**（`namespace Foo;` 内）：
+```
+namespace Lib;
+const VERSION = "1.0";
+```
+
+**类常量**（`class` 体内）：
+```
+class Demo {
+    const string AAA = "hello";           // 隐式 public
+    public const int TIMEOUT = 30;
+    private const bool DEBUG = false;
+    private const array TAGS = ["web"];
+}
+```
+
+| | PHP | TinyPHP |
+|---|---|---|
+| 全局 `const X = val` | ✅ | ✅（`#define`） |
+| 命名空间 `const X = val` | ✅ | ✅ |
+| 类 `const TYPE X = val` | ✅ | ✅ |
+| `public/private const` | ✅ | ✅ |
+| `string/int/float/bool/array` 类型 | ✅ | ✅ |
+| `self::CONST` 类内访问 | ✅ | ✅ |
+| `ClassName::CONST` 外部访问 | ✅ | ✅（public 允许，private 报错） |
+| 跨文件常量引用 | ✅ | ✅（`constTypes` 记录类型） |
+| `const` 无类型标注 | ✅ | ✅（全局） |
+
+**差异**：全局/命名空间常量无类型标注（`const X = 1`），类常量需类型标注（`const int X = 1`）。
+
+---
+
 ## 时间 / 日期
 
 ### `time()` — 当前 Unix 时间戳
@@ -432,10 +520,12 @@ $elapsed = hrtime() - $start;
 | **分支预测** | `likely`/`unlikely` 标注所有热路径 |
 | **编译期类型折叠** | `is_int(42)` 等静态类型在编译期求值为 `true`/`false` |
 | **嵌套类型追踪** | 2 层数组自动追踪元素类型（`$arr[0][0]`） |
+| **JSON 编解码** | `json_encode`/`json_decode` 支持基本类型+数组+对象+转义 |
+| **常量三作用域** | 全局 `const` / 命名空间 `const` / 类 `public|private const TYPE` |
 | **零堆分配函数** | `time` `date` `hrtime` 使用静态缓冲区 |
 | **error 安全退出** | 遍历全局资源链表释放所有对象/数组/字符串 |
-| **跨平台** | `#ifdef _WIN32` 适配 Windows/Linux/macOS |
-| **TCC 兼容** | 避免 TCC 不支持的 C99 特性 |
+| **跨平台 + 三编译器** | TCC / GCC / Clang 编译通过，`#ifdef _WIN32` 适配 |
+| **TCC 兼容** | 避免 TCC 不支持的 C99 特性（无隐式声明，无循环 include） |
 
 ---
 
@@ -472,8 +562,6 @@ $elapsed = hrtime() - $start;
 | `array_shift($arr)` | 头部弹出 | 取首元素 + memmove |
 | `file_get_contents($path)` | 读文件 | `fopen/fread/fclose` + `t_string` |
 | `file_put_contents($path, $data)` | 写文件 | `fopen/fwrite/fclose` |
-| `json_encode($val)` | JSON 序列化 | 手写递归（基本类型即可） |
-| `json_decode($str)` | JSON 解析 | 手写 parser（复杂） |
 
 ### 设计限制（暂不实现）
 
