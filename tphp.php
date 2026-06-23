@@ -241,35 +241,38 @@ if ($inPhar) {
     // PHAR mode: TCC extracted alongside PHAR
     if (PHP_OS_FAMILY === 'Windows') {
         $tccSysDir = $pharDir . DIRECTORY_SEPARATOR . 'tcc' . DIRECTORY_SEPARATOR . 'win32';
-    } else {
+    } elseif (PHP_OS_FAMILY !== 'Darwin') {
+        // Linux: use -B, macOS: skip -B (compiled-in paths + explicit libtcc1.a work better)
         $tccSysDir = $pharDir . DIRECTORY_SEPARATOR . 'tcc';
     }
-    if (is_dir($tccSysDir)) {
+    if (isset($tccSysDir) && is_dir($tccSysDir)) {
         $bFlag = ' -B"' . $tccSysDir . '"';
     }
 } else {
     // Dev mode: auto-detect TCC standalone directory
-    $tccBase = dirname($ccExe);
-    $standaloneDirs = [
-        $tccBase . '/tcc-standalone',
-        $tccBase,
-    ];
-    foreach ($standaloneDirs as $dir) {
-        if (is_dir($dir . '/lib') || is_dir($dir . '/include')) {
-            $bFlag = ' -B"' . realpath($dir) . '"';
-            break;
+    if (PHP_OS_FAMILY !== 'Darwin') {
+        $tccBase = dirname($ccExe);
+        $standaloneDirs = [
+            $tccBase . '/tcc-standalone',
+            $tccBase,
+        ];
+        foreach ($standaloneDirs as $dir) {
+            if (is_dir($dir . '/lib') || is_dir($dir . '/include')) {
+                $bFlag = ' -B"' . realpath($dir) . '"';
+                break;
+            }
         }
     }
 }
 
-// macOS: explicitly link libtcc1.a (TCC -B may not work reliably on Darwin)
+// macOS: explicitly link libtcc1.a (compiled-in paths work without -B)
 $libPath = '';
-if (PHP_OS_FAMILY === 'Darwin' && !$inPhar) {
-    $tryLib = dirname($ccExe) . DIRECTORY_SEPARATOR . 'libtcc1.a';
-    if (file_exists($tryLib)) $libPath = ' "' . $tryLib . '"';
-} elseif (PHP_OS_FAMILY === 'Darwin' && $inPhar) {
-    $tryLib = $pharDir . DIRECTORY_SEPARATOR . 'tcc' . DIRECTORY_SEPARATOR . 'libtcc1.a';
-    if (file_exists($tryLib)) $libPath = ' "' . $tryLib . '"';
+if (PHP_OS_FAMILY === 'Darwin') {
+    $base = $inPhar ? ($pharDir . DIRECTORY_SEPARATOR . 'tcc') : dirname($ccExe);
+    foreach (['libtcc1.a', 'lib/libtcc1.a', 'lib/tcc/libtcc1.a'] as $rel) {
+        $tryLib = $base . DIRECTORY_SEPARATOR . $rel;
+        if (file_exists($tryLib)) { $libPath = ' "' . $tryLib . '"'; break; }
+    }
 }
 
 $cmd = sprintf(
