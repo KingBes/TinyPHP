@@ -224,8 +224,8 @@ jobs:
             --config-bcheck=yes \
             --config-backtrace=yes \
             --enable-static
-          gmake
-          gmake install
+          make
+          make install
           cd ..
           # Ensure libtcc1.a is directly in tcc/ (for -B or explicit linking)
           cp tcc/libtcc1.a tcc/ 2>/dev/null || true
