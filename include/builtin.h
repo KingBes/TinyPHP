@@ -324,3 +324,217 @@ static inline t_array* tphp_fn_explode(t_string delim, t_string s) {
     }
     return out;
 }
+
+/* ============================================================
+ * String functions
+ * ============================================================ */
+
+static inline t_int tphp_fn_strlen(t_string s) {
+    return (s.data != NULL && s.length > 0) ? (t_int)s.length : 0;
+}
+
+static inline t_string tphp_fn_trim(t_string s) {
+    if (s.data == NULL || s.length <= 0) return (t_string){NULL, 0};
+    int start = 0, end = s.length - 1;
+    while (start <= end && (unsigned char)s.data[start] <= ' ') start++;
+    while (end >= start && (unsigned char)s.data[end] <= ' ') end--;
+    int len = end - start + 1;
+    if (len <= 0) return (t_string){NULL, 0};
+    char *buf = str_pool_alloc(len);
+    if (buf == NULL) return (t_string){NULL, 0};
+    memcpy(buf, s.data + start, (size_t)len);
+    buf[len] = '\0';
+    return (t_string){buf, len};
+}
+
+static inline t_string tphp_fn_ltrim(t_string s) {
+    if (s.data == NULL || s.length <= 0) return (t_string){NULL, 0};
+    int start = 0;
+    while (start < s.length && (unsigned char)s.data[start] <= ' ') start++;
+    int len = s.length - start;
+    if (len <= 0) return (t_string){NULL, 0};
+    char *buf = str_pool_alloc(len);
+    if (buf == NULL) return (t_string){NULL, 0};
+    memcpy(buf, s.data + start, (size_t)len);
+    buf[len] = '\0';
+    return (t_string){buf, len};
+}
+
+static inline t_string tphp_fn_rtrim(t_string s) {
+    if (s.data == NULL || s.length <= 0) return (t_string){NULL, 0};
+    int end = s.length - 1;
+    while (end >= 0 && (unsigned char)s.data[end] <= ' ') end--;
+    int len = end + 1;
+    if (len <= 0) return (t_string){NULL, 0};
+    char *buf = str_pool_alloc(len);
+    if (buf == NULL) return (t_string){NULL, 0};
+    memcpy(buf, s.data, (size_t)len);
+    buf[len] = '\0';
+    return (t_string){buf, len};
+}
+
+static inline t_string tphp_fn_substr(t_string s, t_int offset, t_int length) {
+    if (s.data == NULL || s.length <= 0) return (t_string){NULL, 0};
+    int slen = s.length;
+    int start = (int)offset;
+    if (start < 0) start = slen + start;
+    if (start < 0) start = 0;
+    if (start >= slen) return (t_string){NULL, 0};
+    int len;
+    if (length < 0) {
+        len = slen - start + (int)length;
+        if (len < 0) len = 0;
+    } else if (length == 0) {
+        len = slen - start;
+    } else {
+        len = (int)length;
+        if (start + len > slen) len = slen - start;
+    }
+    if (len <= 0) return (t_string){NULL, 0};
+    char *buf = str_pool_alloc(len);
+    if (buf == NULL) return (t_string){NULL, 0};
+    memcpy(buf, s.data + start, (size_t)len);
+    buf[len] = '\0';
+    return (t_string){buf, len};
+}
+
+static inline t_int tphp_fn_strpos(t_string haystack, t_string needle) {
+    if (haystack.data == NULL || needle.data == NULL) return -1;
+    if (needle.length <= 0) return 0;
+    if (needle.length > haystack.length) return -1;
+    for (int i = 0; i <= haystack.length - needle.length; i++) {
+        if (memcmp(haystack.data + i, needle.data, (size_t)needle.length) == 0)
+            return (t_int)i;
+    }
+    return -1;
+}
+
+static inline t_bool tphp_fn_str_contains(t_string haystack, t_string needle) {
+    return tphp_fn_strpos(haystack, needle) >= 0;
+}
+
+static inline t_string tphp_fn_str_replace(t_string search, t_string replace, t_string subject) {
+    if (subject.data == NULL || subject.length <= 0) return (t_string){NULL, 0};
+    if (search.data == NULL || search.length <= 0 || search.length > subject.length)
+        return tphp_rt_str_dup(subject);
+    // Count occurrences
+    int count = 0;
+    for (int i = 0; i <= subject.length - search.length; i++) {
+        if (memcmp(subject.data + i, search.data, (size_t)search.length) == 0) {
+            count++; i += search.length - 1;
+        }
+    }
+    if (count == 0) return tphp_rt_str_dup(subject);
+    // Calculate new length and build result
+    int new_len = subject.length + count * (replace.length - search.length);
+    if (new_len <= 0) return (t_string){NULL, 0};
+    char *buf = str_pool_alloc(new_len);
+    if (buf == NULL) return (t_string){NULL, 0};
+    int pos = 0, si = 0;
+    while (si < subject.length) {
+        if (si <= subject.length - search.length &&
+            memcmp(subject.data + si, search.data, (size_t)search.length) == 0) {
+            memcpy(buf + pos, replace.data, (size_t)replace.length);
+            pos += replace.length;
+            si += search.length;
+        } else {
+            buf[pos++] = subject.data[si++];
+        }
+    }
+    buf[new_len] = '\0';
+    return (t_string){buf, new_len};
+}
+
+/* ============================================================
+ * Math / General functions
+ * ============================================================ */
+
+static inline t_var tphp_fn_max(t_array *a) {
+    if (unlikely(a == NULL || a->length == 0)) {
+        tphp_rt_free_all();
+        fputs("\nFatal error: max(): Array must contain at least one element\n\n", stderr);
+        exit(1);
+    }
+    t_var result;
+    bool found = false;
+    for (int i = 0; i < a->length; i++) {
+        t_var *v = &a->entries[i].val;
+        if (v->type != TYPE_INT && v->type != TYPE_FLOAT) continue;
+        if (!found) { result = *v; found = true; continue; }
+        if (v->type == TYPE_INT && result.type == TYPE_INT) {
+            if (v->value._int > result.value._int) result = *v;
+        } else if (v->type == TYPE_FLOAT && result.type == TYPE_FLOAT) {
+            if (v->value._float > result.value._float) result = *v;
+        } else {
+            t_float a = (v->type == TYPE_INT) ? (t_float)v->value._int : v->value._float;
+            t_float b = (result.type == TYPE_INT) ? (t_float)result.value._int : result.value._float;
+            if (a > b) result = *v;
+        }
+    }
+    return found ? result : VAR_NULL();
+}
+
+static inline t_var tphp_fn_min(t_array *a) {
+    if (unlikely(a == NULL || a->length == 0)) {
+        tphp_rt_free_all();
+        fputs("\nFatal error: min(): Array must contain at least one element\n\n", stderr);
+        exit(1);
+    }
+    t_var result;
+    bool found = false;
+    for (int i = 0; i < a->length; i++) {
+        t_var *v = &a->entries[i].val;
+        if (v->type != TYPE_INT && v->type != TYPE_FLOAT) continue;
+        if (!found) { result = *v; found = true; continue; }
+        if (v->type == TYPE_INT && result.type == TYPE_INT) {
+            if (v->value._int < result.value._int) result = *v;
+        } else if (v->type == TYPE_FLOAT && result.type == TYPE_FLOAT) {
+            if (v->value._float < result.value._float) result = *v;
+        } else {
+            t_float a = (v->type == TYPE_INT) ? (t_float)v->value._int : v->value._float;
+            t_float b = (result.type == TYPE_INT) ? (t_float)result.value._int : result.value._float;
+            if (a < b) result = *v;
+        }
+    }
+    return found ? result : VAR_NULL();
+}
+
+/* ============================================================
+ * Type conversion functions
+ * ============================================================ */
+
+static inline t_int tphp_fn_intval(t_var v) {
+    if (v.type == TYPE_INT)   return v.value._int;
+    if (v.type == TYPE_FLOAT) return (t_int)v.value._float;
+    if (v.type == TYPE_BOOL)  return v.value._bool ? 1 : 0;
+    if (v.type == TYPE_STRING) return tphp_rt_parse_int(v.value._string);
+    return 0;
+}
+
+static inline t_float tphp_fn_floatval(t_var v) {
+    if (v.type == TYPE_INT)   return (t_float)v.value._int;
+    if (v.type == TYPE_FLOAT) return v.value._float;
+    if (v.type == TYPE_BOOL)  return v.value._bool ? 1.0 : 0.0;
+    if (v.type == TYPE_STRING) return tphp_rt_parse_float(v.value._string);
+    return 0.0;
+}
+
+static inline t_string tphp_fn_strval(t_var v) {
+    if (v.type == TYPE_INT)   return tphp_rt_str_from_int(v.value._int);
+    if (v.type == TYPE_FLOAT) return tphp_rt_str_from_float(v.value._float);
+    if (v.type == TYPE_BOOL)  return v.value._bool ? STR_LIT("1") : STR_LIT("");
+    if (v.type == TYPE_STRING) return tphp_rt_str_dup(v.value._string);
+    if (v.type == TYPE_NULL)  return (t_string){NULL, 0};
+    return STR_LIT("");
+}
+
+static inline t_bool tphp_fn_boolval(t_var v) {
+    if (v.type == TYPE_INT)   return v.value._int != 0;
+    if (v.type == TYPE_FLOAT) return v.value._float != 0.0;
+    if (v.type == TYPE_BOOL)  return v.value._bool;
+    if (v.type == TYPE_STRING) return !tphp_rt_str_is_falsy(v.value._string);
+    return false;
+}
+
+
+

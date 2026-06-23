@@ -514,67 +514,286 @@ $elapsed = hrtime() - $start;
 
 | 特性 | 说明 |
 |---|---|
-| **数组对象池** | `t_array` 128 槽 LIFO 复用池，减少 `malloc/free` 抖动 |
-| **小字符串池** | 64KB bump allocator，≤512 字节字符串零 `malloc` |
-| **1.5× 增长因子** | 数组 `push` 扩容时按 `cap + (cap>>1)` 而非 `2×` |
+| **数组对象池** | 128 槽 LIFO 复用池 + 1.5× 增长因子 |
+| **小字符串池** | 64KB bump allocator，≤512B 零 `malloc` |
 | **分支预测** | `likely`/`unlikely` 标注所有热路径 |
-| **编译期类型折叠** | `is_int(42)` 等静态类型在编译期求值为 `true`/`false` |
-| **嵌套类型追踪** | 2 层数组自动追踪元素类型（`$arr[0][0]`） |
-| **JSON 编解码** | `json_encode`/`json_decode` 支持基本类型+数组+对象+转义 |
-| **常量三作用域** | 全局 `const` / 命名空间 `const` / 类 `public\|private const TYPE` |
-| **零堆分配函数** | `time` `date` `hrtime` 使用静态缓冲区 |
-| **error 安全退出** | 遍历全局资源链表释放所有对象/数组/字符串 |
-| **跨平台 + 三编译器** | TCC / GCC / Clang 编译通过，`#ifdef _WIN32` 适配 |
-| **TCC 兼容** | 避免 TCC 不支持的 C99 特性（无隐式声明，无循环 include） |
-| **闭包堆捕获** | `use` 变量堆分配捕获环境 + `tphp_rt_register(type=3)` 资源追踪，内存安全 |
-| **for 作用域提升** | `funcScopeDecls` 机制将 for-init 变量提升到函数作用域 |
-| **foreach 字符串键** | 自动检测 `arrValueTypes`，`foreach($map as $k=>$v)` 支持 `$k` 为 `t_string` |
-| **match 安全性** | 无 `default` 分支时自动零值初始化临时变量 |
-| **尾部逗号** | 数组字面量和函数参数支持 PHP 7.3+ 尾部逗号 |
-| **类型推导增强** | `wrapTvarAssign`/`wrapArrayElement`/`inferType` 覆盖 `PostfixExpr`/`CompoundAssignExpr`/`CastExpr` 等 |
+| **编译期类型折叠** | `is_int(42)` 等静态类型编译期求值 |
+| **嵌套类型追踪** | 2 层数组自动追踪元素类型 |
+| **JSON 编解码** | 基本类型+数组+对象+转义，无效 JSON → `error()` |
+| **常量三作用域** | 全局/命名空间/类常量，`self::` / `Class::` 访问 |
+| **键名解构** | `["key" => $v]` 支持（PHP 7.1+） |
+| **sort/rsort** | libc `qsort` 原地排序 |
+| **内置函数 40+** | 数组 18 个、字符串 8 个、类型 8 个、时间 5 个、JSON 2 个 |
+| **error 安全退出** | 遍历资源链表释放所有对象/数组/字符串 |
+| **跨平台** | TCC/GCC/Clang 编译通过，`#ifdef _WIN32` |
+| **PHAR 自包含** | `tphp.phar` 内嵌 TCC + 头文件，单文件分发 |
+
+---
+
+## 字符串
+
+### `strlen($s)` — 字符串长度
+
+```
+$len = strlen("hello");   // 5
+```
+
+| | PHP | TinyPHP |
+|---|---|---|
+| 返回类型 | int | `t_int` |
+| null 输入 | 报错 | 返回 0 |
+| 空字符串 | 0 | 0 |
+
+**差异**：直接返回 `s.length`，零开销。
+
+---
+
+### `trim($s)` / `ltrim($s)` / `rtrim($s)` — 去除空白
+
+```
+trim("  hi  ");    // "hi"
+ltrim("  hi  ");   // "hi  "
+rtrim("  hi  ");   // "  hi"
+```
+
+| | PHP | TinyPHP |
+|---|---|---|
+| 空白字符 | ` \t\n\r\0\x0B` | `<= 0x20`（ASCII 控制字符） |
+| 自定义字符集 | ✅ | ❌ |
+| 内存 | 堆 | `str_pool_alloc` |
+
+**差异**：仅去除 ASCII 空白控制字符（`<= ' '`），不支持自定义字符集。
+
+---
+
+### `substr($s, $offset, $length?)` — 子串
+
+```
+substr("hello", 1, 3);   // "ell"
+substr("hello", -2, 0);  // "lo"
+substr("hello", 0, -1);  // "hell"
+```
+
+| | PHP | TinyPHP |
+|---|---|---|
+| 负数 offset | ✅ | ✅ |
+| 负数 length | ✅（从末尾去掉 N 字符） | ✅ |
+| length=0 | ✅（到末尾） | ✅ |
+| 越界 | 空字符串 | 空字符串 |
+
+**差异**：负数 length 行为与 PHP 一致。内存通过 `str_pool_alloc` 分配。
+
+---
+
+### `strpos($haystack, $needle)` — 查找子串位置
+
+```
+strpos("hello", "ll");   // 2
+strpos("hello", "xx");   // -1 (PHP: false)
+```
+
+| | PHP | TinyPHP |
+|---|---|---|
+| 未找到 | `false` | `-1` |
+| 空 needle | 报错 | 返回 0 |
+| 偏移参数 | ✅ | ❌ |
+
+---
+
+### `str_contains($haystack, $needle)` — 是否包含子串
+
+```
+str_contains("hello", "ll");   // true
+str_contains("hello", "xx");   // false
+```
+
+调用 `strpos ≥ 0` 实现，返回 `t_bool`。
+
+---
+
+### `str_replace($search, $replace, $subject)` — 子串替换
+
+```
+str_replace("a", "X", "abcabc");  // "XbcXbc"
+```
+
+| | PHP | TinyPHP |
+|---|---|---|
+| 全部替换 | ✅ | ✅ |
+| 数组参数 | ✅ | ❌ |
+| 计数参数 | ✅ | ❌ |
+
+**实现**：两遍扫描（计数 + 构建），`str_pool_alloc` 分配新 buffer。
+
+---
+
+## 数组（续）
+
+### `array_shift($arr)` — 头部弹出
+
+```
+$val = array_shift($arr);
+```
+
+| | PHP | TinyPHP |
+|---|---|---|
+| 空数组 | null | NULL（`VAR_NULL()`） |
+| 返回类型 | mixed | `t_var` |
+| 性能 | O(1) | O(n) memmove |
+
+**内存安全**：释放弹出 entry 的 string key，memmove 左移剩余元素。
+
+---
+
+### `array_unshift($arr, $val)` — 头部追加
+
+```
+$len = array_unshift($arr, 99);
+```
+
+| | PHP | TinyPHP |
+|---|---|---|
+| 返回值 | 新长度 | 新长度 |
+| 多值追加 | ✅ | ❌（仅单值） |
+
+memmove 右移 + 重编号 int key。
+
+---
+
+### `array_sum($arr)` / `array_product($arr)` — 求和/求积
+
+```
+$sum = array_sum([1, 2, 3]);       // int(6)
+$prod = array_product([1, 2, 3]);   // int(6)
+```
+
+| | PHP | TinyPHP |
+|---|---|---|
+| int 元素 | ✅ | ✅ |
+| float 元素 | 自动提升为 float | ✅ |
+| 空数组 | sum=0, product=1 | 同 |
+| 返回类型 | int/float | `t_var` |
+
+**差异**：只要有一个 float 元素，结果自动提升为 float。
+
+---
+
+### `array_unique($arr)` — 去重
+
+```
+$u = array_unique([1, 2, 2, 3]);  // [1, 2, 3]
+```
+
+| | PHP | TinyPHP |
+|---|---|---|
+| 保留首次出现 | ✅ | ✅ |
+| 比较类型 | = 松散比较 | 严格类型+值比较 |
+| SORT 选项 | ✅ | ❌ |
+
+O(n²) 双重循环，新建数组，不修改原数组。
+
+---
+
+### `array_reverse($arr, $preserve_keys?)` — 反转
+
+```
+$r = array_reverse([1, 2, 3]);  // [3, 2, 1]
+```
+
+倒序遍历新建数组。`preserve_keys=true` 时 string key 深拷贝。
+
+---
+
+### `array_slice($arr, $offset, $length?, $preserve_keys?)` — 切片
+
+```
+array_slice([10,20,30,40], 1, 2);  // [20, 30]
+array_slice([10,20,30,40], -2, 0); // [30, 40]
+```
+
+| | PHP | TinyPHP |
+|---|---|---|
+| 负数 offset | ✅ | ✅ |
+| length=0 | 到末尾 | ✅ |
+| preserve_keys | ✅ | ✅ |
+
+---
+
+## 通用
+
+### `max($arr)` / `min($arr)` — 最值
+
+```
+$mx = max([5, 99, 3]);   // 99
+$mn = min([5, 99, 3]);   // 3
+```
+
+| | PHP | TinyPHP |
+|---|---|---|
+| 空数组 | Warning | `error()` 退出 |
+| 非数值 | 跳过 | 跳过 |
+| 多参数 | ✅ | ❌（仅数组） |
+| 返回类型 | mixed | `t_var` |
+
+---
+
+### `range($start, $end, $step?)` — 范围数组
+
+```
+range(1, 5);       // [1, 2, 3, 4, 5]
+range(10, 1, -3);  // [10, 7, 4, 1]
+```
+
+| | PHP | TinyPHP |
+|---|---|---|
+| step=0 | ValueError | `error()` 退出 |
+| 返回类型 | array | `t_array*` |
+
+预知长度一次分配全部 entry，零 realloc。
+
+---
+
+### `array_fill($start_index, $count, $value)` — 填充数组
+
+```
+array_fill(0, 3, 99);  // [99, 99, 99]
+```
+
+`count < 0` → `error()` 退出。通过 `set_int` 设置指定 key。
+
+---
+
+### `sort($arr)` / `rsort($arr)` — 原地排序
+
+```
+sort([30, 10, 20]);   // [10, 20, 30]
+rsort([30, 10, 20]);  // [30, 20, 10]
+```
+
+libc `qsort` 原地排序，重编号 int key。比较 int/float 值，忽略非数值类型。
 
 ---
 
 ## 后续建议实现
 
-按优先级和难度排序。
+### 低难度（⭐）
 
-### 低难度（⭐ ~30 行/个）
+| 函数 | 说明 |
+|---|---|
+| `sprintf` | 格式化字符串 |
 
-| 函数 | 说明 | C 实现 |
-|---|---|---|
-| `intval($x)` | 转整数 | `(t_int)x` |
-| `floatval($x)` | 转浮点 | `(t_float)x` |
-| `strval($x)` | 转字符串 | `tphp_rt_str_from_int/float` |
-| `boolval($x)` | 转布尔 | `(t_bool)x` |
-| `rand($min, $max)` | 随机整数 | `rand() % (max-min+1) + min` |
-| `mt_rand($min, $max)` | Mersenne Twister 随机数 | `rand()` 或 mt19937 |
-| `defined("CONST")` | 常量是否定义 | 编译期可知 |
+### 中等难度（⭐⭐）
 
-### 中等难度（⭐⭐ ~60 行/个）
-
-| 函数 | 说明 | C 实现 |
-|---|---|---|
-| `strlen($s)` | 字符串长度 | `s.length` |
-| `substr($s, $start, $len?)` | 子串 | `memcpy` 栈缓冲区 |
-| `strpos($haystack, $needle)` | 查找子串位置 | `strstr` / 手写 |
-| `trim($s)` / `ltrim` / `rtrim` | 去空白 | 手写循环 |
-| `sprintf($fmt, ...)` | 格式化 | `snprintf` 栈缓冲区 |
-
-### 较高难度（⭐⭐⭐ ~100 行/个）
-
-| 函数 | 说明 | C 实现 |
-|---|---|---|
-| `array_shift($arr)` | 头部弹出 | 取首元素 + memmove |
-| `file_get_contents($path)` | 读文件 | `fopen/fread/fclose` + `t_string` |
-| `file_put_contents($path, $data)` | 写文件 | `fopen/fwrite/fclose` |
+| 函数 | 说明 |
+|---|---|
+| `file_get_contents/file_put_contents` | 文件 I/O |
 
 ### 设计限制（暂不实现）
 
-| 函数 | 原因 |
+| 特性 | 原因 |
 |---|---|
-| `try / catch / throw` | 需 `setjmp/longjmp` + 资源追踪重构 |
-| `yield` 生成器 | 需状态机 + 协程支持 |
-| `include / require / eval` | AOT 编译不支持 |
-| `preg_match / preg_replace` | 需嵌入 PCRE，体积巨大 |
-| `PDO / mysqli` | 需链接外部库 |
+| `try/catch/throw` | 需 `setjmp/longjmp` |
+| `yield` | 需状态机 |
+| `include/require/eval` | AOT 不支持 |
+| `preg_match/preg_replace` | 需 PCRE |
+| `PDO/mysqli` | 需外部库 |

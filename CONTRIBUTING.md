@@ -27,6 +27,7 @@ include/                         C 运行时头文件（静态 inline 库）
   ├── array.h                    PHP 数组（引用计数 + 128 槽复用池 + 1.5× 增长因子）
   ├── runtime.h                  内部辅助（字符串池、资源追踪、error）
   ├── builtin.h                  公开内置（echo, is_*, 数组函数, implode/explode）
+  ├── rand.h                     随机数（rand / mt_rand）
   └── os/
       ├── times.h                系统函数（time, date, sleep, usleep, hrtime）
       └── json.h                 JSON 编解码（json_encode / json_decode）
@@ -256,20 +257,21 @@ ExprNode（抽象，含 line/column）
 
 | 文件 | 行数~ | 核心职责 |
 |------|------|---------|
-| `tphp.php` | ~310 | CLI 入口、两阶段解析、多文件合并、编译器调用 |
+| `tphp.php` | ~370 | CLI 入口、多文件合并、PHAR 自解压、编译器调用 |
 | `src/TokenType.php` | ~125 | Token 枚举 (~75 token) |
 | `src/Token.php` | ~20 | Token 值对象 |
 | `src/AST/Node.php` | ~820 | AST 节点 + Visitor 接口 |
 | `src/Lexer.php` | ~680 | 词法分析（链式属性插值、heredoc、运算符） |
-| `src/Parser.php` | ~1490 | 递归下降解析（尾部逗号支持） |
-| `src/CodeGenerator.php` | ~2900 | C 代码生成（for作用域提升/foreach str key/match安全/闭包堆捕获/类型推导增强） |
+| `src/Parser.php` | ~1500 | 递归下降解析（键名解构/尾部逗号） |
+| `src/CodeGenerator.php` | ~3100 | C 代码生成（40+ 内置函数/类型推导/闭包捕获） |
 | `include/types.h` | ~130 | C 类型系统 + likely/unlikely 宏 |
 | `include/val.h` | ~45 | 便捷宏 |
-| `include/array.h` | ~310 | PHP 数组（128 槽复用池 + 1.5× 增长因子 + likely/unlikely） |
-| `include/runtime.h` | ~320 | 运行时（64KB 字符串池、资源追踪、error、type=3 通用堆清理） |
-| `include/builtin.h` | ~330 | 公开内置（类型检测、数组函数、implode/explode） |
+| `include/array.h` | ~440 | PHP 数组（128 槽复用池/sort/qsort/1.5× 增长因子） |
+| `include/runtime.h` | ~300 | 运行时（64KB 字符串池/资源追踪/error） |
+| `include/builtin.h` | ~430 | 公开内置（40+ 内置函数） |
+| `include/rand.h` | ~60 | MT19937 随机数 |
 | `include/os/times.h` | ~95 | 系统函数（跨平台） |
-| `include/os/json.h` | ~370 | JSON 编解码（递归编码+递归下降解析+对象检测） |
+| `include/os/json.h` | ~340 | JSON 编解码（递归编码+解析+无效输入 error） |
 | `include/common.h` | ~15 | 总入口 |
-| `test/var/` | 35+ 文件 | 测试用例（closure_capture/control_flow_advanced/match_expr/bench_*） |
-| `test/files/` | 6+ 文件 | 多文件测试（const 多作用域/demo） |
+| `test/var/` | 40+ 文件 | 测试用例（builtin/closure/match/bench/...） |
+| `test/files/` | 6+ 文件 | 多文件测试（const/命名空间） |

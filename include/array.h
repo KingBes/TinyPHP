@@ -307,7 +307,239 @@ void tphp_fn_arr_free(t_array *a) {
     arr_pool_put(a);
 }
 
-// === Hash (unchanged) ===
+// === Shift (remove first element, shift left) ===
+
+static inline bool tphp_fn_arr_shift(t_array *a, t_var *out) {
+    if (unlikely(a == NULL || a->length == 0)) return false;
+    if (out != NULL) *out = a->entries[0].val;
+    // Free string key of first entry
+    if (a->entries[0].key.type == TYPE_STRING)
+        tphp_rt_str_free(&a->entries[0].key.value._string);
+    // Shift remaining entries left
+    memmove(&a->entries[0], &a->entries[1],
+            (size_t)(a->length - 1) * sizeof(t_arr_entry));
+    a->length--;
+    return true;
+}
+
+// === Unshift (prepend, shift right) ===
+
+static inline int tphp_fn_arr_unshift(t_array *a, t_var val) {
+    if (unlikely(a == NULL)) return 0;
+    a = tphp_fn_arr_grow(a, a->length + 1);
+    memmove(&a->entries[1], &a->entries[0],
+            (size_t)a->length * sizeof(t_arr_entry));
+    a->entries[0].key.type = TYPE_INT;
+    a->entries[0].key.value._int = 0;
+    a->entries[0].val = val;
+    // Re-key int keys of shifted entries
+    for (int i = 1; i <= a->length; i++) {
+        if (a->entries[i].key.type == TYPE_INT)
+            a->entries[i].key.value._int = i;
+    }
+    a->length++;
+    return a->length;
+}
+
+// === Sum ===
+
+static inline t_var tphp_fn_arr_sum(t_array *a) {
+    if (unlikely(a == NULL || a->length == 0)) return VAR_INT(0);
+    t_int i_sum = 0;
+    t_float f_sum = 0.0;
+    bool has_float = false;
+    for (int i = 0; i < a->length; i++) {
+        t_var *v = &a->entries[i].val;
+        if (v->type == TYPE_INT) {
+            if (has_float) f_sum += (t_float)v->value._int;
+            else i_sum += v->value._int;
+        } else if (v->type == TYPE_FLOAT) {
+            if (!has_float) { has_float = true; f_sum = (t_float)i_sum; }
+            f_sum += v->value._float;
+        }
+    }
+    return has_float ? VAR_FLOAT(f_sum) : VAR_INT(i_sum);
+}
+
+// === Product ===
+
+static inline t_var tphp_fn_arr_product(t_array *a) {
+    if (unlikely(a == NULL || a->length == 0)) return VAR_INT(1);
+    t_int i_prod = 1;
+    t_float f_prod = 1.0;
+    bool has_float = false;
+    for (int i = 0; i < a->length; i++) {
+        t_var *v = &a->entries[i].val;
+        if (v->type == TYPE_INT) {
+            if (has_float) f_prod *= (t_float)v->value._int;
+            else i_prod *= v->value._int;
+        } else if (v->type == TYPE_FLOAT) {
+            if (!has_float) { has_float = true; f_prod = (t_float)i_prod; }
+            f_prod *= v->value._float;
+        }
+    }
+    return has_float ? VAR_FLOAT(f_prod) : VAR_INT(i_prod);
+}
+
+// === Reverse ===
+
+static inline t_array* tphp_fn_arr_reverse(t_array *a, bool preserve_keys) {
+    if (unlikely(a == NULL)) return NULL;
+    t_array *r = tphp_fn_arr_create(a->length);
+    if (unlikely(r == NULL)) return NULL;
+    for (int i = a->length - 1, j = 0; i >= 0; i--, j++) {
+        r->entries[j] = a->entries[i];
+        if (!preserve_keys) {
+            r->entries[j].key.type = TYPE_INT;
+            r->entries[j].key.value._int = j;
+        } else if (a->entries[i].key.type == TYPE_STRING) {
+            // Deep copy string key to avoid dangling pointer
+            r->entries[j].key.value._string = tphp_rt_str_dup(a->entries[i].key.value._string);
+        }
+    }
+    r->length = a->length;
+    return r;
+}
+
+// === Slice ===
+
+static inline t_array* tphp_fn_arr_slice(t_array *a, int offset, int length, bool preserve_keys) {
+    if (unlikely(a == NULL)) return tphp_fn_arr_create(0);
+    int alen = a->length;
+    // Handle negative offset
+    if (offset < 0) offset = alen + offset;
+    if (offset < 0) offset = 0;
+    if (offset >= alen) return tphp_fn_arr_create(0);
+    // length < 0 means until end (PHP semantics: null length)
+    int end;
+    if (length <= 0) {
+        end = alen;
+    } else {
+        end = offset + length;
+        if (end > alen) end = alen;
+    }
+    int count = end - offset;
+    if (count <= 0) return tphp_fn_arr_create(0);
+    t_array *r = tphp_fn_arr_create(count);
+    if (unlikely(r == NULL)) return NULL;
+    for (int i = 0; i < count; i++) {
+        r->entries[i] = a->entries[offset + i];
+        if (!preserve_keys) {
+            r->entries[i].key.type = TYPE_INT;
+            r->entries[i].key.value._int = i;
+        } else if (a->entries[offset + i].key.type == TYPE_STRING) {
+            r->entries[i].key.value._string =
+                tphp_rt_str_dup(a->entries[offset + i].key.value._string);
+        }
+    }
+    r->length = count;
+    return r;
+}
+
+// === Sort (in-place quicksort, ascending by value) ===
+
+static inline int _arr_sort_cmp_asc(const void *a, const void *b) {
+    t_var *va = &((const t_arr_entry *)a)->val;
+    t_var *vb = &((const t_arr_entry *)b)->val;
+    t_float fa, fb;
+    if (va->type == TYPE_INT) fa = (t_float)va->value._int;
+    else if (va->type == TYPE_FLOAT) fa = va->value._float;
+    else return (va->type < vb->type) ? -1 : 1;
+    if (vb->type == TYPE_INT) fb = (t_float)vb->value._int;
+    else if (vb->type == TYPE_FLOAT) fb = vb->value._float;
+    else return (va->type < vb->type) ? -1 : 1;
+    return (fa < fb) ? -1 : (fa > fb) ? 1 : 0;
+}
+
+static inline int _arr_sort_cmp_desc(const void *a, const void *b) {
+    return -_arr_sort_cmp_asc(a, b);
+}
+
+static inline void tphp_fn_sort(t_array *a) {
+    if (unlikely(a == NULL || a->length <= 1)) return;
+    qsort(a->entries, (size_t)a->length, sizeof(t_arr_entry), _arr_sort_cmp_asc);
+    // Re-key int keys after sort
+    for (int i = 0; i < a->length; i++) {
+        if (a->entries[i].key.type == TYPE_INT)
+            a->entries[i].key.value._int = i;
+    }
+}
+
+static inline void tphp_fn_rsort(t_array *a) {
+    if (unlikely(a == NULL || a->length <= 1)) return;
+    qsort(a->entries, (size_t)a->length, sizeof(t_arr_entry), _arr_sort_cmp_desc);
+    for (int i = 0; i < a->length; i++) {
+        if (a->entries[i].key.type == TYPE_INT)
+            a->entries[i].key.value._int = i;
+    }
+}
+
+// === array_unique ===
+
+static inline t_array* tphp_fn_arr_unique(t_array *a) {
+    if (unlikely(a == NULL)) return NULL;
+    t_array *r = tphp_fn_arr_create(a->length > 0 ? a->length : 4);
+    if (unlikely(r == NULL)) return NULL;
+    for (int i = 0; i < a->length; i++) {
+        bool dup = false;
+        for (int j = 0; j < r->length; j++) {
+            t_var *vi = &a->entries[i].val, *vj = &r->entries[j].val;
+            if (vi->type != vj->type) continue;
+            if (vi->type == TYPE_INT && vi->value._int == vj->value._int) { dup = true; break; }
+            if (vi->type == TYPE_FLOAT && vi->value._float == vj->value._float) { dup = true; break; }
+            if (vi->type == TYPE_STRING &&
+                vi->value._string.length == vj->value._string.length &&
+                (vi->value._string.data == vj->value._string.data ||
+                 memcmp(vi->value._string.data, vj->value._string.data, (size_t)vi->value._string.length) == 0))
+                { dup = true; break; }
+        }
+        if (!dup) r = tphp_fn_arr_push(r, a->entries[i].val);
+    }
+    return r;
+}
+
+// === range($start, $end, $step=1) ===
+
+static inline t_array* tphp_fn_range(t_int start, t_int end, t_int step) {
+    if (step == 0) {
+        tphp_rt_free_all();
+        fputs("\nFatal error: range(): step must be non-zero\n\n", stderr);
+        exit(1);
+    }
+    int count = 0;
+    if (step > 0) {
+        if (end < start) count = 0;
+        else count = (int)((end - start) / step) + 1;
+    } else {
+        if (end > start) count = 0;
+        else count = (int)((start - end) / (-step)) + 1;
+    }
+    t_array *r = tphp_fn_arr_create(count > 0 ? count : 4);
+    if (unlikely(r == NULL)) return NULL;
+    if (count <= 0) return r;
+    for (t_int v = start; count > 0; v += step, count--) {
+        r = tphp_fn_arr_push(r, VAR_INT(v));
+    }
+    return r;
+}
+
+// === array_fill($start_index, $count, $value) ===
+
+static inline t_array* tphp_fn_arr_fill(t_int start, t_int count, t_var val) {
+    if (count < 0) {
+        tphp_rt_free_all();
+        fputs("\nFatal error: array_fill(): count must be non-negative\n\n", stderr);
+        exit(1);
+    }
+    t_array *r = tphp_fn_arr_create(count > 0 ? count : 4);
+    if (unlikely(r == NULL)) return NULL;
+    for (t_int i = 0; i < count; i++) {
+        r = tphp_fn_arr_set_int(r, start + i, val);
+    }
+    return r;
+}
+
+// === Hash ===
 
 static inline int tphp_fn_str_hash(t_string s) {
     if (s.data == NULL) return 0;

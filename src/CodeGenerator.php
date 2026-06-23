@@ -871,15 +871,40 @@ class CodeGenerator implements ASTVisitor
             // 数组函数返回类型
             if ($expr->name === 'array_push')  return 't_int';
             if ($expr->name === 'array_pop')   return 't_var';
+            if ($expr->name === 'array_shift') return 't_var';
+            if ($expr->name === 'array_unshift') return 't_int';
             if ($expr->name === 'in_array')    return 't_bool';
             if ($expr->name === 'array_key_exists') return 't_bool';
             if ($expr->name === 'array_keys')  return 't_array*';
             if ($expr->name === 'array_values') return 't_array*';
             if ($expr->name === 'array_merge')  return 't_array*';
+            if ($expr->name === 'array_sum')   return 't_var';
+            if ($expr->name === 'array_product') return 't_var';
+            if ($expr->name === 'array_reverse') return 't_array*';
+            if ($expr->name === 'array_slice') return 't_array*';
+            if ($expr->name === 'array_unique') return 't_array*';
+            if ($expr->name === 'range') return 't_array*';
+            if ($expr->name === 'array_fill') return 't_array*';
+            if ($expr->name === 'sort' || $expr->name === 'rsort') return 'void';
+            if ($expr->name === 'max') return 't_var';
+            if ($expr->name === 'min') return 't_var';
             if ($expr->name === 'implode' || $expr->name === 'join') return 't_string';
             if ($expr->name === 'explode') return 't_array*';
             if ($expr->name === 'json_encode') return 't_string';
             if ($expr->name === 'json_decode') return 't_var';
+            // 字符串函数返回类型
+            if ($expr->name === 'strlen')       return 't_int';
+            if ($expr->name === 'trim' || $expr->name === 'ltrim' || $expr->name === 'rtrim') return 't_string';
+            if ($expr->name === 'substr')       return 't_string';
+            if ($expr->name === 'strpos')       return 't_int';
+            if ($expr->name === 'str_contains') return 't_bool';
+            if ($expr->name === 'str_replace')  return 't_string';
+            // 类型转换函数
+            if ($expr->name === 'intval')   return 't_int';
+            if ($expr->name === 'floatval') return 't_float';
+            if ($expr->name === 'strval')   return 't_string';
+            if ($expr->name === 'boolval')  return 't_bool';
+            if ($expr->name === 'rand' || $expr->name === 'mt_rand') return 't_int';
         }
         // 闭包调用 → 查 closureSigs
         if ($expr->name === '__invoke' && $expr->callee instanceof VariableExpr) {
@@ -1503,6 +1528,134 @@ class CodeGenerator implements ASTVisitor
             $a1 = $node->args[0]->accept($this);
             $a2 = $node->args[1]->accept($this);
             return 'tphp_fn_array_merge(' . $a1 . ', ' . $a2 . ')';
+        }
+
+        // array_shift($arr) → 移除头部元素，返回 t_var
+        if ($node->callee === null && $node->name === 'array_shift') {
+            $arrCode = $node->args[0]->accept($this);
+            $tv = '_ts_' . (++$this->tmpVarCounter);
+            return "({ t_var {$tv} = VAR_NULL(); tphp_fn_arr_shift({$arrCode}, &{$tv}); {$tv}; })";
+        }
+
+        // array_unshift($arr, $val) → 头部追加，返回新长度
+        if ($node->callee === null && $node->name === 'array_unshift') {
+            $arrCode = $node->args[0]->accept($this);
+            $valCode = $this->wrapArrayElement($node->args[1], $node->args[1]->accept($this));
+            return 'tphp_fn_arr_unshift(' . $arrCode . ', ' . $valCode . ')';
+        }
+
+        // array_sum($arr)
+        if ($node->callee === null && $node->name === 'array_sum') {
+            $arrCode = $node->args[0]->accept($this);
+            return 'tphp_fn_arr_sum(' . $arrCode . ')';
+        }
+
+        // array_product($arr)
+        if ($node->callee === null && $node->name === 'array_product') {
+            $arrCode = $node->args[0]->accept($this);
+            return 'tphp_fn_arr_product(' . $arrCode . ')';
+        }
+
+        // array_reverse($arr, $preserve_keys=false)
+        if ($node->callee === null && $node->name === 'array_reverse') {
+            $arrCode = $node->args[0]->accept($this);
+            $pk = isset($node->args[1]) ? $node->args[1]->accept($this) : 'false';
+            return 'tphp_fn_arr_reverse(' . $arrCode . ', ' . $pk . ')';
+        }
+
+        // array_slice($arr, $offset, $length=0, $preserve_keys=false)
+        if ($node->callee === null && $node->name === 'array_slice') {
+            $arrCode = $node->args[0]->accept($this);
+            $offset  = $node->args[1]->accept($this);
+            $len     = isset($node->args[2]) ? $node->args[2]->accept($this) : '0';
+            $pk      = isset($node->args[3]) ? $node->args[3]->accept($this) : 'false';
+            return 'tphp_fn_arr_slice(' . $arrCode . ', ' . $offset . ', ' . $len . ', ' . $pk . ')';
+        }
+
+        // max($arr)
+        if ($node->callee === null && $node->name === 'max') {
+            $arrCode = $node->args[0]->accept($this);
+            return 'tphp_fn_max(' . $arrCode . ')';
+        }
+
+        // min($arr)
+        if ($node->callee === null && $node->name === 'min') {
+            $arrCode = $node->args[0]->accept($this);
+            return 'tphp_fn_min(' . $arrCode . ')';
+        }
+
+        // strlen($str)
+        if ($node->callee === null && $node->name === 'strlen') {
+            return 'tphp_fn_strlen(' . $node->args[0]->accept($this) . ')';
+        }
+
+        // trim($str) / ltrim($str) / rtrim($str)
+        if ($node->callee === null && in_array($node->name, ['trim', 'ltrim', 'rtrim'], true)) {
+            return 'tphp_fn_' . $node->name . '(' . $node->args[0]->accept($this) . ')';
+        }
+
+        // substr($str, $offset, $length=0)
+        if ($node->callee === null && $node->name === 'substr') {
+            $s   = $node->args[0]->accept($this);
+            $off = $node->args[1]->accept($this);
+            $len = isset($node->args[2]) ? $node->args[2]->accept($this) : '0';
+            return 'tphp_fn_substr(' . $s . ', ' . $off . ', ' . $len . ')';
+        }
+
+        // strpos($haystack, $needle)
+        if ($node->callee === null && $node->name === 'strpos') {
+            return 'tphp_fn_strpos(' . $node->args[0]->accept($this) . ', ' . $node->args[1]->accept($this) . ')';
+        }
+
+        // str_contains($haystack, $needle)
+        if ($node->callee === null && $node->name === 'str_contains') {
+            return 'tphp_fn_str_contains(' . $node->args[0]->accept($this) . ', ' . $node->args[1]->accept($this) . ')';
+        }
+
+        // str_replace($search, $replace, $subject)
+        if ($node->callee === null && $node->name === 'str_replace') {
+            return 'tphp_fn_str_replace(' . $node->args[0]->accept($this) . ', ' . $node->args[1]->accept($this) . ', ' . $node->args[2]->accept($this) . ')';
+        }
+
+        // 类型转换: intval/floatval/strval/boolval
+        if ($node->callee === null && in_array($node->name, ['intval', 'floatval', 'strval', 'boolval'], true)) {
+            $valCode = $this->wrapVar($node->args[0]);
+            return 'tphp_fn_' . $node->name . '(' . $valCode . ')';
+        }
+
+        // rand($min, $max) / mt_rand($min, $max)
+        if ($node->callee === null && ($node->name === 'rand' || $node->name === 'mt_rand')) {
+            $min = $node->args[0]->accept($this);
+            $max = $node->args[1]->accept($this);
+            return 'tphp_fn_' . $node->name . '(' . $min . ', ' . $max . ')';
+        }
+
+        // sort($arr) / rsort($arr) — in-place sort
+        if ($node->callee === null && ($node->name === 'sort' || $node->name === 'rsort')) {
+            $arrCode = $node->args[0]->accept($this);
+            return 'tphp_fn_' . $node->name . '(' . $arrCode . ')';
+        }
+
+        // array_unique($arr)
+        if ($node->callee === null && $node->name === 'array_unique') {
+            $arrCode = $node->args[0]->accept($this);
+            return 'tphp_fn_arr_unique(' . $arrCode . ')';
+        }
+
+        // range($start, $end, $step=1)
+        if ($node->callee === null && $node->name === 'range') {
+            $start = $node->args[0]->accept($this);
+            $end   = $node->args[1]->accept($this);
+            $step  = isset($node->args[2]) ? $node->args[2]->accept($this) : '1';
+            return 'tphp_fn_range(' . $start . ', ' . $end . ', ' . $step . ')';
+        }
+
+        // array_fill($start_index, $count, $value)
+        if ($node->callee === null && $node->name === 'array_fill') {
+            $start = $node->args[0]->accept($this);
+            $count = $node->args[1]->accept($this);
+            $val   = $this->wrapArrayElement($node->args[2], $node->args[2]->accept($this));
+            return 'tphp_fn_arr_fill(' . $start . ', ' . $count . ', ' . $val . ')';
         }
 
         // implode($glue, $arr) → 用分隔符连接数组元素为字符串

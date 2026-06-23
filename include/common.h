@@ -12,3 +12,4 @@
 #include "builtin.h"
 #include "os/times.h"
 #include "os/json.h"
+#include "rand.h"
