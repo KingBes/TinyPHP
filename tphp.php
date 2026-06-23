@@ -265,20 +265,21 @@ if ($inPhar) {
     }
 }
 
-// macOS: explicitly link libtcc1.a
-$macLibPath = '';
+// macOS: set TCC_LIBRARY_PATH so TCC finds libtcc1.a internally
 if (PHP_OS_FAMILY === 'Darwin') {
     $base = $inPhar ? ($pharDir . DIRECTORY_SEPARATOR . 'tcc') : dirname($ccExe);
-    foreach (['libtcc1.a', 'lib/libtcc1.a', 'lib/tcc/libtcc1.a'] as $rel) {
-        $tryLib = $base . DIRECTORY_SEPARATOR . $rel;
-        if (file_exists($tryLib)) { $macLibPath = $tryLib; break; }
+    foreach (['', DIRECTORY_SEPARATOR . 'lib', DIRECTORY_SEPARATOR . 'lib' . DIRECTORY_SEPARATOR . 'tcc'] as $sub) {
+        $tryDir = $base . $sub;
+        if (file_exists($tryDir . DIRECTORY_SEPARATOR . 'libtcc1.a')) {
+            putenv('TCC_LIBRARY_PATH=' . $tryDir);
+            break;
+        }
     }
 }
 
-$extraFiles = $macLibPath !== '' ? ' "' . $macLibPath . '"' : '';
 $cmd = sprintf(
-    '"%s"%s -I"%s" -o "%s" "%s"%s 2>&1',
-    $ccExe, $bFlag, $includeDir, $outExe, $cFile, $extraFiles
+    '"%s"%s -I"%s" -o "%s" "%s" 2>&1',
+    $ccExe, $bFlag, $includeDir, $outExe, $cFile
 );
 
 $tccOutput = [];

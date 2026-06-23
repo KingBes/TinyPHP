@@ -209,11 +209,9 @@ jobs:
           # Symlink headers for TCC bootstrapping (Vlang-style)
           for i in include/*.h; do test -f $i && ln -sf $i $(basename $i); done
           # Key: --config-new_macho=yes for proper macOS Mach-O output
-          # --tccdir=../tcc puts runtime libs at ../tcc (same level as binary)
           ./configure \
             --prefix=../tcc \
             --bindir=../tcc \
-            --tccdir=../tcc \
             --crtprefix="../tcc:/usr/lib" \
             --libpaths="../tcc:/usr/local/lib:/usr/lib:/lib" \
             --sysincludepaths="../tcc/include:/usr/local/include:$SDK/usr/include" \
