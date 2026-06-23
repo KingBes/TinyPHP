@@ -205,11 +205,13 @@ jobs:
           SDK=$(xcrun --show-sdk-path)
           git clone --depth 1 --branch mob https://repo.or.cz/tinycc.git tinycc-src
           cd tinycc-src
+          # 注意: --bindir=../tcc 会把 tcc 二进制装在 ../tcc/tcc
+          # crtprefix 和 libpaths 是相对二进制的路径: ../tcc/tcc → ../lib → ../tcc/lib
           ./configure \
             --prefix=../tcc \
             --bindir=../tcc \
-            --crtprefix="../tcc/lib:$SDK/usr/lib" \
-            --libpaths="../tcc/lib:$SDK/usr/lib:/usr/lib:/usr/local/lib" \
+            --crtprefix="../lib:$SDK/usr/lib" \
+            --libpaths="../lib:$SDK/usr/lib:/usr/lib:/usr/local/lib" \
             --extra-cflags="-I$SDK/usr/include -O3" \
             --cc=cc \
             --config-bcheck=yes \
@@ -224,9 +226,11 @@ jobs:
           cp -r tcc/lib/tcc/include/* tcc/include/ 2>/dev/null || true
           # 补充 SDK CRT 文件
           cp $SDK/usr/lib/crt1.o tcc/lib/ 2>/dev/null || true
-          # 验证
-          ls -la tcc/tcc tcc/libtcc1.a
-          ./tcc/tcc -v -v 2>&1 | head -5
+          # 验证：确认二进制能找到 libtcc1.a（通过编译一个小文件测试）
+          ls -la tcc/tcc tcc/libtcc1.a tcc/lib/tcc/libtcc1.a
+          echo 'int main(){return 0;}' > _test_tcc.c
+          ./tcc/tcc -B"$PWD/tcc" -o _test_tcc _test_tcc.c && echo "TCC standalone OK" || echo "TCC FAIL"
+          rm -f _test_tcc.c _test_tcc
 
       - name: Download PHP
         run: |
