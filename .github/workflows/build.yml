@@ -227,9 +227,9 @@ jobs:
           make
           make install
           cd ..
-          # Ensure libtcc1.a is directly in tcc/ (for -B or explicit linking)
-          cp tcc/libtcc1.a tcc/ 2>/dev/null || true
-          cp tcc/*.o           tcc/ 2>/dev/null || true
+          # Ensure libtcc1.a is at tcc/libtcc1.a (--tccdir may or may not work)
+          find tcc -name libtcc1.a -exec cp {} tcc/libtcc1.a \; -quit
+          test -f tcc/libtcc1.a || { echo "ERROR: libtcc1.a not found"; exit 1; }
           # Link libc.dylib for Big Sur+ compatibility (build only, not packed into PHAR)
           ln -sf /usr/lib/libSystem.B.dylib tcc/libc.dylib 2>/dev/null || true
           # Verify standalone build
