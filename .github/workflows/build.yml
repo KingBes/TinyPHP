@@ -230,7 +230,7 @@ jobs:
           # Ensure libtcc1.a is directly in tcc/ (for -B or explicit linking)
           cp tcc/libtcc1.a tcc/ 2>/dev/null || true
           cp tcc/*.o           tcc/ 2>/dev/null || true
-          # Link libc.dylib for Big Sur+ compatibility
+          # Link libc.dylib for Big Sur+ compatibility (build only, not packed into PHAR)
           ln -sf /usr/lib/libSystem.B.dylib tcc/libc.dylib 2>/dev/null || true
           # Verify standalone build
           ls -la tcc/tcc tcc/libtcc1.a
@@ -238,6 +238,8 @@ jobs:
           ./tcc/tcc -o _test_tcc _test_tcc.c && echo "TCC standalone OK" \
             || { echo "TCC FAIL";./tcc/tcc -v -v 2>&1; exit 1; }
           rm -f _test_tcc.c _test_tcc
+          # Remove symlink before PHAR packaging (PHAR can't pack symlinks)
+          rm -f tcc/libc.dylib
 
       - name: Download PHP
         run: |
