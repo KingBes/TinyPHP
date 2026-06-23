@@ -19,6 +19,7 @@ static inline void tphp_rt_str_free(t_string* s);
 static inline t_string tphp_rt_str_dup(t_string s);
 static inline t_bool tphp_rt_str_eq(t_string a, t_string b);
 static inline void tphp_rt_register(void *ptr, int type);
+static inline void tphp_rt_free_all(void);
 
 static int tphp_fn_str_hash(t_string s);
 
@@ -439,8 +440,8 @@ static inline t_array* tphp_fn_arr_slice(t_array *a, int offset, int length, boo
 // === Sort (in-place quicksort, ascending by value) ===
 
 static inline int _arr_sort_cmp_asc(const void *a, const void *b) {
-    t_var *va = &((const t_arr_entry *)a)->val;
-    t_var *vb = &((const t_arr_entry *)b)->val;
+    const t_var *va = &((const t_arr_entry *)a)->val;
+    const t_var *vb = &((const t_arr_entry *)b)->val;
     t_float fa, fb;
     if (va->type == TYPE_INT) fa = (t_float)va->value._int;
     else if (va->type == TYPE_FLOAT) fa = va->value._float;
