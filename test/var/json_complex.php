@@ -41,7 +41,7 @@ class Main
         // ============================================================
         echo "\n===== 4. mixed types =====\n";
 
-        $mixed = [42, -7, 3.14, "hello", true, false, null, [1, 2]];
+        $mixed = [42, -7, 3.14526, "hello", true, false, null, [1, 2]];
         $enc_mix = json_encode($mixed);
         var_dump($enc_mix);
 
@@ -126,7 +126,7 @@ class Main
         // ============================================================
         echo "\n===== 10. array of objects =====\n";
 
-        $users_json = '[{"id":1,"name":"alice"},{"id":2,"name":"bob"}]';
+        $users_json = '[{"id":1,"name":"alice"},{"id":2,"name":"bob"},3.14526]';
         $users = json_decode($users_json);
         var_dump(is_array($users));
         var_dump(is_array($users));

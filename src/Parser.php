@@ -669,26 +669,31 @@ class Parser
         if (!$short) {
             $this->consume(TokenType::LPAREN, 'Expected (');
         }
-        $vars = $this->parseListVars();
+        [$vars, $keyedEntries] = $this->parseListVars();
         if ($short) {
             $this->consume(TokenType::RBRACKET, 'Expected ]');
         } else {
             $this->consume(TokenType::RPAREN, 'Expected )');
         }
         if ($nested) {
-            // 嵌套 list 无 = expr
-            return new ListStmtNode($vars, new NullLiteralExpr(), $short);
+            // Nested list: no = expr
+            return new ListStmtNode($vars, new NullLiteralExpr(), $short, $keyedEntries);
         }
         $this->consume(TokenType::EQUALS, 'Expected =');
         $expr = $this->parseExpr();
         $this->consume(TokenType::SEMICOLON, 'Expected ;');
-        return new ListStmtNode($vars, $expr, $short);
+        return new ListStmtNode($vars, $expr, $short, $keyedEntries);
     }
 
-    /** @return array (null|string|ListStmtNode)[] */
+    /**
+     * @return array{0: array, 1: array}  [$vars, $keyedEntries]
+     *   $vars:         (null|string|ListStmtNode)[]
+     *   $keyedEntries: {key:string, var:string}[]
+     */
     private function parseListVars(): array
     {
         $vars = [];
+        $keyed = [];
         while (true) {
             // 空位：COMMA
             if ($this->check(TokenType::COMMA)) {
@@ -699,6 +704,18 @@ class Parser
             // 闭合括号：结束解析
             if ($this->check(TokenType::RPAREN) || $this->check(TokenType::RBRACKET)) {
                 break;
+            }
+            // 键名解构: STRING_LIT => $var
+            if ($this->check(TokenType::STRING_LIT)) {
+                $keyLit = (string)$this->peek()->literal;
+                $this->advance();
+                $this->consume(TokenType::DOUBLE_ARROW, 'Expected =>');
+                $varName = $this->consume(TokenType::IDENTIFIER, 'Expected variable name')->lexeme;
+                $keyed[] = ['key' => $keyLit, 'var' => ltrim($varName, '$')];
+                // 逗号继续，否则结束
+                if (!$this->check(TokenType::COMMA)) break;
+                $this->advance();
+                continue;
             }
             // 嵌套 list() 或 []
             if ($this->check(TokenType::LIST_KW) || $this->check(TokenType::LBRACKET)) {
@@ -716,7 +733,7 @@ class Parser
             if (!$this->check(TokenType::COMMA)) break;
             $this->advance();
         }
-        return $vars;
+        return [$vars, $keyed];
     }
 
     // for (init; cond; step) { body }
@@ -1462,15 +1479,24 @@ class Parser
             if ($t->type === TokenType::LBRACKET) { $depth++; continue; }
             if ($t->type === TokenType::RBRACKET) {
                 $depth--;
-                // 顶层 ] 闭合后，下一个 token 如果是 = 则是 list
+                // Top-level ] closed, check if next token is = → list
                 if ($depth === 0 && $this->current < count($this->tokens)) {
                     $n = $this->peek();
                     if ($n->type === TokenType::EQUALS) { $isList = true; }
                 }
                 continue;
             }
+            // Keyed list: STRING_LIT => ... → keep scanning (PHP 7.1+)
+            if ($t->type === TokenType::STRING_LIT) {
+                $next = $this->peek();
+                if ($next->type === TokenType::DOUBLE_ARROW) {
+                    $this->advance(); // skip =>
+                    continue;
+                }
+                break; // array value literal
+            }
             if (in_array($t->type, [
-                TokenType::INT_LIT, TokenType::FLOAT_LIT, TokenType::STRING_LIT,
+                TokenType::INT_LIT, TokenType::FLOAT_LIT,
                 TokenType::TRUE_KW, TokenType::FALSE_KW, TokenType::NULL_KW,
                 TokenType::ARROW,
             ])) break;

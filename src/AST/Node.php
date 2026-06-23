@@ -181,14 +181,17 @@ class AssignStmtNode extends StmtNode
 class ListStmtNode extends StmtNode
 {
     /**
-     * @param array $vars  元素: null=跳过, string=变量名, ListStmtNode=嵌套解构
-     * @param bool  $short  是否短语法 []（仅 Parser 标记用）
+     * @param array        $vars          位置元素: null=跳过, string=变量名, ListStmtNode=嵌套解构
+     * @param array        $keyedEntries  键名解构: [[key=>string, var=>string], ...]
+     * @param bool         $short         是否短语法 []（仅 Parser 标记用）
      */
     public function __construct(
         /** @var array */
         public readonly array $vars,
         public readonly ExprNode $expr,
         public readonly bool $short = false,
+        /** @var array<int, array{key:string, var:string}> */
+        public readonly array $keyedEntries = [],
     ) {}
 
     public function accept(ASTVisitor $visitor): string

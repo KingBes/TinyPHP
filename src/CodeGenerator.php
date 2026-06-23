@@ -907,8 +907,8 @@ class CodeGenerator implements ASTVisitor
             if ($objType !== '' && isset($this->classMethodRetTypes[$objType])) {
                 $retType = $this->classMethodRetTypes[$objType][$expr->name] ?? 't_int';
                 if ($retType === 'void') return 't_int';
-                // 如果是对象类型（包含 *），返回类名（用于对象变量追踪）
-                if (str_ends_with($retType, '*')) return rtrim($retType, '*');
+                // 如果是类类型（含 * 且非内置类型），去掉 * 用于对象追踪
+                if (str_ends_with($retType, '*') && $retType !== 't_array*') return rtrim($retType, '*');
                 return $retType;
             }
         }
@@ -2163,7 +2163,28 @@ class CodeGenerator implements ASTVisitor
         $expr = $node->expr->accept($this);
         $lines[] = "t_array* {$arrName} = {$expr};";
         $this->generateListAssign($lines, $arrName, 0, $node->vars);
+        // Keyed destructuring: ['key' => $var, ...] = $arr
+        if (!empty($node->keyedEntries)) {
+            $this->generateKeyedAssign($lines, $arrName, $node->keyedEntries);
+        }
         return implode("\n", $lines);
+    }
+
+    /** Generate assignments for keyed list destructuring:
+     *  ['key' => $var] = $arr  →  $var = tphp_fn_arr_get_str_int($arr, STR_LIT("key"));
+     */
+    private function generateKeyedAssign(array &$lines, string $arrName, array $entries): void
+    {
+        foreach ($entries as $e) {
+            $key = $e['key'];
+            $var = $e['var'];
+            $klen = strlen($key);
+            $isDeclared = isset($this->declaredVars[$var]);
+            $this->declaredVars[$var] = true;
+            $this->varTypes[$var] = 't_int';
+            $prefix = $isDeclared ? '' : 't_int ';
+            $lines[] = "{$prefix}{$var} = tphp_fn_arr_get_str_int({$arrName}, (t_string){.data=\"{$key}\", .length={$klen}});";
+        }
     }
 
     /** 递归生成 list 赋值代码

@@ -329,7 +329,7 @@ list($a, list($b)) = ...;     // 嵌套解构
 | 多余元素忽略 | ✅ | ✅ |
 | 嵌套 `list()` | ✅ | ✅ 支持 3 层 |
 | 短语法 `[$a,$b]` | ✅ | ✅ |
-| 键名解构 `["key" => $v]` | ✅ (7.1+) | ❌ |
+| 键名解构 `["key" => $v]` | ✅ (7.1+) | ✅ |
 
 **差异**：不支持键名解构。内存安全：生成临时数组指针，读取后立即释放。
 
@@ -364,7 +364,7 @@ $s = json_encode("hello");     // "\"hello\""
 ```
 $v = json_decode("[1,2,3]");       // mixed (t_var)
 $v = json_decode('{"x":1}');       // t_var → is_array($v) = true
-$v = json_decode("not json");      // NULL（格式错误）
+$v = json_decode("not json");      // Fatal error（无效格式 abort）
 ```
 
 | | PHP | TinyPHP |
@@ -374,7 +374,7 @@ $v = json_decode("not json");      // NULL（格式错误）
 | 对象 `{...}` | ✅ | ✅（存为 t_array with string keys） |
 | 嵌套 | ✅ | ✅（递归，无硬编码深度限制） |
 | 字符串转义 `\n \t \\ \" \uXXXX` | ✅ | ✅（`\u` → `?`） |
-| 格式错误安全返回 | ✅（返回 null） | ✅（返回 NULL + 释放已分配内存） |
+| 格式错误安全返回 | ✅（返回 null） | ✅（完全无效 abort，部分解析返回 NULL + 释放内存） |
 | 截断输入 | ✅ | ✅（`[1,2,` → NULL） |
 
 **差异**：返回类型为 `t_var`（mixed），需 `is_array`/`is_int` 等运行时检测。`\uXXXX` 简单映射为 `?`。

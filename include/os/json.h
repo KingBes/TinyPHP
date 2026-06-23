@@ -322,5 +322,22 @@ static t_var json_parse_value(json_parser *p) {
 static inline t_var tphp_fn_json_decode(t_string json) {
     if (json.data == NULL || json.length <= 0) return VAR_NULL();
     json_parser p = {.cur = json.data, .end = json.data + json.length};
-    return json_parse_value(&p);
+    json_skip_ws(&p);
+    if (p.cur >= p.end) return VAR_NULL();
+    const char *start = p.cur;
+    t_var result = json_parse_value(&p);
+    // Check: at least one token was consumed
+    if (p.cur <= start) {
+        tphp_rt_free_all();
+        fputs("\nFatal error: json_decode(): invalid JSON\n\n", stderr);
+        exit(1);
+    }
+    // Check: no trailing garbage data
+    json_skip_ws(&p);
+    if (p.cur < p.end) {
+        tphp_rt_free_all();
+        fputs("\nFatal error: json_decode(): trailing data after JSON value\n\n", stderr);
+        exit(1);
+    }
+    return result;
 }
