@@ -49,6 +49,7 @@ class CodeGenerator implements ASTVisitor
     private static array $typeMap = [
         'int' => 't_int', 'float' => 't_float', 'string' => 't_string',
         'bool' => 't_bool', 'void' => 'void', 'never' => 'void', 'array' => 't_array*',
+        'null' => 'void*',
     ];
 
     /** 临时变量计数器，用于数组字面量的复合表达式 */
@@ -94,7 +95,14 @@ class CodeGenerator implements ASTVisitor
         $p[] = '';
         $p[] = '#include "common.h"';
         foreach ($node->includes as $inc) {
-            $p[] = '#include "' . $inc . '"';
+            if (is_array($inc)) {
+                $delim = ($inc['quoted'] ?? true) ? '"' : '<';
+                $end   = ($inc['quoted'] ?? true) ? '"' : '>';
+                $p[] = '#include ' . $delim . $inc['file'] . $end;
+            } else {
+                // 兼容旧格式（纯字符串）
+                $p[] = '#include "' . $inc . '"';
+            }
         }
         $p[] = '';
 
@@ -651,7 +659,8 @@ class CodeGenerator implements ASTVisitor
         if (!$isDeclared) {
             $cType = $this->inferType($node->expr);
             $this->varTypes[$var] = $cType;
-            $code = "{$cType} {$var} = {$expr};";
+            $declType = ($cType === 'null') ? 'void*' : $cType;
+            $code = "{$declType} {$var} = {$expr};";
         } else {
             $code = "{$var} = {$expr};";
         }
@@ -896,13 +905,20 @@ class CodeGenerator implements ASTVisitor
             if ($expr->name === 'explode') return 't_array*';
             if ($expr->name === 'json_encode') return 't_string';
             if ($expr->name === 'json_decode') return 't_var';
-            // P2C 互操作函数返回类型
-            if ($expr->name === 'c_int')    return 't_int';
-            if ($expr->name === 'c_float')  return 't_float';
-            if ($expr->name === 'c_str')    return 't_string';
-            if ($expr->name === 'php_int')  return 't_int';
-            if ($expr->name === 'php_float') return 't_float';
-            if ($expr->name === 'php_str')  return 't_string';
+            // phpc 互操作函数返回类型
+            if ($expr->name === 'c_int' || $expr->name === 'php_int')   return 't_int';
+            if ($expr->name === 'c_float' || $expr->name === 'php_float') return 't_float';
+            if ($expr->name === 'c_str' || $expr->name === 'php_str')   return 't_string';
+            if ($expr->name === 'phpc_new_arr_int' || $expr->name === 'phpc_new_arr_dbl'
+             || $expr->name === 'phpc_new_arr_str' || $expr->name === 'phpc_new_arr') return 't_array*';
+            // phpc_arr_* 返回 malloc 的 C 指针，存储为 void*
+            if ($expr->name === 'phpc_arr_int' || $expr->name === 'phpc_arr_dbl'
+             || $expr->name === 'phpc_arr_str') return 'null';
+            if ($expr->name === 'phpc_obj')  return 'null';
+            if ($expr->name === 'phpc_new_obj') return 't_object';
+            if ($expr->name === 'phpc_fn' || $expr->name === 'phpc_env') return 'null';
+            if ($expr->name === 'phpc_new_fn' || $expr->name === 'phpc_new_fn_env') return 't_callback';
+            if ($expr->name === 'phpc_free' || $expr->name === 'phpc_free_str_arr') return 'void';
             // 字符串函数返回类型
             if ($expr->name === 'strlen')       return 't_int';
             if ($expr->name === 'trim' || $expr->name === 'ltrim' || $expr->name === 'rtrim') return 't_string';
@@ -1853,11 +1869,19 @@ class CodeGenerator implements ASTVisitor
             $args[] = $code;
         }
         if ($node->callee === null) {
-            // P2C 辅助函数 → 直接 C 调用（c_int, c_str, php_int, php_str, php_float）
-        if ($node->callee === null && in_array($node->name, ['c_int', 'c_float', 'c_str', 'php_int', 'php_float', 'php_str'], true)) {
-            return $node->name . '(' . implode(', ', $args) . ')';
-        }
-        // 独立函数：tphp_fn_ 前缀，命名空间名已 mangled
+            // phpc 桥接函数 → 直接 C 调用（无 tphp_fn_ 前缀，无命名空间 mangle）
+            $baseName = ($pos = strrpos($node->name, '\\')) !== false
+                ? substr($node->name, $pos + 1) : $node->name;
+            $phpcFns = ['c_int','c_float','c_str','php_int','php_float','php_str',
+                'phpc_arr_int','phpc_arr_dbl','phpc_arr_str',
+                'phpc_new_arr_int','phpc_new_arr_dbl','phpc_new_arr_str','phpc_new_arr',
+                'phpc_obj','phpc_new_obj',
+                'phpc_fn','phpc_env','phpc_new_fn','phpc_new_fn_env',
+                'phpc_free','phpc_free_str_arr'];
+            if (in_array($baseName, $phpcFns, true)) {
+                return $baseName . '(' . implode(', ', $args) . ')';
+            }
+            // 独立函数：tphp_fn_ 前缀，命名空间名已 mangled
             $fnName = self::mangleCName($node->name);
             return 'tphp_fn_' . $fnName . '(' . implode(', ', $args) . ')';
         }
@@ -3174,11 +3198,16 @@ class CodeGenerator implements ASTVisitor
     public function mapType(string $t): string {
         if ($t === 'self') return $this->className . '*';
         if ($t === 'mixed') return 't_var';
+        if ($t === 'callable') return 't_callback';
         // 联合类型 → t_var
         if (str_contains($t, '|')) return 't_var';
         // 枚举类型 → 返回 C struct 指针类型
         if (isset($this->enumCTypes[$t])) {
             return $this->enumCTypes[$t];
+        }
+        // 用户定义的类名 → tphp_class_XXX*
+        if (isset($this->classNames[$t])) {
+            return $this->classNames[$t] . '*';
         }
         return self::$typeMap[$t] ?? "{$t}*";
     }

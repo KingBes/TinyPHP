@@ -95,24 +95,117 @@ PHP → Lexer → Token[] → Parser → AST → CodeGenerator → .c → 编译
 
 > 详见 [FUNCTIONS.md](FUNCTIONS.md) — 每个函数与 PHP 的差异对照。
 
-### C 互操作
+### C 互操作（PHPC）
+
+> 完整实现：`include/phpc.h`（~180 行），通过 `#include`/`#flag`/`C->call`/`c_*`/`php_*`/`phpc_*` 实现 PHP ↔ C 双向互操作。所有 phpc 函数为**全局函数**，不受命名空间 mangle。测试：`test/phpc/`。
+
+#### 编译控制
 
 ```php
-#include "mylib.h"                          // 引入 C 头文件
+#include "include/demo.h"       // 项目头文件 → #include "include/demo.h"
+#include <math.h>                 // 系统头文件 → #include <math.h>
+#flag Linux -lm                  // Linux 链接数学库
+#flag GCC -O2 -DNDEBUG           // 仅 GCC 优化
+#flag Clang -Wall -Werror        // 仅 Clang 严格警告
+```
 
-$dist = php_float(C->calc_distance(        // C-> 直接调用
-    c_float($x1), c_float($y1),
-    c_float($x2), c_float($y2)
-));
-$rev = php_str(C->reverse_str(c_str($s)));  // c_str → php_str 类型桥接
+| 指令 | 语法 | 编译器输出 | 去重 |
+|------|------|-----------|------|
+| `#include "path"` | 项目相对路径 | `#include "path"` | 按文件名去重 |
+| `#include <name>` | 系统头文件 | `#include <name>` | 同上 |
+| `#flag [CC] [OS] flags` | 编译器+平台过滤 | 仅匹配时追加到命令行 | 按标志串去重 |
+
+`#flag` 过滤规则：不写 = 全平台+全编译器。`MacOS` 映射到 `Darwin`。
+
+#### 基础类型桥接
+
+```
+PHP → C:                  C → PHP:
+c_int($x)   → int32_t     php_int(v)   → t_int
+c_float($x) → double      php_float(v) → t_float
+c_str($s)   → const char*  php_str(s)  → t_string (深拷贝)
+```
+
+直接 C 调用：`C->function(args)` → 生成原生 `function(args)`，无 `tphp_fn_` 前缀。
+
+#### 数组互操作
+
+**严格 C 风格**：`phpc_arr_int($arr)` 要求所有元素为 `TYPE_INT`，否则 `error()` 退出。`phpc_arr_dbl` 接受 `int` 或 `float`。
+
+```php
+// 模式: 提取 → C 操作 → 释放
+function sum_array(array $arr): int {
+    $data = phpc_arr_int($arr);                      // → int32_t* (malloc)
+    $result = C->sum_ints($data, c_int(count($arr))); // C 操作
+    phpc_free($data);                                 // 释放！
+    return php_int($result);
+}
+```
+
+| PHP → C | 要求 | 返回 |
+|----------|------|------|
+| `phpc_arr_int($arr)` | 全部 TYPE_INT | `int32_t*` (malloc) |
+| `phpc_arr_dbl($arr)` | TYPE_INT 或 TYPE_FLOAT | `double*` (malloc) |
+| `phpc_arr_str($arr)` | 全部 TYPE_STRING | `char**` (malloc，每个字符串独立分配) |
+
+| C → PHP | 说明 |
+|----------|------|
+| `phpc_new_arr_int(src, len)` | `int32_t[]` → `t_array*` |
+| `phpc_new_arr_dbl(src, len)` | `double[]` → `t_array*` |
+| `phpc_new_arr_str(src, len)` | `char*[]` → `t_array*` |
+| `phpc_new_arr()` | 空数组 |
+
+#### 对象互操作
+
+TinyPHP 对象 = `t_object` 头部 + 字段，`phpc_obj` 提取底层 C 结构体指针：
+
+```php
+class MyPoint { public float $x; public float $y; }
+
+function obj_read_x(MyPoint $p): float {
+    $ptr = phpc_obj($p);                 // → void* (即 tphp_class_MyPoint*)
+    return php_float(C->read_field($ptr, c_int(16))); // offsetof(x)
+}
+```
+
+| 函数 | 方向 | 说明 |
+|------|------|------|
+| `phpc_obj($obj)` | PHP→C | 提取底层 C 结构体指针（`void*`） |
+| `phpc_new_obj(ptr, vtable)` | C→PHP | 包裹 C 指针为 PHP 对象（vtable 管理析构） |
+
+#### 回调互操作
+
+PHP 闭包 → `t_callback { func, env }` → C 函数指针：
+
+```php
+// 闭包传 C —— pattern: phpc_fn + phpc_env 提取
+$square = function(int $x): int { return $x * $x; };
+$result = C->apply_closure(
+    phpc_fn($square),    // → void* (即函数指针)
+    phpc_env($square),   // → void* (捕获环境，无捕获为 NULL)
+    c_int(5)
+);
+
+// C 函数指针 → t_callback
+$cb = phpc_new_fn(C->get_handler());            // 无环境
+$cb = phpc_new_fn_env(C->get_handler(), $env);  // 带环境
 ```
 
 | 函数 | 说明 |
-|---|---|
-| `c_int/c_float/c_str` | PHP → C 类型转换 |
-| `php_int/php_float/php_str` | C → PHP 类型转换 |
-| `C->function()` | 直接 C 调用，无 name mangling |
-| `#include "file.h"` | 生成 `#include` 到 C 输出 |
+|------|------|
+| `phpc_fn($cb)` → `void*` | 提取 `t_callback.func` |
+| `phpc_env($cb)` → `void*` | 提取 `t_callback.env` |
+| `phpc_new_fn(func)` → `t_callback` | C 函数指针 → t_callback |
+| `phpc_new_fn_env(func, env)` | 带环境版本 |
+
+#### 内存安全
+
+| 函数 | 说明 |
+|------|------|
+| `phpc_free(ptr)` | `free(ptr)`（NULL 安全） |
+| `phpc_free_str_arr(strs, len)` | 先 `free` 每个字符串，再 `free` 指针数组 |
+
+**关键规则**：`phpc_arr_*` 返回的指针必须通过 `phpc_free` 释放。`phpc_new_arr_*` 返回的 `t_array*` 由 TinyPHP 引用计数自动管理。
 
 ### 内存安全
 

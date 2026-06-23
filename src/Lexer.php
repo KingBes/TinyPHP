@@ -158,11 +158,34 @@ class Lexer
             return;
         }
 
-        // #include "file.h" → 特殊预处理器指令
+        // #include / #flag → 特殊预处理器指令
         if ($ch === '#') {
             $rest = substr($this->source, $this->pos);
-            if (preg_match('/^#include\s+["<](.+?)[">]/', $rest, $m)) {
-                $this->addToken(TokenType::HASH_INCLUDE, $m[1]);
+            if (preg_match('/^#include\s+"(.+?)"/', $rest, $m)) {
+                $this->addToken(TokenType::HASH_INCLUDE, $m[1], ['file' => $m[1], 'quoted' => true]);
+                $this->advance(strlen($m[0]));
+                return;
+            }
+            if (preg_match('/^#include\s+<(.+?)>/', $rest, $m)) {
+                $this->addToken(TokenType::HASH_INCLUDE, $m[1], ['file' => $m[1], 'quoted' => false]);
+                $this->advance(strlen($m[0]));
+                return;
+            }
+            // #flag [GCC|Clang|TCC] [Windows|Linux|MacOS] [-D...] [-l...]
+            // 最多两个前缀：编译器 + 平台，顺序不限
+            if (preg_match('/^#flag\s+(GCC|Clang|TCC|Windows|Linux|MacOS|Darwin)?\s*(GCC|Clang|TCC|Windows|Linux|MacOS|Darwin)?\s+(.+?)(?=\n|$)/', $rest, $m)) {
+                $pf1 = $m[1] ?: '';
+                $pf2 = $m[2] ?: '';
+                $flags = trim($m[3]);
+                $platform = '';  $compiler = '';
+                $allPf = array_filter([$pf1, $pf2]);
+                foreach ($allPf as $p) {
+                    if (in_array($p, ['Windows','Linux','MacOS','Darwin'], true)) $platform = $p;
+                    else $compiler = $p;
+                }
+                $this->addToken(TokenType::CC_FLAG, $compiler . ':' . $platform . ':' . $flags, [
+                    'platform' => $platform, 'compiler' => $compiler, 'flags' => $flags,
+                ]);
                 $this->advance(strlen($m[0]));
                 return;
             }

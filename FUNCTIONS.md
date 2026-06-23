@@ -523,8 +523,11 @@ $elapsed = hrtime() - $start;
 | **常量三作用域** | 全局/命名空间/类常量，`self::` / `Class::` 访问 |
 | **键名解构** | `["key" => $v]` 支持（PHP 7.1+） |
 | **sort/rsort** | libc `qsort` 原地排序 |
-| **内置函数 40+** | 数组 18 个、字符串 8 个、类型 8 个、时间 5 个、JSON 2 个 |
-| **error 安全退出** | 遍历资源链表释放所有对象/数组/字符串 |
+| **内置函数 50+** | 数组 18、字符串 8、类型 8、转换 4、通用 6、时间 5、JSON 2 |
+| **PHPC 互操作** | 数组/对象/回调 ↔ C 双向转换，`#include`/`#flag` 编译器集成 |
+| **闭包堆捕获** | `use` 变量 `calloc` 到堆，`tphp_rt_register(type=3)`，内存安全 |
+| **编译标志** | `#flag` 按平台+编译器过滤，`#include` 支持 `""`/`<>`，自动去重 |
+| **error 安全退出** | 遍历资源链表释放所有对象/数组/字符串/闭包环境 |
 | **跨平台** | TCC/GCC/Clang 编译通过，`#ifdef _WIN32` |
 | **PHAR 自包含** | `tphp.phar` 内嵌 TCC + 头文件，单文件分发 |
 
@@ -819,25 +822,163 @@ echo DIRECTORY_SEPARATOR;  // "/" (Linux/macOS) 或 "\" (Windows)
 
 ---
 
-## C 互操作
+## C 互操作 (PHPC)
 
-### `#include "file.h"` — 引入 C 头文件
+> 所有 PHPC 函数为**全局函数**，不受命名空间 `namespace` 影响。通过 `common.h` 自动包含 `phpc.h`（~180 行运行时）。测试：`test/phpc/`。
 
-在 PHP 中直接写 `#include "demo.h"`，转译后在生成的 C 代码顶部输出 `#include "demo.h"`。编译时自动添加所在目录为 `-I` 路径。
+### `#include` — 引入 C 头文件
+
+```php
+#include "include/demo.h"    // 项目头文件 → #include "include/demo.h"
+#include <math.h>             // 系统头文件 → #include <math.h>
+```
+
+| 格式 | C 输出 | 用途 |
+|------|--------|------|
+| `#include "path"` | `#include "path"` | 项目相对路径头文件 |
+| `#include <name>` | `#include <name>` | 系统头文件 |
+
+多次相同文件自动去重。头文件所在目录自动添加为 `-I` 路径，同目录 `.c` 文件自动联编。
+
+### `#flag` — 编译器标志
+
+```php
+#flag -DNDEBUG                // 全平台 + 全编译器
+#flag Linux -lm               // 仅 Linux
+#flag GCC -O2                 // 仅 GCC
+#flag Clang -O2 -Wall         // 仅 Clang
+#flag Linux GCC -march=native // Linux + GCC 组合
+```
+
+| 过滤器 | 值 |
+|--------|-----|
+| 平台 | `Windows`, `Linux`, `MacOS` |
+| 编译器 | `GCC`, `Clang`, `TCC` |
+| 默认 | 不写 = 全平台 + 全编译器 |
+
+重复标志串自动去重。最多两个前缀（编译器 + 平台），顺序不限。
 
 ### `C->function()` — 直接 C 调用
 
-`C->calc_distance(...)` 生成原生 C 函数调用 `calc_distance(...)`（无 `tphp_` 前缀）。
+```php
+C->calc_distance(c_float($x1), c_float($y1), c_float($x2), c_float($y2))
+// 生成: calc_distance(c_float(x1), c_float(y1), c_float(x2), c_float(y2))
+```
 
-### 类型桥接 (`p2c.h`)
+无 `tphp_` 前缀，无命名空间 mangle。C 函数必须存在于已 `#include` 的头文件中。
 
-| PHP → C | C → PHP |
-|---|---|
-| `c_int($x)` → `(int32_t)` | `php_int($x)` → `(t_int)` |
-| `c_float($x)` → `(double)` | `php_float($x)` → `(t_float)` |
-| `c_str($x)` → `$x.data` | `php_str($x)` → `tphp_rt_str_dup(...)` |
+### 类型桥接 (`phpc.h`)
 
-所有函数默认引入（`common.h` 已包含 `p2c.h`）。
+```php
+$dist = php_float(C->calc_distance(   // C double → PHP float
+    c_float($x1), c_float($y1),        // PHP float → C double
+    c_float($x2), c_float($y2)
+));
+```
+
+| PHP → C | C 类型 | C → PHP | PHP 类型 |
+|----------|--------|----------|----------|
+| `c_int($x)` | `int32_t` | `php_int($v)` | `t_int` |
+| `c_float($x)` | `double` | `php_float($v)` | `t_float` |
+| `c_str($s)` | `const char*` | `php_str($s)` | `t_string`（深拷贝） |
+
+`c_str` 返回 `t_string.data`（不拷贝），`php_str` 对 C 字符串做 `tphp_rt_str_dup`。
+
+### 数组互操作
+
+**严格 C 风格类型检查**：`phpc_arr_int` 要求所有元素为 `TYPE_INT`，不匹配则 `error()` 退出。`phpc_arr_dbl` 接受 `int`/`float`。
+
+```php
+function sum_array(array $arr): int {
+    $data = phpc_arr_int($arr);                      // → int32_t* (malloc)
+    $result = C->sum_ints($data, c_int(count($arr))); // C 操作
+    phpc_free($data);                                 // 必须释放！
+    return php_int($result);
+}
+
+function double_all(array $arr): array {
+    $len = count($arr);
+    $data = phpc_arr_int($arr);           // 提取
+    C->double_each($data, c_int($len));   // C 原地修改
+    $out = phpc_new_arr_int($data, $len); // 深拷贝回 PHP
+    phpc_free($data);                     // 释放
+    return $out;
+}
+```
+
+| PHP → C | 类型要求 | 返回 |
+|----------|----------|------|
+| `phpc_arr_int($arr)` | 全部 TYPE_INT | `int32_t*` (malloc) |
+| `phpc_arr_dbl($arr)` | TYPE_INT 或 TYPE_FLOAT | `double*` (malloc) |
+| `phpc_arr_str($arr)` | 全部 TYPE_STRING | `char**` (malloc，逐元素分配) |
+
+| C → PHP | 说明 |
+|----------|------|
+| `phpc_new_arr_int(src, len)` | `int32_t[]` → `t_array*`（深拷贝） |
+| `phpc_new_arr_dbl(src, len)` | `double[]` → `t_array*` |
+| `phpc_new_arr_str(src, len)` | `char*[]` → `t_array*` |
+| `phpc_new_arr()` | 空 `t_array*` |
+
+### 对象互操作
+
+TinyPHP 对象 = `t_object` 头部（vtable + refcount）+ 字段。`phpc_obj` 返回底层结构体指针：
+
+```php
+class MyPoint { public float $x; public float $y; }
+
+function read_x(MyPoint $p): float {
+    $ptr = phpc_obj($p);                 // → void* (即 tphp_class_MyPoint*)
+    return php_float(C->read_field($ptr, c_int(16))); // offsetof(x) = sizeof(t_object)
+}
+```
+
+| 函数 | 方向 | 签名 | 说明 |
+|------|------|------|------|
+| `phpc_obj($obj)` | PHP→C | `t_object* → void*` | 提取底层 C 结构体指针 |
+| `phpc_new_obj(ptr, vtable)` | C→PHP | `void*, ClassVTable* → t_object*` | 包裹 C 指针，vtable 管理析构 |
+
+`phpc_new_obj` 也会调用 `tphp_rt_register(ptr, 0)`，`error()` 时自动析构。
+
+### 回调互操作
+
+PHP 闭包 → `t_callback { .func, .env }` → 提取指针传给 C：
+
+```php
+// 模式: phpc_fn($cb) + phpc_env($cb) 提取
+$square = function(int $x): int { return $x * $x; };
+$result = C->apply_closure(
+    phpc_fn($square),     // → void*（_closure_N 函数指针）
+    phpc_env($square),    // → void*（捕获环境，无捕获为 NULL）
+    c_int(5)
+);
+// C 侧签名: int64_t apply_closure(t_int (*fn)(t_int, void*), void* env, t_int val)
+```
+
+```php
+// 带捕获的闭包
+$offset = 100;
+$add = function(int $x) use ($offset): int { return $x + $offset; };
+$result = map_with_closure([1,2,3], $add);
+// C 侧: fn(val, env) — env 指向堆上捕获 struct { t_int offset }
+```
+
+| 函数 | 签名 | 说明 |
+|------|------|------|
+| `phpc_fn($cb)` | `t_callback → void*` | 提取 `cb.func` |
+| `phpc_env($cb)` | `t_callback → void*` | 提取 `cb.env`（无捕获 = NULL） |
+| `phpc_new_fn(func)` | `void* → t_callback` | C 函数指针 → t_callback |
+| `phpc_new_fn_env(func, env)` | `void*, void* → t_callback` | 带环境版本 |
+
+**C 侧回调签名**：`t_int fn(t_int x, void* env)` — `env` 用于传递捕获变量。
+
+### 内存释放
+
+| 函数 | 说明 |
+|------|------|
+| `phpc_free(ptr)` | `free(ptr)`，NULL 安全 |
+| `phpc_free_str_arr(strs, len)` | 逐个 `free(strs[i])` → `free(strs)` |
+
+**关键规则**：`phpc_arr_*` 返回 `malloc` 指针，必须通过 `phpc_free`/`phpc_free_str_arr` 释放。`phpc_new_arr_*` 返回 `t_array*` 由 TinyPHP 引用计数自动管理。
 
 ---
 

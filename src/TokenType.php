@@ -39,6 +39,7 @@ enum TokenType: string
     case MAGIC_DIR   = '__DIR__';
     case DIR_SEP     = 'DIRECTORY_SEPARATOR';
     case HASH_INCLUDE = '#include';
+    case CC_FLAG      = '#flag';
 
     // 魔术方法
     case CONSTRUCT = '__construct';

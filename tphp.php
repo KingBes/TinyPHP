@@ -133,6 +133,7 @@ echo "[1/2] Transpiling {$allFilesStr} => C...\n";
     $constants = [];
     $enums = [];
     $allIncludes = [];
+    $allFlags    = [];
 
     // Two-phase parsing: parse auxiliary files (non-Main) first,
     // collect enums/classes, then parse Main entry last.
@@ -191,6 +192,7 @@ echo "[1/2] Transpiling {$allFilesStr} => C...\n";
         $constants    = array_merge($constants, $ast->constants);
         $enums        = array_merge($enums, $ast->enums);
         $allIncludes  = array_merge($allIncludes, $ast->includes);
+        $allFlags     = array_merge($allFlags, $ast->ccFlags);
 
         // Collect enum names (FQN) declared in this file for later files
         foreach ($ast->enums as $e) {
@@ -221,7 +223,23 @@ echo "[1/2] Transpiling {$allFilesStr} => C...\n";
         rmdir($outDir);
     }
 
-    $merged = new ProgramNode($mainClass, $extraClasses, $functions, $constants, $enums, $allIncludes);
+    // Dedup: #include by file, #flag by flags string
+    $seenFiles = [];
+    $allIncludes = array_values(array_filter($allIncludes, function ($inc) use (&$seenFiles) {
+        $f = is_array($inc) ? $inc['file'] : $inc;
+        if (isset($seenFiles[$f])) return false;
+        $seenFiles[$f] = true;
+        return true;
+    }));
+    $seenFlags = [];
+    $allFlags = array_values(array_filter($allFlags, function ($f) use (&$seenFlags) {
+        $s = $f['flags'] ?? '';
+        if (isset($seenFlags[$s])) return false;
+        $seenFlags[$s] = true;
+        return true;
+    }));
+
+    $merged = new ProgramNode($mainClass, $extraClasses, $functions, $constants, $enums, $allIncludes, $allFlags);
 
     // Resolve #include paths relative to each PHP file's directory
     $extraFlags = '';
@@ -238,7 +256,8 @@ echo "[1/2] Transpiling {$allFilesStr} => C...\n";
 
         // Find companion .c files for each #include
         foreach ($allIncludes as $inc) {
-            $baseName = basename($inc, '.h');
+            $fileName = is_array($inc) ? $inc['file'] : $inc;
+            $baseName = basename($fileName, '.h');
             foreach ($srcDirs as $dir) {
                 $cSrc = $dir . DIRECTORY_SEPARATOR . $baseName . '.c';
                 if (file_exists($cSrc)) {
@@ -248,6 +267,32 @@ echo "[1/2] Transpiling {$allFilesStr} => C...\n";
             }
         }
         $extraCFiles = array_unique($extraCFiles);
+    }
+
+    // Process #flag directives (filter by platform + compiler)
+    if (!empty($allFlags)) {
+        $platformMap = ['Windows' => 'Windows', 'Linux' => 'Linux', 'Darwin' => 'Darwin', 'MacOS' => 'Darwin'];
+        $currentOS = PHP_OS_FAMILY;
+        // Detect which compiler class: 'TCC' (built-in), 'GCC', 'Clang'
+        $ccClass = 'TCC';  // default built-in
+        if ($cc !== null) {
+            $ccLower = strtolower($cc);
+            if (str_contains($ccLower, 'gcc')) $ccClass = 'GCC';
+            elseif (str_contains($ccLower, 'clang')) $ccClass = 'Clang';
+            // else keep 'TCC' for unknown compilers
+        } elseif (PHP_OS_FAMILY === 'Darwin') {
+            // macOS fallback to cc (which is Clang)
+            $ccClass = 'Clang';
+        }
+        foreach ($allFlags as $f) {
+            $pf = $f['platform'] ?? '';
+            $cf = $f['compiler'] ?? '';
+            $platformOk = ($pf === '' || ($platformMap[$pf] ?? '') === $currentOS);
+            $compilerOk = ($cf === '' || $cf === $ccClass);
+            if ($platformOk && $compilerOk) {
+                $extraFlags .= ' ' . $f['flags'];
+            }
+        }
     }
 
     if (!is_dir($outDir)) mkdir($outDir, 0777, true);

@@ -28,8 +28,10 @@ class ProgramNode extends ASTNode
         public readonly array $constants = [],
         /** @var EnumNode[] */
         public readonly array $enums = [],
-        /** @var string[] */
+        /** @var array[]  [['file'=>'demo.h','quoted'=>true], ...] */
         public readonly array $includes = [],
+        /** @var array[]  [['platform'=>'','flags'=>'-lm'], ...] */
+        public readonly array $ccFlags = [],
     ) {}
 
     public function accept(ASTVisitor $visitor): string

@@ -93,7 +93,11 @@ class Parser
         // #include 指令
         $includes = [];
         while ($this->match(TokenType::HASH_INCLUDE)) {
-            $includes[] = $this->previous()->lexeme;
+            $includes[] = $this->previous()->literal;  // ['file'=>'...', 'quoted'=>bool]
+        }
+        $ccFlags = [];
+        while ($this->match(TokenType::CC_FLAG)) {
+            $ccFlags[] = $this->previous()->literal;  // ['platform'=>'', 'flags'=>'-lm']
         }
 
         // 连续 use 声明
@@ -136,7 +140,7 @@ class Parser
             }
         }
 
-        return new ProgramNode($mainClass, $extraClasses, $functions, $constants, $enums, $includes);
+        return new ProgramNode($mainClass, $extraClasses, $functions, $constants, $enums, $includes, $ccFlags);
     }
 
     // ============================================================
@@ -1274,8 +1278,26 @@ class Parser
                 if (str_starts_with($name, '$')) {
                     return $this->setPos(new CallExpr(new VariableExpr($name), '__invoke', $args), $line, $col);
                 }
-                // 内置函数不解析命名空间
-                if ($name !== 'var_dump' && $name !== 'count' && $name !== 'exit' && $name !== 'die' && $name !== 'isset' && $name !== 'empty' && $name !== 'unset' && $name !== 'error' && $name !== 'time' && $name !== 'date' && $name !== 'sleep' && $name !== 'usleep' && $name !== 'hrtime' && !str_starts_with($name, 'is_')) {
+                // 内置函数和桥接函数不解析命名空间
+                $globalFns = ['var_dump','count','exit','die','isset','empty','unset',
+                    'error','time','date','sleep','usleep','hrtime',
+                    // phpc 互操作（全部全局，不解析命名空间）
+                    'c_int','c_float','c_str','php_int','php_float','php_str',
+                    'phpc_arr_int','phpc_arr_dbl','phpc_arr_str',
+                    'phpc_new_arr_int','phpc_new_arr_dbl','phpc_new_arr_str','phpc_new_arr',
+                    'phpc_obj','phpc_new_obj',
+                    'phpc_fn','phpc_env','phpc_new_fn','phpc_new_fn_env',
+                    'phpc_free','phpc_free_str_arr',
+                    'count','strlen','trim','ltrim','rtrim','substr','strpos',
+                    'str_contains','str_replace','sprintf','implode','explode','join',
+                    'array_push','array_pop','array_shift','array_unshift','in_array',
+                    'array_key_exists','array_keys','array_values','array_merge',
+                    'array_unique','array_reverse','array_slice','array_sum',
+                    'array_product','array_fill','sort','rsort',
+                    'intval','floatval','strval','boolval',
+                    'max','min','range','rand','mt_rand',
+                    'json_encode','json_decode'];
+                if (!in_array($name, $globalFns, true) && !str_starts_with($name, 'is_')) {
                     $name = $this->resolveFunctionName($name);
                 }
                 return $this->setPos(new CallExpr(null, $name, $args), $line, $col);

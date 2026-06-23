@@ -104,7 +104,7 @@ ExprNode（抽象，含 line/column）
 
 ### 2.4 CodeGenerator（代码生成）
 
-**文件**: `src/CodeGenerator.php`（~2900 行）
+**文件**: `src/CodeGenerator.php`（~3260 行）
 
 **关键内部状态**：
 
@@ -113,13 +113,14 @@ ExprNode（抽象，含 line/column）
 | `$this->className` | 当前类的 C 名 |
 | `$this->varTypes` | `varName → C 类型` 映射 |
 | `$this->declaredVars` | 已声明变量集合 |
-| `$this->funcScopeDecls` | for-init 变量提升到函数作用域的声明集合（`varName → cType`） |
+| `$this->funcScopeDecls` | for-init 变量提升到函数作用域的声明（`varName → cType`） |
 | `$this->scopeObjects` | 作用域对象列表（方法结尾自动析构） |
 | `$this->arrElementTypes` | 数组元素类型追踪 |
-| `$this->arrValueTypes` | 数组 per-key 类型追踪（用于 foreach string key 检测） |
+| `$this->arrValueTypes` | 数组 per-key 类型追踪（foreach string key + phpc 数组字面量） |
 | `$this->arrNestedTypes` | 嵌套数组元素类型追踪（2 层） |
 | `$this->classPropTypes` | 类属性类型表 |
 | `$this->classMethodRetTypes` | 类方法返回类型表 |
+| `$this->classNames` | PHP 类名 → C 类名映射（`mapType` 用） |
 | `$this->enumBackingTypes` | 枚举 backing 类型 |
 | `$this->closureSigs` | 闭包签名 |
 | `$this->phpFile` | 当前 PHP 源文件路径（error 用） |
@@ -141,10 +142,14 @@ ExprNode（抽象，含 line/column）
 ### 2.5 tphp.php（入口 CLI）
 
 **两阶段解析**：
-1. 先解析辅助文件（非 Main），收集枚举名/类名
+1. 先解析辅助文件（非 Main），收集枚举名/类名、`#include` 头文件、`#flag` 编译器标志
 2. 再解析 Main 入口文件（此时 `setKnownEnums` 已注入所有枚举名）
 
 **Main 类合并**：扫描所有类中名为 `Main` 且全局命名空间的类作为入口。
+
+**编译标志处理**：
+- `#flag` 按平台（`PHP_OS_FAMILY`）+ 编译器（自动检测 TCC/GCC/Clang）过滤
+- `#include` 同名文件自动去重
 
 ---
 
@@ -157,9 +162,11 @@ ExprNode（抽象，含 line/column）
 | `common.h` | — | 总入口 |
 | `types.h` | — | 类型系统 + `likely`/`unlikely` |
 | `val.h` | `VAR_*` `STR_LIT` | 便捷宏 |
-| `array.h` | `tphp_fn_arr_` | PHP 数组（128 槽 LIFO 复用池 + 1.5× 增长因子） |
+| `array.h` | `tphp_fn_arr_` | PHP 数组（128 槽 LIFO 复用池 + sort/qsort + 1.5× 增长因子） |
 | `runtime.h` | `tphp_rt_` | 内部辅助、64KB 字符串池、资源追踪、error |
-| `builtin.h` | `tphp_fn_` | 公开内置：类型检测、数组函数、implode/explode |
+| `builtin.h` | `tphp_fn_` | 公开内置：50+ 函数 |
+| `phpc.h` | `phpc_` `c_` `php_` | PHP↔C 互操作（基础类型/数组/对象/回调/内存释放） |
+| `rand.h` | `tphp_fn_` | MT19937 随机数 |
 | `os/times.h` | `tphp_fn_` | 系统函数（跨平台） |
 | `os/json.h` | `tphp_fn_` | JSON 编解码（递归+递归下降） |
 
@@ -220,11 +227,13 @@ ExprNode（抽象，含 line/column）
 
 ### 内存安全
 
-- **error() 全局清理**：退出前遍历资源链释放所有对象/数组/字符串
+- **error() 全局清理**：退出前遍历资源链释放所有对象/数组/字符串（type=0,1,2,3）
 - **数组对象池**：归还时 `memset(0)` 防止脏数据，容量不足时 `free` 回退
 - **字符串池**：`tphp_rt_str_free` 检查指针范围，池内指针跳过不 `free`
 - **字符串深拷贝**：对象属性赋值时先 `tphp_rt_str_free` 再 `tphp_rt_str_dup`
-- **析构自动释放**：类 `__destruct` 中自动释放所有 `t_string` 属性
+- **闭包堆捕获**：`use` 变量 `calloc` 到堆，`tphp_rt_register(type=3)`，`unset` 安全释放
+- **析构自动释放**：类 `__destruct` 中自动释放所有 `t_string` 属性和对象
+- **phpc 内存模式**：`phpc_arr_*` → C 操作 → `phpc_free`，确保 malloc/free 配对
 - **数组引用计数**：嵌套数组 `push/set` 自动 `retain`
 - **零堆分配函数**：`time()` `date()` `sleep()` `usleep()` `hrtime()` 全静态缓冲区
 
@@ -239,6 +248,8 @@ ExprNode（抽象，含 line/column）
 | `_e_` | 枚举 static 实例 |
 | `_cap_` | 闭包捕获 struct |
 | `TPHP_CONST_` | 常量宏 |
+| `phpc_` | C 互操作（数组/对象/回调/内存） |
+| `c_` / `php_` | C ↔ PHP 类型桥接 |
 | `_arr_` / `_tmp_` | CodeGenerator 临时变量 |
 | `str_pool_` | 字符串池内部 |
 | `arr_pool_` | 数组池内部 |
@@ -257,22 +268,23 @@ ExprNode（抽象，含 line/column）
 
 | 文件 | 行数~ | 核心职责 |
 |------|------|---------|
-| `tphp.php` | ~370 | CLI 入口、多文件合并、PHAR 自解压、编译器调用 |
-| `src/TokenType.php` | ~125 | Token 枚举 (~75 token) |
+| `tphp.php` | ~400 | CLI 入口、多文件合并、`#flag` 平台+编译器过滤、PHAR 自解压、编译器调用 |
+| `src/TokenType.php` | ~150 | Token 枚举（~80 token，含 `CC_FLAG`/`NULLSAFE_ARROW`/`IDENTICAL`） |
 | `src/Token.php` | ~20 | Token 值对象 |
-| `src/AST/Node.php` | ~820 | AST 节点 + Visitor 接口 |
-| `src/Lexer.php` | ~680 | 词法分析（链式属性插值、heredoc、运算符） |
-| `src/Parser.php` | ~1550 | 递归下降解析（键名解构/属性提升/尾部逗号/never/fn） |
-| `src/CodeGenerator.php` | ~3250 | C 代码生成（45+ 内置函数/nullsafe/C互操作/魔术常量） |
+| `src/AST/Node.php` | ~860 | AST 节点 + Visitor 接口 + `ccFlags` 传递 |
+| `src/Lexer.php` | ~720 | 词法分析（`#include`/`#flag`/heredoc/字符串插值/运算符） |
+| `src/Parser.php` | ~1630 | 递归下降解析（键名解构/属性提升/`fn`/`never`/`C->call`/全局函数表） |
+| `src/CodeGenerator.php` | ~3260 | C 代码生成（50+ 内置函数/PHPC 互操作/闭包堆捕获/for 作用域提升） |
 | `include/types.h` | ~130 | C 类型系统 + likely/unlikely 宏 |
-| `include/val.h` | ~45 | 便捷宏 |
+| `include/val.h` | ~45 | VAR_*/STR_LIT 便捷宏 |
 | `include/array.h` | ~440 | PHP 数组（128 槽复用池/sort/qsort/1.5× 增长因子） |
-| `include/runtime.h` | ~300 | 运行时（64KB 字符串池/资源追踪/error） |
-| `include/builtin.h` | ~430 | 公开内置（40+ 内置函数） |
+| `include/runtime.h` | ~300 | 运行时（64KB 字符串池/资源追踪/type=3 通用堆清理） |
+| `include/builtin.h` | ~430 | 公开内置（50+ 函数） |
+| `include/phpc.h` | ~180 | PHPC 互操作（基础类型/数组/对象/回调/内存释放） |
 | `include/rand.h` | ~60 | MT19937 随机数 |
-| `include/p2c.h` | ~15 | PHP↔C 类型桥接 |
 | `include/os/times.h` | ~95 | 系统函数（跨平台） |
-| `include/os/json.h` | ~340 | JSON 编解码（递归编码+解析+无效输入 error） |
-| `include/common.h` | ~15 | 总入口 |
-| `test/var/` | 40+ 文件 | 测试用例（builtin/closure/match/bench/...） |
+| `include/os/json.h` | ~340 | JSON 编解码 |
+| `include/common.h` | ~16 | 总入口 |
+| `test/var/` | 45+ 文件 | 测试用例（low_all/closure/control_flow/builtin/match） |
+| `test/phpc/` | 4 文件 | C 互操作测试（基础/数组/对象/回调） |
 | `test/files/` | 6+ 文件 | 多文件测试（const/命名空间） |
