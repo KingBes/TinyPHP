@@ -262,9 +262,19 @@ if ($inPhar) {
     }
 }
 
+// macOS: explicitly link libtcc1.a (TCC -B may not work reliably on Darwin)
+$libPath = '';
+if (PHP_OS_FAMILY === 'Darwin' && !$inPhar) {
+    $tryLib = dirname($ccExe) . DIRECTORY_SEPARATOR . 'libtcc1.a';
+    if (file_exists($tryLib)) $libPath = ' "' . $tryLib . '"';
+} elseif (PHP_OS_FAMILY === 'Darwin' && $inPhar) {
+    $tryLib = $pharDir . DIRECTORY_SEPARATOR . 'tcc' . DIRECTORY_SEPARATOR . 'libtcc1.a';
+    if (file_exists($tryLib)) $libPath = ' "' . $tryLib . '"';
+}
+
 $cmd = sprintf(
-    '"%s"%s -I"%s" -o "%s" "%s" 2>&1',
-    $ccExe, $bFlag, $includeDir, $outExe, $cFile
+    '"%s"%s -I"%s" -o "%s" "%s"%s 2>&1',
+    $ccExe, $bFlag, $includeDir, $outExe, $cFile, $libPath
 );
 
 $tccOutput = [];
