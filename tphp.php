@@ -265,16 +265,15 @@ if ($inPhar) {
     }
 }
 
-// macOS: set TCC_LIBRARY_PATH so TCC finds libtcc1.a internally
-if (PHP_OS_FAMILY === 'Darwin') {
-    $base = $inPhar ? ($pharDir . DIRECTORY_SEPARATOR . 'tcc') : dirname($ccExe);
-    foreach (['', DIRECTORY_SEPARATOR . 'lib', DIRECTORY_SEPARATOR . 'lib' . DIRECTORY_SEPARATOR . 'tcc'] as $sub) {
-        $tryDir = $base . $sub;
-        if (file_exists($tryDir . DIRECTORY_SEPARATOR . 'libtcc1.a')) {
-            putenv('TCC_LIBRARY_PATH=' . $tryDir);
-            break;
-        }
-    }
+$tccLibDir = '';
+if (PHP_OS_FAMILY === 'Darwin' && !$cc) {
+    // Vlang-style: -B points to lib/tcc where libtcc1.a lives, not tcc/ root
+    $tccRoot = $inPhar ? ($pharDir . DIRECTORY_SEPARATOR . 'tcc') : dirname($ccExe);
+    $tccLibDir = $tccRoot . DIRECTORY_SEPARATOR . 'lib' . DIRECTORY_SEPARATOR . 'tcc';
+    if (!is_dir($tccLibDir)) $tccLibDir = $tccRoot;
+    $bFlag = ' -B"' . $tccLibDir . '" -L"' . $tccLibDir . '"';
+    // Also add explicit include paths (TCC on macOS doesn't always pick up -B includes)
+    $bFlag .= ' -I"' . $tccRoot . DIRECTORY_SEPARATOR . 'include' . '"';
 }
 
 $cmd = sprintf(
@@ -287,27 +286,9 @@ $retval = 0;
 exec($cmd, $tccOutput, $retval);
 
 if ($retval !== 0 || !file_exists($outExe) || filesize($outExe) < 64) {
-    // macOS: TCC always warns about libtcc1.a but produces valid output
-    if (PHP_OS_FAMILY === 'Darwin' && file_exists($outExe) && filesize($outExe) >= 64) {
-        // Output is valid despite TCC warnings — accept it
-    } else {
-        echo "[NO] TCC compile failed:\n";
-        if (!empty($tccOutput)) echo implode("\n", $tccOutput) . "\n";
-        // macOS fallback: try system cc (clang)
-        if (PHP_OS_FAMILY === 'Darwin') {
-            echo "  (retrying with system cc...)\n";
-            $cmd2 = sprintf('cc -I"%s" -o "%s" "%s" 2>&1', $includeDir, $outExe, $cFile);
-            $out2 = [];
-            $rv2 = 0;
-            exec($cmd2, $out2, $rv2);
-            if ($rv2 !== 0 || !file_exists($outExe) || filesize($outExe) < 64) {
-                if (!empty($out2)) echo implode("\n", $out2) . "\n";
-                exit(1);
-            }
-        } else {
-            exit(1);
-        }
-    }
+    echo "[NO] Compile failed:\n";
+    if (!empty($tccOutput)) echo implode("\n", $tccOutput) . "\n";
+    exit(1);
 }
 
 echo "       [YES] {$outExe}\n";
