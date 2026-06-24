@@ -132,7 +132,7 @@ static t_string json_encode_rec(t_var v) {
     }
     case TYPE_OBJECT: {
         t_object *obj = (t_object *)v.value._ptr;
-        if (obj == NULL || obj->vtable == NULL)
+        if (obj == NULL || obj->cls == NULL)
             return tphp_rt_str_dup(STR_LIT("{}"));
         // 简单对象 → 尝试反射: 通过 vtable name + struct 偏移遍历属性
         // 为了简单，输出空对象 {}

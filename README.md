@@ -53,7 +53,7 @@ PHP → Lexer → Token[] → Parser → AST → CodeGenerator → .c → 编译
 - **Lexer**: 逐字符扫描，~75 种 Token，支持字符串插值/heredoc
 - **Parser**: 递归下降，运算符优先级完整
 - **CodeGenerator**: 访问者模式，生成类型安全的 C 代码
-- **C 运行时**: 静态 inline 头文件库，128 槽数组复用池，64KB 字符串池
+- **C 运行时**: COS 风格对象系统（16B 头 + struct 嵌套继承），setjmp/longjmp 异常，128 槽数组复用池，64KB 字符串池
 - **编译器**: 内置 TCC (mob 分支)，支持 GCC/Clang
 
 ## 支持特性
@@ -68,7 +68,30 @@ PHP → Lexer → Token[] → Parser → AST → CodeGenerator → .c → 编译
 | `bool` | `bool` |
 | `array` | `t_array*`（有序映射，int/string 键） |
 | `callable` | `t_callback` |
+| `Exception` | 内置类（`include/object/exception.h`） |
 | `mixed` / `int\|string` | `t_var`（类型标签 union） |
+
+### OOP（COS 风格对象系统）
+
+对象头 16 字节（`cls` 指针 + `refcount`），继承用 struct 嵌套。对象离开作用域自动析构（`tp_obj_release`）：
+
+```php
+class Dog extends Animal { ... }     // extends ✅
+abstract class Entity { ... }        // abstract ✅
+interface Named { ... }              // interface ✅
+class User implements Named { ... }  // implements ✅
+trait Loggable { ... use... }        // trait + use ✅
+__destruct() { ... }                 // 自动析构 ✅
+```
+
+### 异常处理（COS setjmp/longjmp）
+
+```php
+try { $this->validate(-1); }
+catch (Exception $e) { echo $e; }
+finally { cleanup(); }
+throw new Exception('error');
+```
 
 ### 运算符
 
@@ -78,7 +101,7 @@ PHP → Lexer → Token[] → Parser → AST → CodeGenerator → .c → 编译
 
 ### 语法
 
-`if/elseif/else` · `while` · `do-while` · `for` · `foreach` · `switch/case/default` · `match`（多条件 `1,2=>...`）· `break/continue/goto` · `class/method/property` · `new` · `namespace/use` · `enum` · `function` · `closure/use` · `fn($x) => expr` · `const`（全局/命名空间/类）· `list()`/`[]` 解构（含键名 `"key"=>$v`）· `self::CONST`/`Class::CONST` · `?->` nullsafe · `never` 返回类型 · `__construct(public $x)` 属性提升 · `static`/`final`/`readonly` 修饰符 · `__LINE__`/`__FILE__`/`__DIR__`/`DIRECTORY_SEPARATOR`
+`if/elseif/else` · `while` · `do-while` · `for` · `foreach` · `switch/case/default` · `match`（多条件 `1,2=>...`）· `break/continue/goto` · `class/method/property` · `new` · `namespace/use`（含分组 `use A\{B,C}`）· `enum` · `function` · `closure/use` · `fn($x) => expr` · `const`（全局/命名空间/类）· `list()`/`[]` 解构（含键名 `"key"=>$v`）· `self::CONST`/`Class::CONST` · `?->` nullsafe · `never` 返回类型 · `__construct(public $x)` 属性提升 · `static`/`final`/`readonly` 修饰符 · `__LINE__`/`__FILE__`/`__DIR__`/`DIRECTORY_SEPARATOR` · `extends` · `interface` · `implements` · `abstract class`/`abstract method` · `trait` + `use TraitName` · `try`/`catch`/`finally` · `throw new Exception("msg")` · `__destruct` 自动析构
 
 ### 内置函数
 
@@ -238,6 +261,7 @@ C->fold_dbl($data, $len, phpc_thunk('fold_cb', $fn));  // 按签名生成 thunk
 | 文件 | 说明 |
 |---|---|
 | [FUNCTIONS.md](FUNCTIONS.md) | 每个函数的实现细节与 PHP 差异 |
+| [GRAMMAR.md](GRAMMAR.md) | 完整语法参考（基于 PHP 8.5 parser，标注支持程度） |
 | [CONTRIBUTING.md](CONTRIBUTING.md) | 架构、扩展指南、安全规范 |
 | [ROADMAP.md](ROADMAP.md) | 性能优化路线图 |
 

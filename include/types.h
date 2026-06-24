@@ -59,7 +59,9 @@ typedef struct {
 // ============================================================
 typedef struct _t_var   t_var;
 typedef struct _t_array t_array;
-typedef struct _ClassVTable ClassVTable;
+// ── Forward declarations for object system (in include/object/) ──
+typedef struct _t_object t_object;
+typedef struct _t_class  t_class;
 
 // ============================================================
 // 3. callback / closure
@@ -70,20 +72,6 @@ typedef struct {
 } t_callback;
 
 // ============================================================
-// 4. object — 对象系统
-// ============================================================
-typedef struct {
-    const ClassVTable *vtable;
-    int   refcount;
-} t_object;
-
-struct _ClassVTable {
-    const char *name;
-    int   type_id;
-    void (*dtor)(void *self);
-};
-
-// ============================================================
 // 5. t_value — 值联合体
 // ============================================================
 typedef union {
@@ -92,7 +80,7 @@ typedef union {
     t_bool      _bool;
     t_string    _string;
     t_array    *_array;
-    t_object    _object;
+    void       *_object;     // pointer to tphp_class_X (variable-size, supports inheritance)
     t_callback  _callback;
     void       *_ptr;
 } t_value;

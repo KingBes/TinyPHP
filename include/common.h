@@ -7,6 +7,9 @@
 
 #include "types.h"
 #include "val.h"
+#include "object/object.h"
+#include "object/exception.h"
+#include "object/try.h"
 #include "array.h"
 #include "runtime.h"
 #include "builtin.h"

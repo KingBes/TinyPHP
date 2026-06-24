@@ -148,7 +148,7 @@ static inline bool tphp_fn_empty_null(void* p)      { (void)p; return true; }
 // ============================================================
 static inline void tphp_fn_unset_str(t_string* s)    { tphp_rt_str_free(s); }
 static inline void tphp_fn_unset_arr(t_array** a)    { if (*a) { tphp_fn_arr_free(*a); *a = NULL; } }
-static inline void tphp_fn_unset_obj(t_object** o)   { tphp_rt_object_free(*o); *o = NULL; }
+static inline void tphp_fn_unset_obj(void** o)       { tp_obj_release(*o); *o = NULL; }
 
 // ============================================================
 // tphp_fn_is_* — t_var 类型检测（mixed/union 变量用）

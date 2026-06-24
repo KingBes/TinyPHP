@@ -1,60 +1,32 @@
 <?php
 
-use Other\Other;
-// use Other\IS_OTHER; // 不可调用 不同命名空间的常量,报错
-
-const VERSION = "1.0.0"; // 全局常量,可全局调用
-
 class Main
 {
     public function main(): void
     {
-        var_dump(VERSION);
-        $demo = new Demo("world");
-        var_dump($demo->a);
-        var_dump($demo->b);
-        var_dump($demo->getC());
-        var_dump($demo->getGetD());
-        echo "==============\n";
-        $other = new Other();
-        $other->hello()->world(); // 链式调用
-        // var_dump(IS_OTHER); // 不可调用 不同命名空间的常量
-    }
-}
+        echo "=== Auto-Destruct Test ===\n\n";
 
-class Demo
-{
-    // 公共的对象变量
-    public int $a = 10;
-    public string $b;
-    // 私有的对象变量->作用域只能对象内部 $this->x 调用
-    private int $c = 10;
-    private string $d;
+        // ═══ 1. 创建对象 ═══
+        echo "-- 1. Create --\n";
+        $p1 = new Product('SKU-A', 1, 'Alpha', 10.0, 5, true);
+        $p2 = new Product('SKU-B', 2, 'Beta',  20.0, 3, true);
+        echo 'p1=' . $p1->name . ' p2=' . $p2->name . "\n";
 
-    public function __construct(string $bb)
-    {
-        $this->b = $bb;
-        $this->d = "world";
-    }
+        // ═══ 2. 使用对象 ═══
+        echo "\n-- 2. Use --\n";
+        echo 'p1 total=$' . $p1->getTotal() . "\n";
+        $p1->applyDiscount(10.0);
+        echo 'p1 -10%=$' . $p1->price . "\n";
 
-    public function getC(): int
-    {
-        return $this->c;
-    }
+        // ═══ 3. 显式 unset (触发 destruct) ═══
+        echo "\n-- 3. Unset p2 --\n";
+        unset($p2);
 
-    public function setC(int $c): void
-    {
-        $this->c = $c;
-    }
+        // ═══ 4. p1 继续使用 ═══
+        echo "\n-- 4. p1 still alive --\n";
+        echo $p1->sku . "\n";
 
-    // 私有对象函数，只能对象内部 $this->getD() 调用
-    private function getD(): string
-    {
-        return $this->d;
-    }
-
-    public function getGetD(): string
-    {
-        return $this->getD() . " " . $this->b;
+        // p1 将在 main() 结束时自动析构
+        echo "\n-- main() ends, p1 auto-destroy follows --\n";
     }
 }

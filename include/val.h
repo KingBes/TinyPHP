@@ -31,7 +31,7 @@
 #define VAR_STRING(s) ((t_var){.type = TYPE_STRING, .value._string = (s)})
 #define VAR_ARRAY(a)  ((t_var){.type = TYPE_ARRAY,  .value._array  = (a)})
 #define VAR_CALLBACK(c) ((t_var){.type = TYPE_CALLBACK, .value._callback = (c)})
-#define VAR_OBJ(p)   ((t_var){.type = TYPE_OBJECT, .value = {._ptr = (p)}})
+#define VAR_OBJ(p)   ((t_var){.type = TYPE_OBJECT, .value = {._object = (p)}})
 #define VAR_NULL()    ((t_var){.type = TYPE_NULL})
 
 // ============================================================

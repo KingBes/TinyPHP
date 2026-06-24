@@ -127,13 +127,24 @@ class Parser
         $functions = [];
 
         while (!$this->check(TokenType::EOF)) {
-            if ($this->check(TokenType::CLASS_KW)) {
+            if ($this->match(TokenType::ABSTRACT_KW)) {
+                // abstract class
+                $this->consume(TokenType::CLASS_KW, 'Expected class keyword');
+                $cls = $this->parseClassDeclBody(true);
+                $extraClasses[] = $cls;
+            } elseif ($this->check(TokenType::CLASS_KW)) {
                 $cls = $this->parseClassDecl();
                 if ($mainClass === null) {
                     $mainClass = $cls;
                 } else {
                     $extraClasses[] = $cls;
                 }
+            } elseif ($this->check(TokenType::INTERFACE_KW)) {
+                $cls = $this->parseInterfaceDecl();
+                $extraClasses[] = $cls;
+            } elseif ($this->check(TokenType::TRAIT_KW)) {
+                $cls = $this->parseTraitDecl();
+                $extraClasses[] = $cls;
             } elseif ($this->check(TokenType::FUNCTION)) {
                 $functions[] = $this->parseFunction();
             } elseif ($this->check(TokenType::ECHO_KW) || $this->check(TokenType::IDENTIFIER) || $this->check(TokenType::VAR_DUMP)) {
@@ -371,18 +382,45 @@ class Parser
     }
 
     // ============================================================
-    // class_decl → CLASS_KW IDENTIFIER LBRACE (property|method)* RBRACE
+    // class_decl → (final)? CLASS_KW IDENTIFIER (extends NAME)? (implements NAME,...)?
     // ============================================================
     private function parseClassDecl(): ClassNode
     {
+        $this->match(TokenType::FINAL_KW);
         $this->consume(TokenType::CLASS_KW, 'Expected class keyword');
+        return $this->parseClassDeclBody(false);
+    }
+
+    private function parseClassDeclBody(bool $isAbstract): ClassNode
+    {
         $name = $this->consume(TokenType::IDENTIFIER, 'Expected class name')->lexeme;
+        $parentName = null;
+        if ($this->match(TokenType::EXTENDS_KW)) {
+            $parentName = $this->parseQualifiedName();
+        }
+        $implements = [];
+        if ($this->match(TokenType::IMPLEMENTS_KW)) {
+            do {
+                $implements[] = $this->parseQualifiedName();
+            } while ($this->match(TokenType::COMMA));
+        }
+
         $this->consume(TokenType::LBRACE, 'Expected {');
 
         $methods = [];
         $properties = [];
         $classConsts = [];
+        $traits = [];
         while (!$this->check(TokenType::RBRACE) && !$this->check(TokenType::EOF)) {
+            // use TraitName; → compile-time flattening
+            if ($this->match(TokenType::USE)) {
+                do {
+                    $tname = $this->parseQualifiedName();
+                    $traits[] = $tname;
+                } while ($this->match(TokenType::COMMA));
+                $this->consume(TokenType::SEMICOLON, 'Expected ;');
+                continue;
+            }
             // 属性声明: visibility type $name (= default)? ;
             if ($this->isPropertyStart()) {
                 $properties[] = $this->parsePropertyDecl();
@@ -401,7 +439,45 @@ class Parser
         }
 
         $this->consume(TokenType::RBRACE, 'Expected }');
-        return new ClassNode($name, $methods, $this->currentNamespace, $properties, $classConsts);
+        return new ClassNode($name, $methods, $this->currentNamespace, $properties, $classConsts, $parentName, $isAbstract, $implements, $traits);
+    }
+
+    // interface → INTERFACE_KW IDENTIFIER LBRACE method* RBRACE
+    private function parseInterfaceDecl(): ClassNode
+    {
+        $this->consume(TokenType::INTERFACE_KW, 'Expected interface keyword');
+        $name = $this->consume(TokenType::IDENTIFIER, 'Expected interface name')->lexeme;
+        $extends = [];
+        if ($this->match(TokenType::EXTENDS_KW)) {
+            do { $extends[] = $this->parseQualifiedName(); } while ($this->match(TokenType::COMMA));
+        }
+        $this->consume(TokenType::LBRACE, 'Expected {');
+        $methods = [];
+        while (!$this->check(TokenType::RBRACE) && !$this->check(TokenType::EOF)) {
+            $methods[] = $this->parseMethod();
+        }
+        $this->consume(TokenType::RBRACE, 'Expected }');
+        // Interface = abstract class with only method signatures
+        return new ClassNode($name, $methods, $this->currentNamespace, [], [], null, true, $extends);
+    }
+
+    // trait → TRAIT_KW IDENTIFIER LBRACE method* RBRACE
+    private function parseTraitDecl(): ClassNode
+    {
+        $this->consume(TokenType::TRAIT_KW, 'Expected trait keyword');
+        $name = $this->consume(TokenType::IDENTIFIER, 'Expected trait name')->lexeme;
+        $this->consume(TokenType::LBRACE, 'Expected {');
+        $methods = [];
+        $properties = [];
+        while (!$this->check(TokenType::RBRACE) && !$this->check(TokenType::EOF)) {
+            if ($this->isPropertyStart()) {
+                $properties[] = $this->parsePropertyDecl();
+            } else {
+                $methods[] = $this->parseMethod();
+            }
+        }
+        $this->consume(TokenType::RBRACE, 'Expected }');
+        return new ClassNode($name, $methods, $this->currentNamespace, $properties);
     }
 
     /** 判断当前 token 是否为类常量声明开头：const T name 或 visibility const T name */
@@ -523,27 +599,34 @@ class Parser
         }
         $this->consume(TokenType::RPAREN, 'Expected )');
 
-        // 返回类型
+        // 返回类型（__construct/__destruct 禁止声明返回类型）
         $returnType = 'void';
         if ($this->match(TokenType::COLON)) {
+            if ($name === '__construct' || $name === '__destruct') {
+                $this->error("{$name}() cannot declare a return type");
+            }
             $returnType = $this->parseType();
         }
 
-        // 方法体
-        $this->consume(TokenType::LBRACE, 'Expected {');
+        // 方法体 (abstract methods end with ; instead of {})
         $body = [];
-        // 构造函数属性提升：注入 $this->prop = $prop 到方法体开头
-        foreach ($promoted as $pp) {
-            $pname = ltrim($pp->name, '$');
-            $body[] = new AssignPropStmtNode(
-                new PropertyAccessExpr(new VariableExpr('$this'), $pname),
-                new VariableExpr($pp->name)
-            );
+        if ($this->match(TokenType::SEMICOLON)) {
+            $body = null; // abstract method
+        } else {
+            $this->consume(TokenType::LBRACE, 'Expected {');
+            // 构造函数属性提升：注入 $this->prop = $prop 到方法体开头
+            foreach ($promoted as $pp) {
+                $pname = ltrim($pp->name, '$');
+                $body[] = new AssignPropStmtNode(
+                    new PropertyAccessExpr(new VariableExpr('$this'), $pname),
+                    new VariableExpr($pp->name)
+                );
+            }
+            while (!$this->check(TokenType::RBRACE) && !$this->check(TokenType::EOF)) {
+                $body[] = $this->parseStmt();
+            }
+            $this->consume(TokenType::RBRACE, 'Expected }');
         }
-        while (!$this->check(TokenType::RBRACE) && !$this->check(TokenType::EOF)) {
-            $body[] = $this->parseStmt();
-        }
-        $this->consume(TokenType::RBRACE, 'Expected }');
 
         return new MethodNode($name, $visibility, $params, $returnType, $body, $promoted);
     }
@@ -609,6 +692,8 @@ class Parser
         }
         if ($this->match(TokenType::SWITCH_KW))     return $this->parseSwitchStmt();
         if ($this->match(TokenType::GOTO))          return $this->parseGotoStmt();
+        if ($this->match(TokenType::TRY_KW))        return $this->parseTryStmt();
+        if ($this->match(TokenType::THROW_KW))      return $this->parseThrowStmt();
         if ($this->match(TokenType::BREAK_KW))      { $this->consume(TokenType::SEMICOLON, 'Expected ;'); return new BreakStmtNode(); }
         if ($this->match(TokenType::CONTINUE_KW))   { $this->consume(TokenType::SEMICOLON, 'Expected ;'); return new ContinueStmtNode(); }
         // 标签: IDENTIFIER COLON
@@ -704,6 +789,47 @@ class Parser
         $label = $this->consume(TokenType::IDENTIFIER, 'Expected label name')->lexeme;
         $this->consume(TokenType::SEMICOLON, 'Expected ;');
         return new GotoStmtNode($label);
+    }
+
+    // try { body } catch (Var $e) { body } finally { body }
+    private function parseTryStmt(): TryStmtNode
+    {
+        $this->consume(TokenType::LBRACE, 'Expected {');
+        $tryBody = $this->parseBlock();
+        $this->consume(TokenType::RBRACE, 'Expected }');
+
+        $catchBody = [];
+        $catchVar  = 'e';
+        $finallyBody = [];
+
+        // catch (TYPE $var) { ... }
+        if ($this->match(TokenType::CATCH_KW)) {
+            $this->consume(TokenType::LPAREN, 'Expected (' );
+            $catchType = $this->parseType();
+            $t = $this->consume(TokenType::IDENTIFIER, 'Expected catch variable')->lexeme;
+            $catchVar = ltrim($t, '$');
+            $this->consume(TokenType::RPAREN, 'Expected )');
+            $this->consume(TokenType::LBRACE, 'Expected {');
+            $catchBody = $this->parseBlock();
+            $this->consume(TokenType::RBRACE, 'Expected }');
+        }
+
+        // finally { ... }
+        if ($this->match(TokenType::FINALLY_KW)) {
+            $this->consume(TokenType::LBRACE, 'Expected {');
+            $finallyBody = $this->parseBlock();
+            $this->consume(TokenType::RBRACE, 'Expected }');
+        }
+
+        return new TryStmtNode($tryBody, $catchBody, $finallyBody, $catchVar);
+    }
+
+    // throw expr;
+    private function parseThrowStmt(): ThrowStmtNode
+    {
+        $expr = $this->parseExpr();
+        $this->consume(TokenType::SEMICOLON, 'Expected ;');
+        return new ThrowStmtNode($expr);
     }
 
     // do { body } while (cond);
@@ -1513,14 +1639,14 @@ class Parser
 
     private function parseVisibility(): string
     {
-        // static methods default to public
+        $this->match(TokenType::ABSTRACT_KW); // skip abstract
         if ($this->match(TokenType::STATIC_KW)) return 'public';
         if ($this->match(TokenType::PUBLIC_KW)) {
-            $this->match(TokenType::STATIC_KW); // optional static after visibility
+            $this->match(TokenType::STATIC_KW);
             return 'public';
         }
         if ($this->match(TokenType::PRIVATE_KW)) {
-            $this->match(TokenType::STATIC_KW); // optional static after visibility
+            $this->match(TokenType::STATIC_KW);
             return 'private';
         }
         $this->error('Expected public, private, or static');

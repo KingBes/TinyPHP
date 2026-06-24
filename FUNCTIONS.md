@@ -999,13 +999,9 @@ C->fold_dbl($data, $len, phpc_thunk('fold_cb', $fn));
 ### 中等难度（⭐⭐）
 | 函数/语法 | 说明 |
 |---|---|
-| `try/catch/finally` | `setjmp/longjmp` + 资源栈 |
-| `throw new Exception($msg)` | 需内置 Exception 类 |
 | `file_get_contents`/`file_put_contents` | 文件 I/O |
-| 类继承 `extends` | VTable 扩展 |
-| 接口 `interface`/`implements` | VTable 契约 |
-| Trait | 编译期方法扁平化 |
 | Generators `yield` | 状态机 |
+| `instanceof` | 运行时类链检查 |
 
 ### 较高难度（⭐⭐⭐）
 | 函数/语法 | 说明 |

@@ -268,13 +268,13 @@ ExprNode（抽象，含 line/column）
 
 | 文件 | 行数~ | 核心职责 |
 |------|------|---------|
-| `tphp.php` | ~400 | CLI 入口、多文件合并、`#flag`/`#callback` 过滤、PHAR 自解压、编译器调用 |
-| `src/TokenType.php` | ~150 | Token 枚举（~85 token，含 `HASH_CALLBACK`/`NULLSAFE_ARROW`/`IDENTICAL`） |
+| `tphp.php` | ~420 | CLI 入口、多文件合并、`#flag`/`#callback` 过滤、PHAR 自解压、编译器调用、topo 排序 |
+| `src/TokenType.php` | ~155 | Token 枚举（~90 token，含 `INTERFACE_KW`/`TRAIT_KW`/`TRY_KW`/`EXTENDS_KW`） |
 | `src/Token.php` | ~20 | Token 值对象 |
-| `src/AST/Node.php` | ~870 | AST 节点 + Visitor 接口 + `callbacks` 传递 |
-| `src/Lexer.php` | ~730 | 词法分析（`#include`/`#flag`/`#callback`/heredoc/插值/运算符） |
-| `src/Parser.php` | ~1640 | 递归下降解析（键名解构/属性提升/`fn`/`never`/`C->call`/预处理指令混合） |
-| `src/CodeGenerator.php` | ~3350 | C 代码生成（50+ 内置函数/PHPC 互操作/thunk 生成/闭包捕获） |
+| `src/AST/Node.php` | ~890 | AST 节点 + Visitor 接口 + `callbacks`/`implements`/`traits`/`TryStmtNode` |
+| `src/Lexer.php` | ~740 | 词法分析（`#include`/`#flag`/`#callback`/heredoc/插值/运算符） |
+| `src/Parser.php` | ~1720 | 递归下降解析（extends/implements/interface/trait/abstract/try/catch） |
+| `src/CodeGenerator.php` | ~3650 | C 代码生成（COS OOP/继承/topo排序/异常/thunk/50+ 内置函数） |
 | `include/types.h` | ~130 | C 类型系统 + likely/unlikely 宏 |
 | `include/val.h` | ~45 | VAR_*/STR_LIT 便捷宏 |
 | `include/array.h` | ~440 | PHP 数组（128 槽复用池/sort/qsort/1.5× 增长因子） |
@@ -282,6 +282,8 @@ ExprNode（抽象，含 line/column）
 | `include/builtin.h` | ~430 | 公开内置（50+ 函数） |
 | `include/phpc.h` | ~200 | PHPC 互操作（类型/数组/对象/回调/thunk 适配/内存释放） |
 | `include/rand.h` | ~60 | MT19937 随机数 |
+| `include/object/` | 3 文件 | COS 对象系统（object.h/try.h/exception.h） |
+| `include/p2c.h` | ~170 | PHP↔C 类型桥（已合并到 phpc.h） |
 | `include/os/times.h` | ~95 | 系统函数（跨平台） |
 | `include/os/json.h` | ~340 | JSON 编解码 |
 | `include/common.h` | ~16 | 总入口 |

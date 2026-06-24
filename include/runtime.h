@@ -206,13 +206,8 @@ static inline void tphp_rt_str_free(t_string* s) {
 // ── 对象生命周期 ──────────────────────────────────────
 
 /** tphp_object_free — 统一析构入口：refcount 减 1，归零调 dtor + free */
-static inline void tphp_rt_object_free(t_object *obj) {
-    if (obj == NULL) return;
-    if (--obj->refcount > 0) return;
-    if (obj->vtable != NULL && obj->vtable->dtor != NULL) {
-        obj->vtable->dtor(obj);
-    }
-    free(obj);
+static inline void tphp_rt_object_free(void *obj) {
+    tp_obj_release(obj);
 }
 
 // ============================================================
@@ -277,7 +272,7 @@ static inline void tphp_rt_free_all(void) {
         tphp_rt_alloc *next = n->next;
         if (n->ptr) {
             switch (n->type) {
-                case 0: tphp_rt_object_free((t_object *)n->ptr); break;
+                case 0: tp_obj_release(n->ptr); break;
                 case 1: tphp_fn_arr_free((t_array *)n->ptr);    break;
                 case 2: { t_string *s = (t_string *)n->ptr; free(s->data); free(s); } break;
                 case 3: free(n->ptr); break; /* closure capture env / generic heap */

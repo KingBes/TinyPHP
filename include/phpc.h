@@ -127,17 +127,17 @@ static inline t_array* phpc_new_arr(void) {
 //   TinyPHP 对象 = t_object 头部 + 用户字段，结构体指针即对象首地址
 
 // PHP 对象 → 底层 C 结构体指针（类型安全由调用方保证）
-static inline void* phpc_obj(t_object* obj) {
-    return (void*)obj;
+static inline void* phpc_obj(void* obj) {
+    return obj;
 }
 
-// C 结构体指针 → PHP 对象（vtable 控制析构生命周期）
-static inline t_object* phpc_new_obj(void* ptr, const ClassVTable* vtable) {
-    if (!ptr || !vtable) return NULL;
+// C 结构体指针 → PHP 对象（class descriptor 控制析构生命周期）
+static inline void* phpc_new_obj(void* ptr, const t_class* cls) {
+    if (!ptr || !cls) return NULL;
     t_object* obj = (t_object*)ptr;
-    obj->vtable   = vtable;
+    obj->cls      = cls;
     obj->refcount = 1;
-    tphp_rt_register(ptr, 0);  // 注册为 object 类型，error() 时自动析构
+    tphp_rt_register(ptr, 0);  // register for error() cleanup
     return obj;
 }
 

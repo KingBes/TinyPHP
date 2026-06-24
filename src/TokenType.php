@@ -41,6 +41,15 @@ enum TokenType: string
     case HASH_INCLUDE = '#include';
     case CC_FLAG      = '#flag';
     case HASH_CALLBACK = '#callback';
+    case TRY_KW       = 'try';
+    case CATCH_KW     = 'catch';
+    case FINALLY_KW   = 'finally';
+    case THROW_KW     = 'throw';
+    case ABSTRACT_KW  = 'abstract';
+    case EXTENDS_KW   = 'extends';
+    case IMPLEMENTS_KW = 'implements';
+    case INTERFACE_KW  = 'interface';
+    case TRAIT_KW      = 'trait';
 
     // 魔术方法
     case CONSTRUCT = '__construct';

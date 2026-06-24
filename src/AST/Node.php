@@ -77,6 +77,12 @@ class ClassNode extends ASTNode
         public readonly array $properties = [],
         /** @var ConstNode[] 类成员常量 */
         public readonly array $classConsts = [],
+        public readonly ?string $parentName = null,
+        public readonly bool $isAbstract = false,
+        /** @var string[] */
+        public readonly array $implements = [],
+        /** @var array[] trait names to flatten */
+        public readonly array $traits = [],
     ) {}
 
     public function accept(ASTVisitor $visitor): string
@@ -112,8 +118,8 @@ class MethodNode extends ASTNode
         /** @var ParamNode[] */
         public readonly array $params,
         public readonly string $returnType,
-        /** @var StmtNode[] */
-        public readonly array $body,
+        /** @var StmtNode[]|null null=abstract */
+        public readonly array|null $body,
         /** @var PropertyDeclNode[] */
         public readonly array $promoted = [],
     ) {}
@@ -379,6 +385,28 @@ class GotoStmtNode extends StmtNode
     {
         return $visitor->visitGotoStmt($this);
     }
+}
+
+// try { ... } catch ($e) { ... } finally { ... }
+class TryStmtNode extends StmtNode
+{
+    /** @param StmtNode[] $tryBody */
+    /** @param StmtNode[] $catchBody */
+    /** @param StmtNode[] $finallyBody */
+    public function __construct(
+        public readonly array $tryBody,
+        public readonly array $catchBody,
+        public readonly array $finallyBody,
+        public readonly string $catchVar = 'e',
+    ) {}
+    public function accept(ASTVisitor $visitor): string { return $visitor->visitTryStmt($this); }
+}
+
+// throw expr;
+class ThrowStmtNode extends StmtNode
+{
+    public function __construct(public readonly ExprNode $expr) {}
+    public function accept(ASTVisitor $visitor): string { return $visitor->visitThrowStmt($this); }
 }
 
 // LABEL:
@@ -857,6 +885,8 @@ interface ASTVisitor
     public function visitSwitchStmt(SwitchStmtNode $node): string;
     public function visitBreakStmt(BreakStmtNode $node): string;
     public function visitGotoStmt(GotoStmtNode $node): string;
+    public function visitTryStmt(TryStmtNode $node): string;
+    public function visitThrowStmt(ThrowStmtNode $node): string;
     public function visitLabelStmt(LabelStmtNode $node): string;
     public function visitContinueStmt(ContinueStmtNode $node): string;
 }

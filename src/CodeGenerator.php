@@ -15,7 +15,11 @@ class CodeGenerator implements ASTVisitor
     /** 常量可见性：全限定 const 名 → 'public'|'private'|'protected' */
     private array $constVis = [];
     /** 类名映射：原始类名 → C 类名（用于 ClassName::CONST 访问） */
-    private array $classNames = [];
+    private array $classNames = ['Exception' => 'tphp_class_Exception'];
+    /** Class own properties: cn → [prop => true] */
+    private array $classOwnProps = [];
+    /** Class parent name: cn → parent CN (or '' if root) */
+    private array $classParentName = [];
     /** 数组元素类型追踪：varName → C 类型（int key 的默认类型） */
     private array $arrElementTypes = [];
     /** 数组 per-key 类型追踪：arrVarName → [strKey → CType]（字符串键专用） */
@@ -31,7 +35,9 @@ class CodeGenerator implements ASTVisitor
     /** 类属性类型追踪：className → [propName → C type] */
     private array $classPropTypes = [];
     /** 类方法返回类型：className → [methodName → C type] */
-    private array $classMethodRetTypes = [];
+    private array $classMethodRetTypes = [
+        'tphp_class_Exception' => ['getMessage' => 't_string', '__construct' => 'void', '__destruct' => 'void'],
+    ];
     /** 枚举 backing 类型：enumName → 'int'|'string' (FQN 和短名均可查) */
     private array $enumBackingTypes = [];
     /** 枚举 C 类型名：enumName → 'tphp_enum_X*' (FQN 和短名均可查) */
@@ -140,6 +146,22 @@ class CodeGenerator implements ASTVisitor
             $node->mainClass ? [$node->mainClass] : [],
             $node->extraClasses
         );
+        // Topological sort: parent classes before children
+        $sorted = [];
+        $seen = [];
+        $byRefName = [];
+        foreach ($allClasses as $c) { $byRefName[self::classRefName($c->name)] = $c; }
+        $addClass = function ($cn) use (&$addClass, &$seen, &$sorted, $byRefName) {
+            if (isset($seen[$cn])) return;
+            $seen[$cn] = true;
+            if (isset($byRefName[$cn]) && $byRefName[$cn]->parentName !== null) {
+                $pcn = self::classRefName($byRefName[$cn]->parentName);
+                if (isset($byRefName[$pcn])) $addClass($pcn);
+            }
+            if (isset($byRefName[$cn])) $sorted[] = $byRefName[$cn];
+        };
+        foreach ($byRefName as $cn => $_) $addClass($cn);
+        $allClasses = $sorted;
         $mainClassName = $node->mainClass ? self::classCName($node->mainClass) : '';
 
         // ── Phase 1: 所有类的 struct + 前置声明 (保证类型可见) ──
@@ -241,6 +263,10 @@ class CodeGenerator implements ASTVisitor
     /** Phase 1: struct + 前置声明 */
     private function emitClassForward(ClassNode $class, bool $isMain): string
     {
+        // Skip interface-only classes (abstract + no parent + no properties)
+        if ($class->isAbstract && $class->parentName === null && empty($class->properties)) {
+            return "/* interface {$class->name} — compile-time only */\n";
+        }
         $cn = self::classCName($class);
         $ctor = $dtor = null;
         $methods = [];
@@ -253,7 +279,13 @@ class CodeGenerator implements ASTVisitor
         $o = [];
         $o[] = "/* ── Struct: {$cn} ──────────────────────────── */";
         $o[] = 'typedef struct {';
-        $o[] = $this->ind('t_object _base;');
+        $o[] = $this->ind('t_object _obj;');   // COS-style header (cls ptr + refcount)
+        // Parent struct (COS inheritance: struct nesting)
+        $parentCN = '';
+        if ($class->parentName !== null) {
+            $parentCN = self::classRefName($class->parentName);
+            $o[] = $this->ind($parentCN . ' _parent;');
+        }
         // 属性字段 + 记录类型
         $propTypes = [];
         foreach ($class->properties as $prop) {
@@ -270,6 +302,11 @@ class CodeGenerator implements ASTVisitor
             }
         }
         $this->classPropTypes[$cn] = $propTypes;
+        // Track own properties (for COS inheritance property resolution)
+        $this->classOwnProps[$cn] = array_fill_keys(array_keys($propTypes), true);
+        if ($parentCN !== '') {
+            $this->classParentName[$cn] = $parentCN;
+        }
         // 记录方法返回类型
         $methodRets = ['__construct' => 'void', '__destruct' => 'void'];
         foreach ($methods as $m) {
@@ -349,6 +386,10 @@ class CodeGenerator implements ASTVisitor
     /** Phase 2: VTable + 方法实现 + allocator */
     private function emitClassImpl(ClassNode $class, bool $isMain): string
     {
+        // Skip interface-only classes
+        if ($class->isAbstract && $class->parentName === null && empty($class->properties)) {
+            return '';
+        }
         $cn = self::classCName($class);
         $ctor = $dtor = null;
         $methods = [];
@@ -363,12 +404,19 @@ class CodeGenerator implements ASTVisitor
 
         $o = [];
 
-        // VTable
-        $o[] = "/* ── VTable: {$cn} ──────────────────────────── */";
-        $o[] = "static const ClassVTable _vtable_{$cn} = {";
-        $o[] = $this->ind("    .name    = \"{$cn}\",");
-        $o[] = $this->ind("    .type_id = 0,");
-        $o[] = $this->ind("    .dtor    = (void(*)(void*)){$cn}___destruct,");
+        // Class descriptor (COS-style)
+        $parentPtr = ($class->parentName !== null)
+            ? '&_class_' . self::classRefName($class->parentName)
+            : 'NULL';
+        $o[] = "/* ── Class: {$cn} ──────────────────────────── */";
+        $o[] = "static void* _vtable_{$cn}[1] = { NULL };";
+        $o[] = "static const t_class _class_{$cn} = {";
+        $o[] = $this->ind("    .name          = \"{$cn}\",");
+        $o[] = $this->ind("    .parent        = {$parentPtr},");
+        $o[] = $this->ind("    .instance_size = sizeof({$cn}),");
+        $o[] = $this->ind("    .dtor          = (void*){$cn}___destruct,");
+        $o[] = $this->ind("    .vtable        = _vtable_{$cn},");
+        $o[] = $this->ind("    .vtable_len    = 0,");
         $o[] = $this->ind("};");
         $o[] = '';
 
@@ -463,28 +511,29 @@ class CodeGenerator implements ASTVisitor
         $o[] = '';
 
         // 用户方法
+        $this->indent = 1;  // reset for scope tracking
         foreach ($methods as $m) {
             $o[] = $m->accept($this);
             $o[] = '';
         }
 
-        // Allocator — Main 固定参数，辅助类用户参数
-        $o[] = "/* ── Allocator: new_{$cn} ──────────────── */";
-        $ctorParams = $isMain ? 't_int argc, t_array* argv' : ($this->ctorParamStr($ctor) ?: 'void');
-        $o[] = "{$cn}* new_{$cn}({$ctorParams}) {";
-        $o[] = $this->ind("{$cn}* self = ({$cn}*)calloc(1, sizeof({$cn}));");
-        $o[] = $this->ind('if (self == NULL) return NULL;');
-        $o[] = $this->ind("self->_base.vtable   = &_vtable_{$cn};");
-        $o[] = $this->ind("self->_base.refcount = 1;");
-        if ($isMain) {
-            $o[] = $this->ind("{$cn}___construct(self, argc, argv);");
-        } else {
-            $ctorArgs = $ctor ? implode(', ', array_map(fn($p) => self::varName($p->name), $ctor->params)) : '';
-            $o[] = $this->ind("{$cn}___construct(self" . ($ctorArgs ? ', ' . $ctorArgs : '') . ");");
+        // Allocator — skip for abstract classes
+        if (!$class->isAbstract) {
+            $o[] = "/* ── Allocator: new_{$cn} ──────────────── */";
+            $ctorParams = $isMain ? 't_int argc, t_array* argv' : ($this->ctorParamStr($ctor) ?: 'void');
+            $o[] = "{$cn}* new_{$cn}({$ctorParams}) {";
+            $o[] = $this->ind("{$cn}* self = ({$cn}*)tp_obj_alloc(&_class_{$cn});");
+            $o[] = $this->ind('if (self == NULL) return NULL;');
+            if ($isMain) {
+                $o[] = $this->ind("{$cn}___construct(self, argc, argv);");
+            } else {
+                $ctorArgs = $ctor ? implode(', ', array_map(fn($p) => self::varName($p->name), $ctor->params)) : '';
+                $o[] = $this->ind("{$cn}___construct(self" . ($ctorArgs ? ', ' . $ctorArgs : '') . ");");
+            }
+            $o[] = $this->ind('return self;');
+            $o[] = '}';
+            $o[] = '';
         }
-        $o[] = $this->ind('return self;');
-        $o[] = '}';
-        $o[] = '';
 
         return implode("\n", $o);
     }
@@ -520,7 +569,7 @@ class CodeGenerator implements ASTVisitor
 
         $tail = [];
         foreach ($this->scopeObjects as $ov) {
-            $tail[] = $this->ind("tphp_rt_object_free(&{$ov}->_base);");
+            $tail[] = $this->ind("tp_obj_release({$ov});");
         }
         $tail[] = '}';
         return implode("\n", array_merge($header, $declLines, $bodyLines, $tail));
@@ -545,6 +594,10 @@ class CodeGenerator implements ASTVisitor
 
         // Phase 2: body (侧作用: 填充 funcScopeDecls)
         $bodyLines = [];
+        if ($node->body === null) {
+            // abstract method — forward declaration only, no implementation
+            return '';
+        }
         if (empty($node->body)) {
             foreach ($node->params as $p) $bodyLines[] = $this->ind("(void)" . self::varName($p->name) . ";");
         } else {
@@ -560,7 +613,7 @@ class CodeGenerator implements ASTVisitor
         // 自动析构本作用域内的对象变量
         $tail = [];
         foreach ($this->scopeObjects as $ov) {
-            $tail[] = $this->ind("tphp_rt_object_free(&{$ov}->_base);");
+            $tail[] = $this->ind("tp_obj_release({$ov});");
         }
         $tail[] = '}';
 
@@ -1002,12 +1055,16 @@ class CodeGenerator implements ASTVisitor
             } else {
                 return 't_int';
             }
-            if ($objType !== '' && isset($this->classMethodRetTypes[$objType])) {
-                $retType = $this->classMethodRetTypes[$objType][$expr->name] ?? 't_int';
-                if ($retType === 'void') return 't_int';
-                // 如果是类类型（含 * 且非内置类型），去掉 * 用于对象追踪
-                if (str_ends_with($retType, '*') && $retType !== 't_array*') return rtrim($retType, '*');
-                return $retType;
+            $objClean = rtrim($objType, '*');
+            if ($objClean !== '' && isset($this->classMethodRetTypes[$objClean])) {
+                $retType = $this->classMethodRetTypes[$objClean][$expr->name] ?? null;
+                if ($retType !== null) { if ($retType === 'void') return 't_int'; return $retType; }
+            }
+            // Inherited method
+            $parentCN = $this->resolveMethodClass($objClean, $expr->name);
+            if ($parentCN !== '' && isset($this->classMethodRetTypes[$parentCN][$expr->name])) {
+                $retType = $this->classMethodRetTypes[$parentCN][$expr->name];
+                if ($retType !== 'void') return $retType;
             }
         }
         // 独立函数 → 默认 t_int（未来可扩展函数返回类型追踪）
@@ -1141,7 +1198,16 @@ class CodeGenerator implements ASTVisitor
             }
         }
         if ($objType !== '' && isset($this->classPropTypes[$objType])) {
-            return $this->classPropTypes[$objType][$pa->property] ?? '';
+            $pt = $this->classPropTypes[$objType][$pa->property] ?? null;
+            if ($pt !== null) return $pt;
+        }
+        // Search parent chain for inherited properties
+        $cur = $objType;
+        while (isset($this->classParentName[$cur]) && $this->classParentName[$cur] !== '') {
+            $cur = $this->classParentName[$cur];
+            if (isset($this->classPropTypes[$cur][$pa->property])) {
+                return $this->classPropTypes[$cur][$pa->property];
+            }
         }
         return '';
     }
@@ -1328,7 +1394,7 @@ class CodeGenerator implements ASTVisitor
             }
         }
         foreach ($this->scopeObjects as $ov) {
-            $implLines[] = '    ' . "tphp_rt_object_free(&{$ov}->_base);";
+            $implLines[] = '    ' . "tp_obj_release({$ov});";
         }
         $implLines[] = '}';
 
@@ -2065,10 +2131,27 @@ class CodeGenerator implements ASTVisitor
         } else {
             $cn = $callee;
         }
-        $call = "{$cn}_{$node->name}(" . implode(', ', $allArgs) . ')';
+        // nullsafe on null-typed variable → no-op
+        if ($node->isNullsafe && ($cn === 'null' || $cn === '' || $cn === 'void*')) {
+            return '0'; // nullsafe no-op
+        }
+        // Strip trailing * + resolve parent class for inherited methods
+        $cnClean = rtrim($cn, '*');
+        $useParent = false;
+        if ($cnClean !== '' && !isset($this->classMethodRetTypes[$cnClean][$node->name])) {
+            $parentCN = $this->resolveMethodClass($cnClean, $node->name);
+            if ($parentCN !== '') { $cnClean = $parentCN; $useParent = true; }
+        }
+        // If method is inherited, pass &obj->_parent as self
+        $selfArg = $useParent ? ('&' . $callee . '->_parent') : $callee;
+        $allArgs[0] = $selfArg;
+        $call = "{$cnClean}_{$node->name}(" . implode(', ', $allArgs) . ')';
         // nullsafe ?-> : wrap in NULL check with temp variable
         if ($node->isNullsafe) {
-            $ret = $this->classMethodRetTypes[$cn][$node->name] ?? 't_int';
+            $ret = $this->classMethodRetTypes[$cnClean][$node->name] ?? 't_int';
+            if ($ret === 'void') {
+                return "({ if ((void*){$callee} != NULL) {{ {$call}; }} })";
+            }
             $tmp = '_nsr_' . (++$this->tmpVarCounter);
             $zero = match ($ret) { 't_float' => '0.0', 't_string' => '(t_string){NULL,0}', default => '0' };
             return "({ {$ret} {$tmp} = {$zero}; if ((void*){$callee} != NULL) {{ $tmp = {$call}; }} {$tmp}; })";
@@ -2404,6 +2487,21 @@ class CodeGenerator implements ASTVisitor
     {
         $obj = $node->object->accept($this);
         $prop = ltrim($node->property, '$');
+        // COS inheritance: resolve property through _parent chain
+        $objCN = '';
+        if ($obj === 'self') {
+            $objCN = $this->className;
+        } elseif ($node->object instanceof VariableExpr && !str_starts_with($node->object->name, '$')) {
+            // static property — skip
+        } elseif ($node->object instanceof VariableExpr) {
+            $objType = $this->varTypes[self::varName($node->object->name)] ?? '';
+            // tphp_class_Dog* → tphp_class_Dog
+            $objCN = rtrim($objType, '*');
+        }
+        if ($objCN !== '' && !isset($this->classOwnProps[$objCN][$prop])) {
+            $prefix = $this->resolvePropPrefix($objCN, $prop);
+            return $obj . '->_parent.' . $prefix . $prop;
+        }
         // 类常量访问: self::CONST 或 ClassName::CONST → TPHP_CONST_ 引用
         if (ctype_upper($prop[0] ?? '')) {
             $rawObjName = ($node->object instanceof VariableExpr) ? $node->object->name : '';
@@ -2810,6 +2908,48 @@ class CodeGenerator implements ASTVisitor
 
     public function visitBreakStmt(BreakStmtNode $node): string { return 'break;'; }
     public function visitGotoStmt(GotoStmtNode $node): string { return 'goto ' . $node->label . ';'; }
+
+    public function visitTryStmt(TryStmtNode $node): string
+    {
+        $lines = [];
+        $lines[] = 'TP_TRY';
+        foreach ($node->tryBody as $s) {
+            $lines[] = '    ' . $s->accept($this);
+        }
+        if (!empty($node->catchBody)) {
+            $cv = $node->catchVar;
+            $this->declaredVars[$cv] = true;
+            $this->varTypes[$cv] = 't_string';
+            $lines[] = 'TP_CATCH(' . $cv . ')';
+            foreach ($node->catchBody as $s) {
+                $lines[] = '    ' . $s->accept($this);
+            }
+        }
+        if (!empty($node->finallyBody)) {
+            $lines[] = 'TP_FINALLY';
+            foreach ($node->finallyBody as $s) {
+                $lines[] = '    ' . $s->accept($this);
+            }
+        }
+        $lines[] = 'TP_END_TRY';
+        return implode("\n", $lines);
+    }
+
+    public function visitThrowStmt(ThrowStmtNode $node): string
+    {
+        $code = $node->expr->accept($this);
+        // throw new Exception("msg") → tp_throw_ex()
+        if ($node->expr instanceof NewExpr && $node->expr->className === 'Exception') {
+            return "tp_throw_ex({$code});";
+        }
+        // throw "string" → tp_throw(msg.data)
+        $type = $this->inferType($node->expr);
+        if ($type === 't_string') {
+            return "tp_throw({$code}.data);";
+        }
+        return "tp_throw((char*)(uintptr_t)(" . $code . "));";
+    }
+
     public function visitLabelStmt(LabelStmtNode $node): string { return $node->name . ':;'; }
     public function visitContinueStmt(ContinueStmtNode $node): string { return 'continue;'; }
 
@@ -2841,7 +2981,7 @@ class CodeGenerator implements ASTVisitor
             $this->ind("{$this->className}* _main = new_{$this->className}((t_int)argc, _argv);"),
             $this->ind("if (_main == NULL) { tphp_fn_arr_free(_argv); return 1; }"),
             $this->ind("{$this->className}_main(_main);"),
-            $this->ind("tphp_rt_object_free(&_main->_base);"),
+            $this->ind("tp_obj_release(_main);"),
             $this->ind("tphp_fn_arr_free(_argv);"),
             $this->ind("return 0;"),
             "}",
@@ -3208,8 +3348,9 @@ class CodeGenerator implements ASTVisitor
                 $objType = ($objKey === '$this' || $objKey === 'self')
                     ? $this->className
                     : ($this->varTypes[$objKey] ?? '');
-                if ($objType !== '' && isset($this->classMethodRetTypes[$objType])) {
-                    $retType = $this->classMethodRetTypes[$objType][$expr->name] ?? '';
+                $objClean = rtrim($objType, '*'); // COS objects always have *
+                if ($objClean !== '' && isset($this->classMethodRetTypes[$objClean])) {
+                    $retType = $this->classMethodRetTypes[$objClean][$expr->name] ?? '';
                     if ($retType === 't_string') return $code;
                     if ($retType === 't_float') return "tphp_rt_str_from_float({$code})";
                 }
@@ -3433,6 +3574,32 @@ class CodeGenerator implements ASTVisitor
     }
 
     /** 从已解析类名生成 C 引用名（visitNew/Call 等非 ClassNode 上下文中使用） */
+    /** Resolve which class owns a method (for COS inheritance) */
+    private function resolveMethodClass(string $cn, string $method): string
+    {
+        $cur = $cn;
+        while (isset($this->classParentName[$cur]) && $this->classParentName[$cur] !== '') {
+            $cur = $this->classParentName[$cur];
+            if (isset($this->classMethodRetTypes[$cur][$method])) return $cur;
+        }
+        return '';
+    }
+
+    /** Resolve property prefix for COS inheritance: _parent._parent. */
+    private function resolvePropPrefix(string $cn, string $prop): string
+    {
+        $prefix = '';
+        $cur = $cn;
+        while (isset($this->classParentName[$cur]) && $this->classParentName[$cur] !== '') {
+            $cur = $this->classParentName[$cur];
+            if (isset($this->classOwnProps[$cur][$prop])) {
+                return $prefix;
+            }
+            $prefix .= '_parent.';
+        }
+        return $prefix; // fallback: try outermost parent
+    }
+
     private static function classRefName(string $resolvedName): string {
         return 'tphp_class_' . self::mangleCName($resolvedName);
     }
