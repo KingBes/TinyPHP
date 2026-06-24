@@ -21,6 +21,20 @@ php tphp.php .
 php tphp.php main.php -o app -cc gcc
 ```
 
+## 入口文件
+
+```php
+<?php 
+
+class Main{
+
+    public function main(): void
+    {
+        echo "hello world\n";
+    }
+}
+```
+
 ### 独立 PHAR（推荐）
 
 [GitHub Actions](https://github.com/KingBes/TinyPHP/actions) 自动构建全平台单文件：
