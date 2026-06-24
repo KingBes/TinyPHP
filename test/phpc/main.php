@@ -10,6 +10,8 @@ use function Phpc\obj_read_x;
 use function Phpc\obj_read_y;
 use function Phpc\apply_square;
 use function Phpc\map_with_closure;
+use function Phpc\map_ints_noenv;
+use function Phpc\fold_double;
 
 class MyPoint
 {
@@ -102,6 +104,30 @@ class Main
         );
         echo "12. map([1,2,3],+100)=[";
         echo $mapped2[0] . "," . $mapped2[1] . "," . $mapped2[2] . "]\n";
+
+        // 4e: 无 env 回调 — thunk 机制测试
+        $mapped3 = map_ints_noenv([5, 10, 15], function(int $x): int { return $x * 3; });
+        echo "13. map_ne([5,10,15],×3)=[";
+        echo $mapped3[0] . "," . $mapped3[1] . "," . $mapped3[2] . "]\n";
+
+        // 4f: 无 env 回调 + 闭包捕获变量
+        $base = 1000;
+        $mapped4 = map_ints_noenv([1, 2], function(int $x) use ($base): int { return $x + $base; });
+        echo "14. map_ne([1,2],+1000)=[";
+        echo $mapped4[0] . "," . $mapped4[1] . "]\n";
+
+        // 4g: 多参数多类型回调 — #callback + phpc_thunk
+        $weighted = fold_double([2.0, 4.0, 6.0],
+            function(int $idx, float $val): float { return (float)($idx + 1) * $val; }
+        );
+        echo "15. fold([2,4,6],idx+1*val)="; var_dump($weighted); echo "\n";
+
+        // 4h: 多参数回调 + 捕获变量
+        $factor = 0.5;
+        $halved = fold_double([10.0, 20.0, 30.0],
+            function(int $idx, float $val) use ($factor): float { return $val * (float)$factor; }
+        );
+        echo "16. fold([10,20,30],×0.5)="; var_dump($halved); echo "\n";
 
         echo "\n=== All PHPC tests passed! ===\n";
     }

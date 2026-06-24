@@ -78,7 +78,7 @@ PHP → Lexer → Token[] → Parser → AST → CodeGenerator → .c → 编译
 
 ### 语法
 
-`if/elseif/else` · `while` · `do-while` · `for` · `foreach` · `switch/case/default` · `match`（多条件 `1,2=>...`）· `break/continue/goto` · `class/method/property` · `new` · `namespace/use` · `enum` · `function` · `closure/use` · `fn($x) => expr` · `const`（全局/命名空间/类）· `list()`/`[]` 解构（含键名 `"key"=>$v`）· `self::CONST`/`Class::CONST` · `?->` nullsafe · `never` 返回类型 · `__construct(public $x)` 属性提升 · `static`/`final`/`readonly` 修饰符 · `#include "file.h"` C 互操作 · `C->function()` 直接 C 调用 · `__LINE__`/`__FILE__`/`__DIR__`/`DIRECTORY_SEPARATOR`
+`if/elseif/else` · `while` · `do-while` · `for` · `foreach` · `switch/case/default` · `match`（多条件 `1,2=>...`）· `break/continue/goto` · `class/method/property` · `new` · `namespace/use` · `enum` · `function` · `closure/use` · `fn($x) => expr` · `const`（全局/命名空间/类）· `list()`/`[]` 解构（含键名 `"key"=>$v`）· `self::CONST`/`Class::CONST` · `?->` nullsafe · `never` 返回类型 · `__construct(public $x)` 属性提升 · `static`/`final`/`readonly` 修饰符 · `__LINE__`/`__FILE__`/`__DIR__`/`DIRECTORY_SEPARATOR`
 
 ### 内置函数
 
@@ -175,26 +175,36 @@ function obj_read_x(MyPoint $p): float {
 
 #### 回调互操作
 
-PHP 闭包 → `t_callback { func, env }` → C 函数指针：
+**有 env 回调** — `phpc_fn_i32` + `phpc_env`：
 
 ```php
-// 闭包传 C —— pattern: phpc_fn + phpc_env 提取
 $square = function(int $x): int { return $x * $x; };
 $result = C->apply_closure(
-    phpc_fn($square),    // → void* (即函数指针)
-    phpc_env($square),   // → void* (捕获环境，无捕获为 NULL)
+    phpc_fn_i32($square),   // → int32_t(*)(int32_t, void*)
+    phpc_env($square),      // → void* (env)
     c_int(5)
 );
+// C 侧: int64_t apply_closure(int32_t (*fn)(int32_t, void*), void* env, int32_t val)
+```
 
-// C 函数指针 → t_callback
-$cb = phpc_new_fn(C->get_handler());            // 无环境
-$cb = phpc_new_fn_env(C->get_handler(), $env);  // 带环境
+| 函数 | 返回类型 |
+|------|---------|
+| `phpc_fn_i32($cb)` | `int32_t(*)(int32_t, void*)` |
+| `phpc_fn_i64($cb)` | `int64_t(*)(int64_t, void*)` |
+| `phpc_fn_f64($cb)` | `double(*)(double, void*)` |
+| `phpc_fn($cb)` / `phpc_env($cb)` | `void*`（通用） |
+
+**无 env 回调** — `#callback` + `phpc_thunk()`（thunk 嵌入 env，任意签名）：
+
+```php
+#callback double fold_cb(int32_t idx, double val)  // 声明 C 回调签名
+
+C->fold_dbl($data, $len, phpc_thunk('fold_cb', $fn));  // 按签名生成 thunk
+// thunk: static double _thunk_N(int32_t idx, double val) { ... env嵌入 ... }
 ```
 
 | 函数 | 说明 |
 |------|------|
-| `phpc_fn($cb)` → `void*` | 提取 `t_callback.func` |
-| `phpc_env($cb)` → `void*` | 提取 `t_callback.env` |
 | `phpc_new_fn(func)` → `t_callback` | C 函数指针 → t_callback |
 | `phpc_new_fn_env(func, env)` | 带环境版本 |
 

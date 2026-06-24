@@ -90,14 +90,18 @@ class Parser
             $this->consume(TokenType::SEMICOLON, 'Expected ;');
         }
 
-        // #include 指令
+        // 预处理指令（任意顺序：include/flag/callback 可混合出现）
         $includes = [];
-        while ($this->match(TokenType::HASH_INCLUDE)) {
-            $includes[] = $this->previous()->literal;  // ['file'=>'...', 'quoted'=>bool]
-        }
         $ccFlags = [];
-        while ($this->match(TokenType::CC_FLAG)) {
-            $ccFlags[] = $this->previous()->literal;  // ['platform'=>'', 'flags'=>'-lm']
+        $callbacks = [];
+        while ($this->check(TokenType::HASH_INCLUDE) || $this->check(TokenType::CC_FLAG) || $this->check(TokenType::HASH_CALLBACK)) {
+            if ($this->match(TokenType::HASH_INCLUDE)) {
+                $includes[] = $this->previous()->literal;
+            } elseif ($this->match(TokenType::CC_FLAG)) {
+                $ccFlags[] = $this->previous()->literal;
+            } elseif ($this->match(TokenType::HASH_CALLBACK)) {
+                $callbacks[] = $this->previous()->literal;
+            }
         }
 
         // 连续 use 声明
@@ -140,7 +144,7 @@ class Parser
             }
         }
 
-        return new ProgramNode($mainClass, $extraClasses, $functions, $constants, $enums, $includes, $ccFlags);
+        return new ProgramNode($mainClass, $extraClasses, $functions, $constants, $enums, $includes, $ccFlags, $callbacks);
     }
 
     // ============================================================

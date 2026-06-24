@@ -153,6 +153,28 @@ static inline t_callback phpc_new_fn_env(void* func, void* env) {
     return (t_callback){ .func = func, .env = env };
 }
 
+// ── 6b. 回调类型转换：TinyPHP 闭包 → C 回调指针 ──────────
+//   闭包编译为 t_int fn(t_int, void*)，C 库期望 int32_t fn(int32_t, void*)
+//   以下内联函数完成指针 cast（ABI 兼容，x86-64/ARM64 同寄存器）
+
+typedef int32_t (*phpc_fn_i32_t)(int32_t, void*);
+typedef int64_t (*phpc_fn_i64_t)(int64_t, void*);
+typedef double  (*phpc_fn_f64_t)(double,  void*);
+
+static inline phpc_fn_i32_t phpc_fn_i32(t_callback cb) { return (phpc_fn_i32_t)cb.func; }
+static inline phpc_fn_i64_t phpc_fn_i64(t_callback cb) { return (phpc_fn_i64_t)cb.func; }
+static inline phpc_fn_f64_t phpc_fn_f64(t_callback cb) { return (phpc_fn_f64_t)cb.func; }
+
+// ── 6c. 无 env 回调 thunk ───────────────────────────────
+//   用法：phpc_thunk('cb_name', $fn)  按 #callback 签名生成 thunk
+//   闭包 env 嵌入 thunk 函数体（编译期绑定），类似 libffi 机制
+//   CodeGen 生成：
+//     static double _thunk_N(int32_t idx, double val) {
+//         double (*_raw)(int32_t, double, void*) = ...;
+//         return (double)_raw((t_int)idx, (t_float)val, _cb.env);
+//     }
+//   支持任意类型任意数量参数（由 #callback 声明决定）
+
 // ── 7. 内存释放 ───────────────────────────────────────────
 //   phpc_arr_* 返回的 malloc 指针必须通过以下函数释放
 

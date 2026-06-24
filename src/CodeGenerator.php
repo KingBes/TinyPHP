@@ -63,8 +63,21 @@ class CodeGenerator implements ASTVisitor
     private array $capDefs = [];
     /** 闭包签名：_closure_N → ['ret' => 't_int', 'params' => 't_int, t_string'] */
     private array $closureSigs = [];
+    /** 闭包/Thunk 前置声明，在文件顶部输出 */
+    private array $fwdDecls = [];
     /** 变量名 → 最新赋值的闭包函数名（用于 generateClosureCall 类型推导） */
     private array $varClosureMap = [];
+
+    // ── Thunk 生成（phpc_thunk_i32 / phpc_thunk('name')）─
+    /** thunk 函数 C 实现，在 visitProgram 末尾输出 */
+    private array $thunkImpls = [];
+    /** thunk 所需的静态回调副本分配语句 */
+    private array $thunkAssigns = [];
+    private int $thunkCounter = 0;
+    /** #callback 声明的回调签名: name → ['ret'=>'int32_t','params_str'=>'int32_t a, double b'] */
+    private array $phpcCallbackSigs = [];
+
+    // ── 类型/作用域 ──────────────────────────────────────
     /** 当前方法/函数的返回类型（用于 return 语句的 t_var 包裹） */
     private string $currentRetType = '';
     /** 方法参数类型：className → methodName → [C type per param index] */
@@ -87,6 +100,11 @@ class CodeGenerator implements ASTVisitor
     {
         $this->indent = 0;
         $this->resetState();
+
+        // 收集 #callback 声明
+        foreach ($node->callbacks as $cb) {
+            $this->phpcCallbackSigs[$cb['name']] = $cb;
+        }
 
         $p = [];
 
@@ -161,6 +179,15 @@ class CodeGenerator implements ASTVisitor
             }
         }
 
+        // ── Thunk 函数实现（phpc 无 env 回调适配） ──
+        if (!empty($this->thunkImpls)) {
+            $p[] = "/* ── 闭包 Thunk（C 回调适配） ──────────────────── */";
+            foreach ($this->thunkImpls as $impl) {
+                $p[] = $impl;
+                $p[] = '';
+            }
+        }
+
         // C 入口
         if ($node->mainClass !== null) {
             $this->className = self::classCName($node->mainClass);
@@ -169,15 +196,26 @@ class CodeGenerator implements ASTVisitor
 
         $result = implode("\n", $p) . "\n";
 
-        // 后处理：把 capDefs 插入到 #include 之后
+        // 后处理：把 capDefs + thunkAssigns 插入到 #include 之后
+        $postBlock = '';
         if (!empty($this->capDefs)) {
-            $capBlock = "/* ── 闭包捕获类型 ──────────────────────────── */\n"
+            $postBlock .= "/* ── 闭包捕获类型 ──────────────────────────── */\n"
                 . implode("\n", $this->capDefs) . "\n";
+        }
+        if (!empty($this->fwdDecls)) {
+            $postBlock .= "/* ── 前置声明 ────────────────────────────────── */\n"
+                . implode("\n", $this->fwdDecls) . "\n\n";
+        }
+        if (!empty($this->thunkAssigns)) {
+            $postBlock .= "/* ── 闭包 Thunk 静态副本 ──────────────────── */\n"
+                . implode("\n", $this->thunkAssigns) . "\n\n";
+        }
+        if ($postBlock !== '') {
             $needle = '#include "common.h"';
             $pos = strpos($result, $needle);
             if ($pos !== false) {
-                $insertAt = $pos + strlen($needle) + 1; // after \n
-                $result = substr($result, 0, $insertAt) . $capBlock . substr($result, $insertAt);
+                $insertAt = $pos + strlen($needle) + 1;
+                $result = substr($result, 0, $insertAt) . $postBlock . substr($result, $insertAt);
             }
         }
 
@@ -194,6 +232,10 @@ class CodeGenerator implements ASTVisitor
         $this->closureCounter = 0;
         $this->closureImpls = [];
         $this->capDefs = [];
+        $this->thunkCounter = 0;
+        $this->thunkImpls = [];
+        $this->thunkAssigns = [];
+        $this->fwdDecls = [];
     }
 
     /** Phase 1: struct + 前置声明 */
@@ -916,7 +958,8 @@ class CodeGenerator implements ASTVisitor
              || $expr->name === 'phpc_arr_str') return 'null';
             if ($expr->name === 'phpc_obj')  return 'null';
             if ($expr->name === 'phpc_new_obj') return 't_object';
-            if ($expr->name === 'phpc_fn' || $expr->name === 'phpc_env') return 'null';
+            if (in_array($expr->name, ['phpc_fn','phpc_env','phpc_fn_i32','phpc_fn_i64','phpc_fn_f64'], true)) return 'null';
+            if ($expr->name === 'phpc_thunk' || str_ends_with($expr->name, '\\phpc_thunk')) return 'null';
             if ($expr->name === 'phpc_new_fn' || $expr->name === 'phpc_new_fn_env') return 't_callback';
             if ($expr->name === 'phpc_free' || $expr->name === 'phpc_free_str_arr') return 'void';
             // 字符串函数返回类型
@@ -1326,6 +1369,104 @@ class CodeGenerator implements ASTVisitor
         return "({ {$ret} {$name}({$fwdParams});\n{$envDecl}\n  })";
     }
 
+    /** 生成 C thunk：包装 TinyPHP 闭包为无 env 的 C 回调
+     *  @param string $cType  C 回调类型 (int32_t / int64_t / double)
+     *  @param ExprNode $expr  闭包表达式（inline ClosureExpr 或 VariableExpr）
+     */
+    /** 按 #callback 声明的签名生成 thunk
+     *  @param string $cbName   #callback 声明的名称
+     *  @param ExprNode $expr   闭包表达式
+     */
+    private function generateThunk(string $cbName, ExprNode $expr): string
+    {
+        $sig    = $this->phpcCallbackSigs[$cbName];
+        $cRet   = $sig['ret'];
+        $params = array_map('trim', array_filter(explode(',', $sig['params_str'])));
+        if (empty($params) || $params[0] === '') $params = [];
+
+        // 解析每个参数: "type name"
+        $cParams = [];
+        $cParamTypes = [];
+        $tpTypes = [];  // TinyPHP 类型（函数指针 cast 用）
+        $casts = [];    // C → TinyPHP cast
+        foreach ($params as $p) {
+            $parts = preg_split('/\s+/', trim($p), 2);
+            $cParams[] = trim($p);           // e.g., "int32_t idx"
+            $cParamTypes[] = $parts[0];      // e.g., "int32_t"
+            $tpTypes[]    = $this->cToTpType($parts[0]);  // e.g., "t_int"
+            $casts[]      = $this->cToCast($parts[0]);     // e.g., "(t_int)"
+        }
+
+        $tid = ++$this->thunkCounter;
+        $thunkName = "_phpc_thunk_{$tid}";
+        $cbStatic  = "_phpc_cb_{$tid}";
+        $this->thunkAssigns[] = "static t_callback {$cbStatic};";
+
+        // 函数指针类型（用于 cast 表达式）
+        $castType = ($cRet === 'void' ? 'void' : $cRet)
+                  . ' (*)(' . implode(', ', $cParamTypes)
+                  . (empty($cParamTypes) ? '' : ', ')
+                  . 'void*)';
+
+        // Thunk 签名
+        $sigStr = implode(', ', $cParams);
+        $retCast = $this->cToReturnCast($cRet);
+
+        $thunkImpl  = "static {$cRet} {$thunkName}({$sigStr}) {\n";
+        $thunkImpl .= "    {$cRet} (*_raw)(" . implode(', ', $cParamTypes) . (empty($cParamTypes) ? '' : ', ') . "void*) = ({$castType}){$cbStatic}.func;\n";
+        $argList = [];
+        foreach ($casts as $i => $cast) {
+            $pname = explode(' ', $cParams[$i])[1] ?? "_{$i}";
+            $argList[] = "{$cast}{$pname}";
+        }
+        $argStr = implode(', ', $argList);
+        $envStr = (empty($argStr) ? '' : ', ') . "{$cbStatic}.env";
+        if ($cRet === 'void') {
+            $thunkImpl .= "    _raw({$argStr}{$envStr});\n";
+        } else {
+            $thunkImpl .= "    return {$retCast}_raw({$argStr}{$envStr});\n";
+        }
+        $thunkImpl .= '}';
+        $this->thunkImpls[] = $thunkImpl;
+        $this->fwdDecls[] = "static {$cRet} {$thunkName}({$sigStr});";
+
+        $cbCode = $expr->accept($this);
+        return "({$cbStatic} = {$cbCode}, {$thunkName})";
+    }
+
+    /** C 类型 → TinyPHP 类型（函数指针 cast） */
+    private function cToTpType(string $cType): string {
+        return match (strtolower($cType)) {
+            'int32_t','int64_t','int','long','long long','uint32_t','uint64_t' => 't_int',
+            'double','float' => 't_float',
+            'const char*','char*','const char *','char *' => 't_string',
+            default => 'void*',
+        };
+    }
+
+    /** C 类型 → cast 表达式（参数转换） */
+    private function cToCast(string $cType): string {
+        return match (strtolower($cType)) {
+            'int32_t','int64_t','int','long','long long','uint32_t','uint64_t' => '(t_int)',
+            'double','float' => '(t_float)',
+            'const char*','char*','const char *','char *' => '',
+            default => '(void*)',
+        };
+    }
+
+    /** C 返回类型 → return cast */
+    private function cToReturnCast(string $cRet): string {
+        if ($cRet === 'void') return '';
+        return match (strtolower($cRet)) {
+            'int32_t'   => '(int32_t)',
+            'int64_t'   => '(int64_t)',
+            'double'    => '(double)',
+            'float'     => '(float)',
+            'void*'     => '(void*)',
+            default     => "({$cRet})",
+        };
+    }
+
     public function visitVariable(VariableExpr $node): string
     {
         // 'self' 是关键字，不是常量名
@@ -1665,16 +1806,22 @@ class CodeGenerator implements ASTVisitor
             return 'tphp_fn_str_replace(' . $node->args[0]->accept($this) . ', ' . $node->args[1]->accept($this) . ', ' . $node->args[2]->accept($this) . ')';
         }
 
-        // sprintf($fmt, ...$args) → snprintf with 256-byte buffer
+        // sprintf($fmt, ...$args) → 动态测量 + str_pool_alloc（无上限，完整 C 格式支持）
         if ($node->callee === null && $node->name === 'sprintf') {
             $tn = '_sf_' . (++$this->tmpVarCounter);
             $fmtCode = $node->args[0]->accept($this);
-            $args = "{$fmtCode}.data";
+            $fmtArgs = '';
             for ($i = 1; isset($node->args[$i]); $i++) {
                 $arg = $node->args[$i]->accept($this);
-                $args .= ', ' . ($this->inferType($node->args[$i]) === 't_string' ? $arg . '.data' : '(int)' . $arg);
+                $type = $this->inferType($node->args[$i]);
+                if ($type === 't_string')      $fmtArgs .= ', ' . $arg . '.data';
+                elseif ($type === 't_float')   $fmtArgs .= ', (double)' . $arg;
+                else                           $fmtArgs .= ', (int)' . $arg;
             }
-            return "({ char {$tn}[256]; snprintf({$tn}, 256, {$args}); tphp_rt_str_dup((t_string){{$tn}, (int)strlen({$tn})}); })";
+            return "({ int {$tn}_len = snprintf(NULL, 0, {$fmtCode}.data{$fmtArgs});"
+                 . " char* {$tn}_buf = str_pool_alloc({$tn}_len + 1);"
+                 . " snprintf({$tn}_buf, {$tn}_len + 1, {$fmtCode}.data{$fmtArgs});"
+                 . " tphp_rt_str_dup((t_string){{$tn}_buf, {$tn}_len}); })";
         }
 
         // 类型转换: intval/floatval/strval/boolval
@@ -1872,11 +2019,24 @@ class CodeGenerator implements ASTVisitor
             // phpc 桥接函数 → 直接 C 调用（无 tphp_fn_ 前缀，无命名空间 mangle）
             $baseName = ($pos = strrpos($node->name, '\\')) !== false
                 ? substr($node->name, $pos + 1) : $node->name;
+
+            // phpc_thunk('name', $fn) → 按 #callback 声明的签名生成 thunk
+            if (($baseName === 'phpc_thunk' || str_ends_with($baseName, '\\phpc_thunk'))
+                && count($node->args) >= 2
+                && $node->args[0] instanceof StringLiteralExpr) {
+                $cbName = $node->args[0]->value;
+                if (isset($this->phpcCallbackSigs[$cbName])) {
+                    return $this->generateThunk($cbName, $node->args[1]);
+                }
+                throw new \RuntimeException("Unknown callback: #callback {$cbName} not declared");
+            }
+
             $phpcFns = ['c_int','c_float','c_str','php_int','php_float','php_str',
                 'phpc_arr_int','phpc_arr_dbl','phpc_arr_str',
                 'phpc_new_arr_int','phpc_new_arr_dbl','phpc_new_arr_str','phpc_new_arr',
                 'phpc_obj','phpc_new_obj',
                 'phpc_fn','phpc_env','phpc_new_fn','phpc_new_fn_env',
+                'phpc_fn_i32','phpc_fn_i64','phpc_fn_f64',
                 'phpc_free','phpc_free_str_arr'];
             if (in_array($baseName, $phpcFns, true)) {
                 return $baseName . '(' . implode(', ', $args) . ')';

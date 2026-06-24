@@ -40,6 +40,7 @@ enum TokenType: string
     case DIR_SEP     = 'DIRECTORY_SEPARATOR';
     case HASH_INCLUDE = '#include';
     case CC_FLAG      = '#flag';
+    case HASH_CALLBACK = '#callback';
 
     // 魔术方法
     case CONSTRUCT = '__construct';

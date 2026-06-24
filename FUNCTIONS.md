@@ -788,11 +788,11 @@ sprintf("%s is %d", "Bob", 25);    // "Bob is 25"
 | | PHP | TinyPHP |
 |---|---|---|
 | `%s` `%d` `%f` | ✅ | ✅ |
-| 可变参数 | ✅ | ✅（snprintf 256B 栈缓冲） |
+| 可变参数 | ✅ | ✅ |
 | `%02d` 等格式标记 | ✅ | ✅ |
-| 完整 `printf` 语法 | ✅ | ✅（委托 snprintf） |
+| 完整 `printf` 语法 | ✅ | ✅（委托 snprintf，全格式支持） |
 
-**内存安全**：256 字节栈缓冲区，通过 `str_pool_alloc` 分配结果。
+**内存安全**：`snprintf(NULL,0,...)` 动态测量 → `str_pool_alloc` 精确分配，无上限、无截断。
 
 ---
 
@@ -941,35 +941,41 @@ function read_x(MyPoint $p): float {
 
 ### 回调互操作
 
-PHP 闭包 → `t_callback { .func, .env }` → 提取指针传给 C：
+**有 env 回调** — C 签名含 `void* env`：
 
 ```php
-// 模式: phpc_fn($cb) + phpc_env($cb) 提取
 $square = function(int $x): int { return $x * $x; };
 $result = C->apply_closure(
-    phpc_fn($square),     // → void*（_closure_N 函数指针）
-    phpc_env($square),    // → void*（捕获环境，无捕获为 NULL）
+    phpc_fn_i32($square),  // → int32_t(*)(int32_t, void*) 类型安全
+    phpc_env($square),     // → void* (env)
     c_int(5)
 );
-// C 侧签名: int64_t apply_closure(t_int (*fn)(t_int, void*), void* env, t_int val)
 ```
+
+| 函数 | 返回类型 | 说明 |
+|------|---------|------|
+| `phpc_fn_i32($cb)` | `int32_t(*)(int32_t, void*)` | int32 回调指针 |
+| `phpc_fn_i64($cb)` | `int64_t(*)(int64_t, void*)` | int64 回调指针 |
+| `phpc_fn_f64($cb)` | `double(*)(double, void*)` | double 回调指针 |
+| `phpc_fn($cb)` | `void*` | 通用（需手动 cast） |
+| `phpc_env($cb)` | `void*` | 捕获环境指针 |
+
+**无 env 回调** — `#callback` 声明 + `phpc_thunk()`：
 
 ```php
-// 带捕获的闭包
-$offset = 100;
-$add = function(int $x) use ($offset): int { return $x + $offset; };
-$result = map_with_closure([1,2,3], $add);
-// C 侧: fn(val, env) — env 指向堆上捕获 struct { t_int offset }
+// 1. 声明 C 回调签名（任意参数/类型）
+#callback double fold_cb(int32_t idx, double val)
+
+// 2. thunk 嵌入 env，签名精确匹配
+C->fold_dbl($data, $len, phpc_thunk('fold_cb', $fn));
+// 生成: static double _thunk_N(int32_t idx, double val) { ... env嵌入 ... }
 ```
 
-| 函数 | 签名 | 说明 |
-|------|------|------|
-| `phpc_fn($cb)` | `t_callback → void*` | 提取 `cb.func` |
-| `phpc_env($cb)` | `t_callback → void*` | 提取 `cb.env`（无捕获 = NULL） |
-| `phpc_new_fn(func)` | `void* → t_callback` | C 函数指针 → t_callback |
-| `phpc_new_fn_env(func, env)` | `void*, void* → t_callback` | 带环境版本 |
-
-**C 侧回调签名**：`t_int fn(t_int x, void* env)` — `env` 用于传递捕获变量。
+| 函数 | 说明 |
+|------|------|
+| `phpc_thunk('name', $fn)` | 按 #callback 声明签名生成 thunk |
+| `phpc_new_fn(func)` → `t_callback` | C 函数指针包装 |
+| `phpc_new_fn_env(func, env)` | 带环境版本 |
 
 ### 内存释放
 
@@ -984,9 +990,29 @@ $result = map_with_closure([1,2,3], $add);
 
 ## 后续建议实现
 
-| 函数 | 说明 |
+### 低难度（⭐）
+| 函数/语法 | 说明 |
 |---|---|
-| `file_get_contents/file_put_contents` | 文件 I/O |
+| `define("CONST", val)` | 等同于 `const CONST = val` |
+| `intl/ctype` 函数 | `isalpha`/`strtolower` 等映射 libc |
+
+### 中等难度（⭐⭐）
+| 函数/语法 | 说明 |
+|---|---|
+| `try/catch/finally` | `setjmp/longjmp` + 资源栈 |
+| `throw new Exception($msg)` | 需内置 Exception 类 |
+| `file_get_contents`/`file_put_contents` | 文件 I/O |
+| 类继承 `extends` | VTable 扩展 |
+| 接口 `interface`/`implements` | VTable 契约 |
+| Trait | 编译期方法扁平化 |
+| Generators `yield` | 状态机 |
+
+### 较高难度（⭐⭐⭐）
+| 函数/语法 | 说明 |
+|---|---|
+| `preg_match`/`preg_replace` | 需嵌入 PCRE2 ~200KB |
+| `array_map`/`array_filter` | 回调类型规范化 |
+| 属性 Hook `{ get => ... }` | PHP 8.4 |
 
 ### AOT 不可行
 

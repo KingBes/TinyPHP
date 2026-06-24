@@ -189,6 +189,16 @@ class Lexer
                 $this->advance(strlen($m[0]));
                 return;
             }
+            // #callback ret_type name(params) — 声明 C 回调签名
+            if (preg_match('/^#callback\s+(\S+)\s+(\w+)\s*\((.+?)\)/', $rest, $m)) {
+                $this->addToken(TokenType::HASH_CALLBACK, $m[2], [
+                    'name' => $m[2],
+                    'ret'  => $m[1],
+                    'params_str' => trim($m[3]),
+                ]);
+                $this->advance(strlen($m[0]));
+                return;
+            }
             // 普通 # 注释 — 跳过整行
             $this->skipLineComment();
             return;

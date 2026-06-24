@@ -5,6 +5,10 @@ namespace Phpc;
 #include "include/demo.h"       // 项目头文件
 #include <math.h>                // 系统头文件
 
+// #callback 声明 C 回调签名（供 php_thunk 按签名生成 thunk）
+#callback int32_t map_ne_cb(int32_t x)
+#callback double fold_dbl_cb(int32_t idx, double val)
+
 // 全平台通用标志
 #flag -DNDEBUG
 
@@ -79,20 +83,47 @@ function obj_read_y(MyPoint $p): float
 }
 
 // ── 回调互操作 ──
+// phpc_fn_i32() 将 TinyPHP 闭包 cast 为 int32_t→int32_t C 回调指针
 
 function apply_square(int $val): int
 {
-    $square = function(int $x): int { return $x * $x; };
-    return php_int(C->apply_closure(phpc_fn($square), phpc_env($square), c_int($val)));
+    $square = function (int $x): int {
+        return $x * $x;
+    };
+    return php_int(C->apply_closure(phpc_fn_i32($square), phpc_env($square), c_int($val)));
 }
 
 function map_with_closure(array $arr, callable $fn): array
 {
     $len = count($arr);
     $data = phpc_arr_int($arr);
-    $result = C->map_ints($data, c_int($len), phpc_fn($fn), phpc_env($fn));
+    $result = C->map_ints($data, c_int($len), phpc_fn_i32($fn), phpc_env($fn));
     $out = phpc_new_arr_int($result, $len);
     phpc_free($data);
     phpc_free($result);
     return $out;
+}
+
+
+// ── 无 env 回调（thunk 测试）─┬
+
+function map_ints_noenv(array $arr, callable $fn): array
+{
+    $len = count($arr);
+    $data = phpc_arr_int($arr);
+    $result = C->map_ints_ne($data, c_int($len), phpc_thunk('map_ne_cb', $fn));
+    $out = phpc_new_arr_int($result, $len);
+    phpc_free($data);
+    phpc_free($result);
+    return $out;
+}
+
+// 多参数回调 — phpc_thunk('fold_dbl_cb', $fn)  按 #callback 签名生成 thunk
+function fold_double(array $arr, callable $fn): float
+{
+    $len = count($arr);
+    $data = phpc_arr_dbl($arr);
+    $result = C->fold_dbl($data, c_int($len), phpc_thunk('fold_dbl_cb', $fn));
+    phpc_free($data);
+    return php_float($result);
 }

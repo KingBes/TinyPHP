@@ -19,6 +19,7 @@ class ProgramNode extends ASTNode
     /** @param ConstNode[] $constants */
     /** @param EnumNode[] $enums */
     /** @param string[] $includes */
+    /** @param array[] $callbacks [['name'=>'cb','ret'=>'int32_t','params_str'=>'int32_t a'], ...] */
     public function __construct(
         public readonly ?ClassNode $mainClass = null,
         /** @var ClassNode[] */
@@ -32,6 +33,8 @@ class ProgramNode extends ASTNode
         public readonly array $includes = [],
         /** @var array[]  [['platform'=>'','flags'=>'-lm'], ...] */
         public readonly array $ccFlags = [],
+        /** @var array[]  [['name'=>'cb','ret'=>'int32_t','params_str'=>'...'], ...] */
+        public readonly array $callbacks = [],
     ) {}
 
     public function accept(ASTVisitor $visitor): string

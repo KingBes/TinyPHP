@@ -133,7 +133,8 @@ echo "[1/2] Transpiling {$allFilesStr} => C...\n";
     $constants = [];
     $enums = [];
     $allIncludes = [];
-    $allFlags    = [];
+    $allFlags     = [];
+    $allCallbacks = [];
 
     // Two-phase parsing: parse auxiliary files (non-Main) first,
     // collect enums/classes, then parse Main entry last.
@@ -193,6 +194,7 @@ echo "[1/2] Transpiling {$allFilesStr} => C...\n";
         $enums        = array_merge($enums, $ast->enums);
         $allIncludes  = array_merge($allIncludes, $ast->includes);
         $allFlags     = array_merge($allFlags, $ast->ccFlags);
+        $allCallbacks = array_merge($allCallbacks, $ast->callbacks);
 
         // Collect enum names (FQN) declared in this file for later files
         foreach ($ast->enums as $e) {
@@ -239,7 +241,7 @@ echo "[1/2] Transpiling {$allFilesStr} => C...\n";
         return true;
     }));
 
-    $merged = new ProgramNode($mainClass, $extraClasses, $functions, $constants, $enums, $allIncludes, $allFlags);
+    $merged = new ProgramNode($mainClass, $extraClasses, $functions, $constants, $enums, $allIncludes, $allFlags, $allCallbacks);
 
     // Resolve #include paths relative to each PHP file's directory
     $extraFlags = '';

@@ -98,18 +98,41 @@ double obj_read_y(void* obj, int offset_y) {
 }
 
 // ── 回调互操作 ──────────────────────────────────────────
-// 调用 TinyPHP 闭包：签名 t_int fn(t_int x, void* env)
-int64_t apply_closure(t_int (*fn)(t_int x, void* env), void* env, t_int val) {
+// C 库自主定义回调签名，不依赖 TinyPHP 内部类型
+// tphp 侧通过 phpc_fn_xxx() 完成类型转换
+
+int64_t apply_closure(int32_t (*fn)(int32_t, void*), void* env, int32_t val) {
     return (int64_t)fn(val, env);
 }
 
 // 带回调的数组变换：对每个元素调 fn，返回新数组
 int32_t* map_ints(const int32_t* src, int len,
-                   t_int (*fn)(t_int, void*), void* env) {
+                  int32_t (*fn)(int32_t, void*), void* env) {
     int32_t* out = (int32_t*)malloc((size_t)len * sizeof(int32_t));
     if (!out) return NULL;
     for (int i = 0; i < len; i++) {
-        out[i] = (int32_t)fn((t_int)src[i], env);
+        out[i] = fn(src[i], env);
     }
     return out;
+}
+
+// 与上面相同但无 void* env——测试 thunk 机制
+int32_t* map_ints_ne(const int32_t* src, int len,
+                     int32_t (*fn)(int32_t)) {
+    int32_t* out = (int32_t*)malloc((size_t)len * sizeof(int32_t));
+    if (!out) return NULL;
+    for (int i = 0; i < len; i++) {
+        out[i] = fn(src[i]);
+    }
+    return out;
+}
+
+// 多参数 + 混合类型回调（无 env）——测试 #callback + phpc_thunk
+double fold_dbl(const double* src, int len,
+                double (*fn)(int32_t idx, double val)) {
+    double acc = 0.0;
+    for (int i = 0; i < len; i++) {
+        acc += fn((int32_t)i, src[i]);
+    }
+    return acc;
 }
