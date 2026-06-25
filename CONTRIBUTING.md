@@ -24,13 +24,19 @@ include/                         C 运行时头文件（静态 inline 库）
   ├── common.h                   总入口
   ├── types.h                    类型定义 + likely/unlikely 分支预测
   ├── val.h                      便捷宏 (VAR_INT, STR_LIT, …)
-  ├── array.h                    PHP 数组（引用计数 + 128 槽复用池 + 1.5× 增长因子）
-  ├── runtime.h                  内部辅助（字符串池、资源追踪、error）
-  ├── builtin.h                  公开内置（echo, is_*, 数组函数, implode/explode）
-  ├── rand.h                     随机数（rand / mt_rand）
+  ├── array.h                    PHP 数组（128 槽复用池 + 1.5× 增长 + sort/shuffle/search）
+  ├── runtime.h                  运行时（64KB 字符串池、资源追踪、error、tphp_rt_free_all）
+  ├── builtin.h                  公开内置（70+ 函数：类型/字符串/数学/转换）
+  ├── rand.h                     MT19937 随机数
+  ├── phpc.h                     C 互操作（类型桥/数组/对象/回调/thunk）
+  ├── object/
+  │   ├── object.h               COS 对象系统（16B 头 + struct 嵌套继承 + refcount）
+  │   ├── exception.h            内置 Exception 类
+  │   └── try.h                  setjmp/longjmp 异常处理（TP_TRY/TP_CATCH/TP_THROW）
   └── os/
-      ├── times.h                系统函数（time, date, sleep, usleep, hrtime）
-      └── json.h                 JSON 编解码（json_encode / json_decode）
+      ├── times.h                时间（time/date/sleep/hrtime/microtime）
+      ├── json.h                 JSON 编解码（递归下降解析+编码）
+      └── file.h                 文件 I/O（file_get/put_contents）
 ```
 
 > TCC 不在仓库中——通过 `build.sh`/`build.cmd` 从 `https://repo.or.cz/tinycc.git` (mob 分支) clone 并编译。

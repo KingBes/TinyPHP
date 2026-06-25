@@ -6,6 +6,7 @@ class CodeGenerator implements ASTVisitor
 {
     private string $className = '';
     private int $indent = 0;
+    private int $scopeDepth = 0; // 嵌套块深度（for/while/if/foreach 体内为 1+）
     private string $phpFile = '';
 
     /** 变量类型追踪：varName → className（对象）或 C 类型（基础类型） */
@@ -20,6 +21,8 @@ class CodeGenerator implements ASTVisitor
     private array $classOwnProps = [];
     /** Class parent name: cn → parent CN (or '' if root) */
     private array $classParentName = [];
+    /** Current method name (for __METHOD__) */
+    private string $currentMethodName = '';
     /** 数组元素类型追踪：varName → C 类型（int key 的默认类型） */
     private array $arrElementTypes = [];
     /** 数组 per-key 类型追踪：arrVarName → [strKey → CType]（字符串键专用） */
@@ -577,6 +580,7 @@ class CodeGenerator implements ASTVisitor
 
     public function visitMethod(MethodNode $node): string
     {
+        $this->currentMethodName = $node->name;
         $this->declaredVars = ['self' => true];
         $this->varTypes = [];
         $this->scopeObjects = [];
@@ -727,26 +731,36 @@ class CodeGenerator implements ASTVisitor
             if ($isDeclared) {
                 return "{$var} = {$expr}; tphp_rt_register((void*){$var}, 0);";
             }
+            if ($this->scopeDepth > 0) {
+                $this->funcScopeDecls[$var] = "{$cn}*";
+                return "{$var} = {$expr}; tphp_rt_register((void*){$var}, 0);";
+            }
             return "{$cn}* {$var} = {$expr}; tphp_rt_register((void*){$var}, 0);";
         }
 
         // (array)xxx → 标量转单元素数组
         if ($node->expr instanceof CastExpr && $node->expr->castType === 'array') {
+            $this->varTypes[$var] = 't_array*';
             if (!$isDeclared) {
-                $this->varTypes[$var] = 't_array*';
+                if ($this->scopeDepth > 0) {
+                    $this->funcScopeDecls[$var] = 't_array*';
+                    return "{$var} = {$expr};";
+                }
                 return "t_array* {$var} = {$expr};";
             }
-            $this->varTypes[$var] = 't_array*';
             return "{$var} = {$expr};";
         }
 
         // null 赋值 → PHP 类型为 null，C 类型用 void* 占位
         if ($node->expr instanceof NullLiteralExpr) {
+            $this->varTypes[$var] = 'null';
             if (!$isDeclared) {
-                $this->varTypes[$var] = 'null';
+                if ($this->scopeDepth > 0) {
+                    $this->funcScopeDecls[$var] = 'void*';
+                    return "{$var} = null;";
+                }
                 return "void* {$var} = null;";
             }
-            $this->varTypes[$var] = 'null';
             return "{$var} = null;";
         }
 
@@ -755,7 +769,13 @@ class CodeGenerator implements ASTVisitor
             $cType = $this->inferType($node->expr);
             $this->varTypes[$var] = $cType;
             $declType = ($cType === 'null') ? 'void*' : $cType;
-            $code = "{$declType} {$var} = {$expr};";
+            // 在嵌套作用域内（for/while/if body）→ 提升声明到函数作用域
+            if ($this->scopeDepth > 0) {
+                $this->funcScopeDecls[$var] = $declType;
+                $code = "{$var} = {$expr};";
+            } else {
+                $code = "{$declType} {$var} = {$expr};";
+            }
         } else {
             $code = "{$var} = {$expr};";
         }
@@ -848,7 +868,7 @@ class CodeGenerator implements ASTVisitor
             if ($expr->operator === '<=>') return 't_int';
             if ($expr->operator === '**') return $this->inferType($expr->left);
             // 比较/逻辑运算符返回 bool
-            if (in_array($expr->operator, ['<', '>', '<=', '>=', '==', '!=', '===', '!==', '&&', '||'], true)) {
+            if (in_array($expr->operator, ['<', '>', '<=', '>=', '==', '!=', '===', '!==', '&&', '||', 'instanceof'], true)) {
                 return 't_bool';
             }
             // 位运算/算术：取左操作数类型（int/float 保持）
@@ -1023,6 +1043,15 @@ class CodeGenerator implements ASTVisitor
             if ($expr->name === 'str_contains') return 't_bool';
             if ($expr->name === 'sprintf')     return 't_string';
             if ($expr->name === 'str_replace')  return 't_string';
+            if ($expr->name === 'strtolower' || $expr->name === 'strtoupper') return 't_string';
+            if ($expr->name === 'abs')          return 't_int';
+            if ($expr->name === 'round' || $expr->name === 'ceil' || $expr->name === 'floor') return 't_float';
+            if ($expr->name === 'sqrt')         return 't_float';
+            if ($expr->name === 'shuffle')      return 'void';
+            if ($expr->name === 'array_search') return 't_int';
+            if ($expr->name === 'file_get_contents') return 't_string';
+            if ($expr->name === 'file_put_contents') return 't_bool';
+            if ($expr->name === 'microtime')    return 't_float';
             // 类型转换函数
             if ($expr->name === 'intval')   return 't_int';
             if ($expr->name === 'floatval') return 't_float';
@@ -1240,6 +1269,8 @@ class CodeGenerator implements ASTVisitor
         if ($node->name === '__FILE__') return 'tphp_rt_str_dup((t_string){.data="' . str_replace('\\', '\\\\', $this->phpFile) . '", .length=' . strlen($this->phpFile) . '})';
         if ($node->name === '__DIR__')  return 'tphp_rt_str_dup((t_string){.data="' . str_replace('\\', '\\\\', dirname($this->phpFile)) . '", .length=' . strlen(dirname($this->phpFile)) . '})';
         if ($node->name === 'DIRECTORY_SEPARATOR') return PHP_OS_FAMILY === 'Windows' ? 'STR_LIT("\\\\")' : 'STR_LIT("/")';
+        if ($node->name === '__CLASS__')  return 'STR_LIT("' . $this->className . '")';
+        if ($node->name === '__METHOD__') return 'STR_LIT("' . $this->className . '::' . ($this->currentMethodName ?? '') . '")';
         return 'STR_LIT("")';
     }
 
@@ -1644,6 +1675,16 @@ class CodeGenerator implements ASTVisitor
             $rCode = 'tphp_rt_parse_int(' . $rCode . ')';
         }
 
+        // instanceof → tp_obj_is_a check
+        if ($node->operator === 'instanceof') {
+            $rCN = $node->right instanceof VariableExpr ? rtrim($this->varTypes[self::varName($node->right->name)] ?? '', '*') : '';
+            $rCN = ($rCN === '' && $node->right instanceof StringLiteralExpr) ? $node->right->value : $rCN;
+            // If right is a class name identifier (not variable), look up in classRefName
+            if ($node->right instanceof AST\IdentifierExpr ?? null) {
+                // Actually in PHP $obj instanceof ClassName, ClassName is parsed as a class reference
+            }
+            return 'tp_obj_is_a(' . $lCode . ', &_class_' . $rCode . ')';
+        }
         // Map PHP === / !== to C == / !=
         $cOp = match ($node->operator) {
             '==='  => '==',
@@ -1907,6 +1948,32 @@ class CodeGenerator implements ASTVisitor
         if ($node->callee === null && ($node->name === 'sort' || $node->name === 'rsort')) {
             $arrCode = $node->args[0]->accept($this);
             return 'tphp_fn_' . $node->name . '(' . $arrCode . ')';
+        }
+
+        // shuffle($arr) — Fisher-Yates in-place
+        if ($node->callee === null && $node->name === 'shuffle') {
+            $arrCode = $node->args[0]->accept($this);
+            return 'tphp_fn_shuffle(' . $arrCode . ')';
+        }
+
+        // file_get_contents($path) — 路径为 t_string，C 端需 const char*
+        if ($node->callee === null && $node->name === 'file_get_contents') {
+            $pathCode = $node->args[0]->accept($this);
+            return 'tphp_fn_file_get_contents(' . $pathCode . '.data)';
+        }
+
+        // file_put_contents($path, $data)
+        if ($node->callee === null && $node->name === 'file_put_contents') {
+            $pathCode = $node->args[0]->accept($this);
+            $dataCode = $node->args[1]->accept($this);
+            return 'tphp_fn_file_put_contents(' . $pathCode . '.data, ' . $dataCode . ')';
+        }
+
+        // array_search($needle, $haystack)
+        if ($node->callee === null && $node->name === 'array_search') {
+            $needle = $this->wrapVar($node->args[0]);
+            $arr    = $node->args[1]->accept($this);
+            return 'tphp_fn_arr_search(' . $arr . ', ' . $needle . ')';
         }
 
         // array_unique($arr)
@@ -2613,6 +2680,7 @@ class CodeGenerator implements ASTVisitor
     public function visitIfStmt(IfStmtNode $node): string
     {
         $cond = $node->condition->accept($this);
+        $this->scopeDepth++;
         $lines = [];
         $lines[] = "if ({$cond}) {";
         foreach ($node->thenBody as $s) $lines[] = $this->ind($s->accept($this));
@@ -2628,26 +2696,31 @@ class CodeGenerator implements ASTVisitor
             foreach ($node->elseBody as $s) $lines[] = $this->ind($s->accept($this));
             $lines[] = '}';
         }
+        $this->scopeDepth--;
         return implode("\n", $lines);
     }
 
     public function visitWhileStmt(WhileStmtNode $node): string
     {
         $cond = $node->condition->accept($this);
+        $this->scopeDepth++;
         $lines = [];
         $lines[] = "while ({$cond}) {";
         foreach ($node->body as $s) $lines[] = $this->ind($s->accept($this));
         $lines[] = '}';
+        $this->scopeDepth--;
         return implode("\n", $lines);
     }
 
     public function visitDoWhileStmt(DoWhileStmtNode $node): string
     {
         $cond = $node->condition->accept($this);
+        $this->scopeDepth++;
         $lines = [];
         $lines[] = 'do {';
         foreach ($node->body as $s) $lines[] = $this->ind($s->accept($this));
         $lines[] = "} while ({$cond});";
+        $this->scopeDepth--;
         return implode("\n", $lines);
     }
 
@@ -2741,10 +2814,12 @@ class CodeGenerator implements ASTVisitor
         }
         $cond = $node->condition ? $node->condition->accept($this) : '';
         $step = $node->step ? $node->step->accept($this) : '';
+        $this->scopeDepth++;
         $lines = [];
         $lines[] = "for ({$init}; {$cond}; {$step}) {";
         foreach ($node->body as $s) $lines[] = $this->ind($s->accept($this));
         $lines[] = '}';
+        $this->scopeDepth--;
         return implode("\n", $lines);
     }
 
@@ -2848,7 +2923,9 @@ class CodeGenerator implements ASTVisitor
         }
         $lines[] = $this->ind("if (_eval == NULL) continue;");
         $lines[] = $this->ind("{$valVar} = {$valRead};");
+        $this->scopeDepth++;
         foreach ($node->body as $s) $lines[] = $this->ind($s->accept($this));
+        $this->scopeDepth--;
         $lines[] = '}';
         return implode("\n", $lines);
     }
@@ -2913,23 +2990,29 @@ class CodeGenerator implements ASTVisitor
     {
         $lines = [];
         $lines[] = 'TP_TRY';
+        $this->scopeDepth++;
         foreach ($node->tryBody as $s) {
             $lines[] = '    ' . $s->accept($this);
         }
+        $this->scopeDepth--;
         if (!empty($node->catchBody)) {
             $cv = $node->catchVar;
             $this->declaredVars[$cv] = true;
             $this->varTypes[$cv] = 't_string';
             $lines[] = 'TP_CATCH(' . $cv . ')';
+            $this->scopeDepth++;
             foreach ($node->catchBody as $s) {
                 $lines[] = '    ' . $s->accept($this);
             }
+            $this->scopeDepth--;
         }
         if (!empty($node->finallyBody)) {
             $lines[] = 'TP_FINALLY';
+            $this->scopeDepth++;
             foreach ($node->finallyBody as $s) {
                 $lines[] = '    ' . $s->accept($this);
             }
+            $this->scopeDepth--;
         }
         $lines[] = 'TP_END_TRY';
         return implode("\n", $lines);

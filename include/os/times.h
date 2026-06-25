@@ -81,3 +81,17 @@ static inline t_int tphp_fn_hrtime(void) {
     return (t_int)ts.tv_sec * 1000000000LL + (t_int)ts.tv_nsec;
 #endif
 }
+
+static inline t_float tphp_fn_microtime(void) {
+#ifdef _WIN32
+    static LARGE_INTEGER freq = {0};
+    if (freq.QuadPart == 0) QueryPerformanceFrequency(&freq);
+    LARGE_INTEGER now;
+    QueryPerformanceCounter(&now);
+    return (t_float)now.QuadPart / (t_float)freq.QuadPart;
+#else
+    struct timespec ts;
+    clock_gettime(CLOCK_MONOTONIC, &ts);
+    return (t_float)ts.tv_sec + (t_float)ts.tv_nsec / 1e9;
+#endif
+}

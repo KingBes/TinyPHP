@@ -50,6 +50,10 @@ enum TokenType: string
     case IMPLEMENTS_KW = 'implements';
     case INTERFACE_KW  = 'interface';
     case TRAIT_KW      = 'trait';
+    case INSTANCEOF_KW  = 'instanceof';
+    case PARENT_KW      = 'parent';
+    case MAGIC_CLASS    = '__CLASS__';
+    case MAGIC_METHOD   = '__METHOD__';
 
     // 魔术方法
     case CONSTRUCT = '__construct';

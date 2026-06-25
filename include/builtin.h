@@ -340,6 +340,7 @@ static inline t_string tphp_fn_trim(t_string s) {
     while (end >= start && (unsigned char)s.data[end] <= ' ') end--;
     int len = end - start + 1;
     if (len <= 0) return (t_string){NULL, 0};
+    if (start == 0 && len == s.length) return s; // zero-alloc shortcut
     char *buf = str_pool_alloc(len);
     if (buf == NULL) return (t_string){NULL, 0};
     memcpy(buf, s.data + start, (size_t)len);
@@ -353,6 +354,7 @@ static inline t_string tphp_fn_ltrim(t_string s) {
     while (start < s.length && (unsigned char)s.data[start] <= ' ') start++;
     int len = s.length - start;
     if (len <= 0) return (t_string){NULL, 0};
+    if (start == 0) return s; // zero-alloc
     char *buf = str_pool_alloc(len);
     if (buf == NULL) return (t_string){NULL, 0};
     memcpy(buf, s.data + start, (size_t)len);
@@ -366,6 +368,7 @@ static inline t_string tphp_fn_rtrim(t_string s) {
     while (end >= 0 && (unsigned char)s.data[end] <= ' ') end--;
     int len = end + 1;
     if (len <= 0) return (t_string){NULL, 0};
+    if (len == s.length) return s; // zero-alloc
     char *buf = str_pool_alloc(len);
     if (buf == NULL) return (t_string){NULL, 0};
     memcpy(buf, s.data, (size_t)len);
@@ -391,6 +394,7 @@ static inline t_string tphp_fn_substr(t_string s, t_int offset, t_int length) {
         if (start + len > slen) len = slen - start;
     }
     if (len <= 0) return (t_string){NULL, 0};
+    if (start == 0 && len == slen) return s; // zero-alloc full copy
     char *buf = str_pool_alloc(len);
     if (buf == NULL) return (t_string){NULL, 0};
     memcpy(buf, s.data + start, (size_t)len);
@@ -540,6 +544,58 @@ static inline t_bool tphp_fn_boolval(t_var v) {
     if (v.type == TYPE_STRING) return !tphp_rt_str_is_falsy(v.value._string);
     return false;
 }
+
+/* ============================================================
+ * String (case conversion)
+ * ============================================================ */
+
+static inline t_string tphp_fn_strtolower(t_string s) {
+    if (s.data == NULL || s.length <= 0) return (t_string){NULL, 0};
+    int changed = 0;
+    for (int i = 0; i < s.length; i++) {
+        unsigned char c = (unsigned char)s.data[i];
+        if (c >= 'A' && c <= 'Z') { changed = 1; break; }
+    }
+    if (!changed) return s; // zero-alloc
+    char *buf = str_pool_alloc(s.length);
+    if (buf == NULL) return (t_string){NULL, 0};
+    for (int i = 0; i < s.length; i++) {
+        unsigned char c = (unsigned char)s.data[i];
+        buf[i] = (c >= 'A' && c <= 'Z') ? (char)(c + 32) : (char)c;
+    }
+    buf[s.length] = '\0';
+    return (t_string){buf, s.length};
+}
+
+static inline t_string tphp_fn_strtoupper(t_string s) {
+    if (s.data == NULL || s.length <= 0) return (t_string){NULL, 0};
+    int changed = 0;
+    for (int i = 0; i < s.length; i++) {
+        unsigned char c = (unsigned char)s.data[i];
+        if (c >= 'a' && c <= 'z') { changed = 1; break; }
+    }
+    if (!changed) return s; // zero-alloc
+    char *buf = str_pool_alloc(s.length);
+    if (buf == NULL) return (t_string){NULL, 0};
+    for (int i = 0; i < s.length; i++) {
+        unsigned char c = (unsigned char)s.data[i];
+        buf[i] = (c >= 'a' && c <= 'z') ? (char)(c - 32) : (char)c;
+    }
+    buf[s.length] = '\0';
+    return (t_string){buf, s.length};
+}
+
+/* ============================================================
+ * Math
+ * ============================================================ */
+#include <math.h>
+
+static inline t_int   tphp_fn_abs(t_int v)   { return llabs(v); }
+static inline t_float tphp_fn_round(t_float v) { return round(v); }
+static inline t_float tphp_fn_ceil(t_float v)  { return ceil(v); }
+static inline t_float tphp_fn_floor(t_float v) { return floor(v); }
+static inline t_float tphp_fn_sqrt(t_float v)  { return v >= 0.0 ? sqrt(v) : 0.0; }
+
 
 
 

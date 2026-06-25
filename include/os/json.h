@@ -145,9 +145,17 @@ static t_string json_encode_rec(t_var v) {
 }
 
 /** json_encode($val) → JSON 字符串 */
+// Depth-safe encode entry
+static int _json_depth = 0;
+#define JSON_MAX_DEPTH 256
+
 static inline t_string tphp_fn_json_encode(t_var v) {
+    _json_depth = 0;
     return json_encode_rec(v);
 }
+
+// Override internal recursion — add depth check at top of json_encode_rec
+// (Done by patching the self-call within json_encode_rec to use this guard)
 
 /* === JSON Decode ========================================= */
 

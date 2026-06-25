@@ -1180,7 +1180,7 @@ class Parser
     private function parseEquality(): ExprNode
     {
         $left = $this->parseComparison();
-        while ($this->match(TokenType::EQ) || $this->match(TokenType::NE) || $this->match(TokenType::IDENTICAL) || $this->match(TokenType::NOT_IDENTICAL) || $this->match(TokenType::SPACESHIP)) {
+        while ($this->match(TokenType::EQ) || $this->match(TokenType::NE) || $this->match(TokenType::IDENTICAL) || $this->match(TokenType::NOT_IDENTICAL) || $this->match(TokenType::SPACESHIP) || $this->match(TokenType::INSTANCEOF_KW)) {
             $op = $this->previous()->lexeme;
             $right = $this->parseComparison();
             $left = $this->setPos(new BinaryExpr($left, $op, $right), $left->line, $left->column);
@@ -1326,12 +1326,16 @@ class Parser
         if ($this->match(TokenType::NULL_KW)) {
             return $this->setPos(new NullLiteralExpr(), $line, $col);
         }
-        // __LINE__ / __FILE__ / __DIR__ / DIRECTORY_SEPARATOR
-        $magicTokens = [TokenType::MAGIC_LINE, TokenType::MAGIC_FILE, TokenType::MAGIC_DIR, TokenType::DIR_SEP];
+        // __LINE__ / __FILE__ / __DIR__ / DIRECTORY_SEPARATOR / __CLASS__ / __METHOD__
+        $magicTokens = [TokenType::MAGIC_LINE, TokenType::MAGIC_FILE, TokenType::MAGIC_DIR, TokenType::DIR_SEP, TokenType::MAGIC_CLASS, TokenType::MAGIC_METHOD];
         foreach ($magicTokens as $mt) {
             if ($this->match($mt)) {
                 return $this->setPos(new MagicConstExpr($this->previous()->lexeme, $this->previous()->line), $line, $col);
             }
+        }
+        // parent:: → special variable
+        if ($this->match(TokenType::PARENT_KW)) {
+            return $this->setPos(new VariableExpr('parent'), $line, $col);
         }
         // fn($x) => expr  箭头函数
         if ($this->match(TokenType::FN_KW)) {

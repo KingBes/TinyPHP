@@ -262,6 +262,52 @@ C->fold_dbl($data, $len, phpc_thunk('fold_cb', $fn));  // 按签名生成 thunk
 - 引用计数 + `__destruct` 自动释放
 - JSON 无效输入 → `error()` 报错退出
 
+## 独特机制
+
+### COS 风格对象系统
+
+| 特性 | 说明 |
+|---|---|
+| 对象头 | 16 字节（`cls` + `refcount`），比 PHP 的 zend_object（~80B）精简 5× |
+| 继承 | struct 嵌套 `_parent`，父子强转零开销 |
+| 析构 | `tp_obj_release` — 作用域结束时自动调用 `__destruct` + `free` |
+| 拓扑排序 | 编译器自动保证父类 struct 先于子类生成 |
+
+### 编译期 AOT
+
+| 特性 | 说明 |
+|---|---|
+| 类型固定 | 变量类型在赋值时确定，后续不变 — 零运行时类型检查 |
+| VTable 直接调用 | 无哈希表分发开销，方法调 = 间接函数指针 |
+| 闭包 | 编译为 static C 函数 + env 参数 |
+| 魔术常量 | `__LINE__`/`__FILE__`/`__DIR__`/`__CLASS__`/`__METHOD__` — 编译期替换 |
+
+### 异常系统
+
+| 特性 | 说明 |
+|---|---|
+| 实现 | `setjmp/longjmp`（COS 风格），零外部依赖 |
+| 内存安全 | `tp_throw` 先 `tphp_rt_free_all()` 再跳转 |
+| 消息缓冲 | 256 字节栈帧内缓冲，不依赖堆分配 |
+
+### C 运行时
+
+| 特性 | 说明 |
+|---|---|
+| 字符串池 | 64KB bump allocator，≤512B 零 `malloc` |
+| 数组池 | 128 槽 LIFO 复用池 + 1.5× 增长因子 |
+| 资源追踪 | 全局链表，`error()` 退出时遍历释放 |
+| 分支预测 | `likely`/`unlikely` 标注热路径 |
+| 异常安全 | 无效 JSON → `error()`，`tp_throw` → `tphp_rt_free_all()` |
+
+### 多编译器 + 跨平台
+
+| 编译器 | 状态 |
+|---|---|
+| TCC (mob) | ✅ 默认内置 |
+| GCC | ✅ |
+| Clang | ✅ |
+
 ## CLI 选项
 
 | 选项 | 说明 |

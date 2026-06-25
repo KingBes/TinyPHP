@@ -437,6 +437,41 @@ static inline t_array* tphp_fn_arr_slice(t_array *a, int offset, int length, boo
     return r;
 }
 
+// === array_search($needle, $haystack) → key 或 -1 ===
+
+static inline t_int tphp_fn_arr_search(t_array *a, t_var needle) {
+    if (unlikely(a == NULL)) return -1;
+    for (int i = 0; i < a->length; i++) {
+        t_var *v = &a->entries[i].val;
+        if (v->type != needle.type) continue;
+        if (v->type == TYPE_INT    && v->value._int    == needle.value._int)    return i;
+        if (v->type == TYPE_FLOAT  && v->value._float  == needle.value._float)  return i;
+        if (v->type == TYPE_STRING && needle.value._string.length == v->value._string.length
+            && memcmp(v->value._string.data, needle.value._string.data, (size_t)needle.value._string.length) == 0) return i;
+        if (v->type == TYPE_BOOL   && v->value._bool   == needle.value._bool)   return i;
+    }
+    return -1;
+}
+
+// === shuffle — Fisher-Yates in-place ===
+
+static inline void tphp_fn_shuffle(t_array *a) {
+    if (unlikely(a == NULL || a->length <= 1)) return;
+    for (int i = a->length - 1; i > 0; i--) {
+        int j = rand() % (i + 1);
+        if (j != i) {
+            t_arr_entry tmp = a->entries[i];
+            a->entries[i]   = a->entries[j];
+            a->entries[j]   = tmp;
+        }
+    }
+    // Re-key int keys
+    for (int i = 0; i < a->length; i++) {
+        if (a->entries[i].key.type == TYPE_INT)
+            a->entries[i].key.value._int = i;
+    }
+}
+
 // === Sort (in-place quicksort, ascending by value) ===
 
 static inline int _arr_sort_cmp_asc(const void *a, const void *b) {
@@ -477,25 +512,64 @@ static inline void tphp_fn_rsort(t_array *a) {
 
 // === array_unique ===
 
+// Simple hash helper for array_unique
+static inline uint32_t _arr_val_hash(t_var v) {
+    if (v.type == TYPE_INT)    return (uint32_t)(v.value._int ^ (v.value._int >> 32));
+    if (v.type == TYPE_FLOAT)  { uint64_t bits; memcpy(&bits, &v.value._float, 8); return (uint32_t)(bits ^ (bits >> 32)); }
+    if (v.type == TYPE_STRING) {
+        uint32_t h = 5381;
+        for (int i = 0; i < v.value._string.length; i++)
+            h = ((h << 5) + h) + (unsigned char)v.value._string.data[i];
+        return h;
+    }
+    return (uint32_t)v.type;
+}
+
+static inline bool _arr_val_eq(t_var a, t_var b) {
+    if (unlikely(a.type != b.type)) return false;
+    if (a.type == TYPE_INT)    return a.value._int    == b.value._int;
+    if (a.type == TYPE_FLOAT)  return a.value._float  == b.value._float;
+    if (a.type == TYPE_STRING) return a.value._string.length == b.value._string.length
+        && (a.value._string.data == b.value._string.data
+            || memcmp(a.value._string.data, b.value._string.data, (size_t)a.value._string.length) == 0);
+    if (a.type == TYPE_BOOL)   return a.value._bool   == b.value._bool;
+    return a.type == TYPE_NULL;
+}
+
 static inline t_array* tphp_fn_arr_unique(t_array *a) {
     if (unlikely(a == NULL)) return NULL;
     t_array *r = tphp_fn_arr_create(a->length > 0 ? a->length : 4);
     if (unlikely(r == NULL)) return NULL;
-    for (int i = 0; i < a->length; i++) {
-        bool dup = false;
-        for (int j = 0; j < r->length; j++) {
-            t_var *vi = &a->entries[i].val, *vj = &r->entries[j].val;
-            if (vi->type != vj->type) continue;
-            if (vi->type == TYPE_INT && vi->value._int == vj->value._int) { dup = true; break; }
-            if (vi->type == TYPE_FLOAT && vi->value._float == vj->value._float) { dup = true; break; }
-            if (vi->type == TYPE_STRING &&
-                vi->value._string.length == vj->value._string.length &&
-                (vi->value._string.data == vj->value._string.data ||
-                 memcmp(vi->value._string.data, vj->value._string.data, (size_t)vi->value._string.length) == 0))
-                { dup = true; break; }
+    if (a->length <= 16) { // small: O(n²) is fine
+        for (int i = 0; i < a->length; i++) {
+            bool dup = false;
+            for (int j = 0; j < r->length; j++) {
+                if (_arr_val_eq(a->entries[i].val, r->entries[j].val)) { dup = true; break; }
+            }
+            if (!dup) r = tphp_fn_arr_push(r, a->entries[i].val);
         }
-        if (!dup) r = tphp_fn_arr_push(r, a->entries[i].val);
+        return r;
     }
+    // Large: open-addressing hash set, power-of-2 capacity
+    uint32_t cap = 16; while (cap < (uint32_t)a->length * 2) cap *= 2;
+    uint32_t *used = (uint32_t*)calloc(cap, sizeof(uint32_t));
+    if (!used) {
+        for (int i = 0; i < a->length; i++) r = tphp_fn_arr_push(r, a->entries[i].val);
+        return r;
+    }
+    for (int i = 0; i < a->length; i++) {
+        uint32_t h = _arr_val_hash(a->entries[i].val) & (cap - 1);
+        int found = 0;
+        while (used[h]) {
+            if (_arr_val_eq(a->entries[i].val, r->entries[(int)used[h]-1].val)) { found = 1; break; }
+            h = (h + 1) & (cap - 1);
+        }
+        if (!found) {
+            used[h] = (uint32_t)(r->length + 1);
+            r = tphp_fn_arr_push(r, a->entries[i].val);
+        }
+    }
+    free(used);
     return r;
 }
 
