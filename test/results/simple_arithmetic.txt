@@ -1,0 +1,214 @@
+int(10)
+string(5) "hello"
+bool(true)
+float(1.01)
+NULL
+array(3) {
+  [0]=>
+  int(1)
+  [1]=>
+  int(2)
+  [2]=>
+  int(3)
+}
+array(4) {
+  [0]=>
+  int(10)
+  [1]=>
+  string(3) "str"
+  [2]=>
+  bool(true)
+  [3]=>
+  array(2) {
+    [0]=>
+    int(4)
+    [1]=>
+    int(5)
+  }
+}
+callable
+int(10)
+callable
+int(3)
+hello world
+hello 你好
+hello 你好
+LINE=5
+FILE=C:\project\php\TinyPHP\test\var\magic_const.php
+DIR=C:\project\php\TinyPHP\test\var
+SEP=[\]
+===== int match =====
+string(3) "two"
+int(30)
+int(999)
+===== string match =====
+string(7) "#00FF00"
+int(99)
+===== match with or =====
+string(3) "low"
+string(4) "high"
+===== match in expression =====
+int(60)
+match in if ok
+===== match in closure =====
+string(3) "one"
+string(4) "many"
+string(11) "item-second"
+===== match in function =====
+int(20)
+all match tests passed
+User name=Bob age=25
+1. simple: hello world
+2. int: answer=42
+3. hex: 0xff
+4. octal: 0100
+5. float: pi=3.14
+6. padded: [    7]
+7. zeroPad: 0042
+8. multi: world=42 3.14
+9. percent: 100% done
+10. char: A=A (65)
+11. long: left-aligned         end
+12. sci: 1.234500e+003
+1. 200 OK
+1. no server error
+1. admin login OK
+2. 250 discounted=200
+2. 10+30=40
+3. calc?->compute=30
+4. never not called
+5. all done
+=== ** 幂运算 ===
+int(8)
+int(1024)
+int(512)
+int(64)
+int(1)
+int(99)
+int(81)
+int(18)
+int(20)
+float(6.25)
+float(3)
+int(-8)
+int(9)
+int(3)
+int(9)
+int(25)
+=== <=> 太空船运算 ===
+int(-1)
+int(1)
+int(0)
+int(0)
+int(-1)
+int(1)
+int(1)
+int(-1)
+int(0)
+int(-1)
+int(1)
+int(0)
+int(-1)
+int(1)
+int(-1)
+int(1)
+int(0)
+int(1)
+less
+big
+int(1)
+int(-1)
+int(0)
+3 < 5 confirmed
+=== 混合测试 ===
+int(-1)
+int(1)
+int(1)
+=== done ===
+===== basic =====
+int(15)
+int(13)
+int(48)
+int(25)
+===== precedence =====
+int(14)
+int(20)
+int(5)
+int(5)
+===== negative =====
+int(-10)
+int(2)
+===== float =====
+float(12.8)
+float(10)
+float(2.5)
+===== string concat =====
+string(11) "hello world"
+string(7) "num: 15"
+===== complex =====
+int(28)
+int(20)
+===== large numbers =====
+int(2000000000)
+===== comparison =====
+bool(true)
+bool(false)
+bool(true)
+bool(false)
+bool(true)
+bool(true)
+bool(false)
+===== logical =====
+bool(true)
+bool(false)
+bool(true)
+bool(false)
+bool(false)
+bool(true)
+bool(true)
+===== comparison + logic =====
+bool(true)
+bool(false)
+bool(true)
+bool(true)
+===== compare + arithmetic =====
+bool(true)
+bool(true)
+bool(false)
+bool(true)
+===== float compare =====
+bool(true)
+bool(true)
+bool(true)
+===== full precedence =====
+bool(true)
+bool(true)
+===== string compare =====
+bool(true)
+bool(false)
+bool(true)
+bool(true)
+bool(false)
+bool(true)
+bool(false)
+bool(true)
+bool(true)
+bool(true)
+bool(true)
+===== cross-type compare =====
+bool(true)
+bool(true)
+bool(true)
+bool(true)
+bool(false)
+bool(true)
+bool(true)
+bool(true)
+bool(false)
+bool(true)
+bool(false)
+bool(false)
+bool(true)
+bool(false)
+bool(false)
+bool(true)

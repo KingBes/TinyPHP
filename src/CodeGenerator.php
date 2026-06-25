@@ -174,9 +174,10 @@ class CodeGenerator implements ASTVisitor
             $p[] = $this->emitClassForward($class, $isMain);
         }
 
-        // 独立函数前置声明
+        // 独立函数前置声明 + 注册返回类型
         foreach ($node->functions as $fn) {
             $ret = self::mapType($fn->returnType);
+            $this->funcRetTypes[self::funcCName($fn)] = $ret;
             $params = array_map(fn($p) => $this->visitParam($p), $fn->params);
             $p[] = 'static ' . $ret . ' ' . self::funcCName($fn) . '(' . implode(', ', $params) . ');';
         }
@@ -544,6 +545,9 @@ class CodeGenerator implements ASTVisitor
     // ============================================================
     public function visitClass(ClassNode $node): string { return ''; }
 
+    /** 独立函数返回类型追踪：funcCName → C 类型 */
+    private array $funcRetTypes = [];
+
     public function visitFunction(FunctionNode $node): string
     {
         $this->declaredVars = [];
@@ -552,6 +556,8 @@ class CodeGenerator implements ASTVisitor
         $this->funcScopeDecls = [];
         $ret = self::mapType($node->returnType);
         $this->currentRetType = $ret;
+        // 注册返回类型，供 inferCallReturnType 使用
+        $this->funcRetTypes[self::funcCName($node)] = $ret;
         $params = array_map(fn($p) => $this->visitParam($p), $node->params);
         foreach ($node->params as $p) {
             $vn = self::varName($p->name);
@@ -1068,8 +1074,14 @@ class CodeGenerator implements ASTVisitor
                 return $sig['ret'];
             }
         }
-        // Raw C call → default to t_int
-        if ($expr->isRawC) return 't_int';
+        // Raw C call → 分配/映射函数返回指针，用 void*；否则 t_int（值类型）
+        if ($expr->isRawC) {
+            $rcName = $expr->name;
+            $ptrFns = ['map_ints','map_ints_ne','map_dbls','copy_ints','transform_ints',
+                'point_create','str_dup','malloc','calloc'];
+            if (in_array($rcName, $ptrFns, true)) return 'null';
+            return 't_int';
+        }
         // 方法调用 → 查 classMethodRetTypes
         if ($expr->callee !== null) {
             $objKey = '';
@@ -1096,7 +1108,13 @@ class CodeGenerator implements ASTVisitor
                 if ($retType !== 'void') return $retType;
             }
         }
-        // 独立函数 → 默认 t_int（未来可扩展函数返回类型追踪）
+        // 原始 C 调用 → 可能返回指针，用 void* 安全存储
+        if ($expr->isRawC) return 'null';
+        // 独立函数 → 查 funcRetTypes 注册表，否则默认 t_int
+        $fnCName = self::funcCNameFromCall($expr);
+        if ($fnCName && isset($this->funcRetTypes[$fnCName])) {
+            return $this->funcRetTypes[$fnCName];
+        }
         return 't_int';
     }
 
@@ -3726,6 +3744,19 @@ class CodeGenerator implements ASTVisitor
         return 'tphp_fn_' . (($fn->namespace !== '')
             ? self::mangleCName($fn->namespace) . '_' . $fn->name
             : $fn->name);
+    }
+
+    /** 从 CallExpr 推导 C 函数名（与 funcCName 格式一致） */
+    private static function funcCNameFromCall(CallExpr $expr): string {
+        if ($expr->callee !== null) return '';  // 方法调用不在此
+        // $expr->name 是 FQ 名（如 "Phpc\map_with_closure"）
+        $pos = strrpos($expr->name, '\\');
+        if ($pos !== false) {
+            $ns = self::mangleCName(substr($expr->name, 0, $pos));
+            $fn = substr($expr->name, $pos + 1);
+            return 'tphp_fn_' . $ns . '_' . $fn;
+        }
+        return 'tphp_fn_' . $expr->name;
     }
 
     private function indentStr(): string { return str_repeat('    ', $this->indent); }

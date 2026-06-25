@@ -1430,6 +1430,8 @@ class Parser
                     'array_product','array_fill','sort','rsort',
                     'intval','floatval','strval','boolval',
                     'max','min','range','rand','mt_rand',
+                    'abs','round','ceil','floor','sqrt',
+                    'strtolower','strtoupper','shuffle','array_search','microtime',
                     'json_encode','json_decode'];
                 if (!in_array($name, $globalFns, true) && !str_starts_with($name, 'is_')) {
                     $name = $this->resolveFunctionName($name);

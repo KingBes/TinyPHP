@@ -1,0 +1,39 @@
+int(10)
+string(5) "hello"
+bool(true)
+float(1.01)
+NULL
+array(3) {
+  [0]=>
+  int(1)
+  [1]=>
+  int(2)
+  [2]=>
+  int(3)
+}
+array(4) {
+  [0]=>
+  int(10)
+  [1]=>
+  string(3) "str"
+  [2]=>
+  bool(true)
+  [3]=>
+  array(2) {
+    [0]=>
+    int(4)
+    [1]=>
+    int(5)
+  }
+}
+callable
+int(10)
+callable
+int(3)
+hello world
+hello 你好
+hello 你好
+LINE=5
+FILE=C:\project\php\TinyPHP\test\var\magic_const.php
+DIR=C:\project\php\TinyPHP\test\var
+SEP=[\]

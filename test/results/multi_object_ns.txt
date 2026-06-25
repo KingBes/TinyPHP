@@ -1,0 +1,60 @@
+[1/2] Transpiling main.php, models.php, services.php, extends_test.php => C...
+       + C:\project\php\TinyPHP\test\object\models.php
+       + C:\project\php\TinyPHP\test\object\services.php
+       + C:\project\php\TinyPHP\test\object\extends_test.php
+       [YES] C:\project\php\TinyPHP\build/extends_test.c
+[2/2] Compiling => C:\project\php\TinyPHP/build/object_basic.exe...
+       [YES] C:\project\php\TinyPHP/build/object_basic.exe
+=== Extends Test ===
+
+1. speak=Rex barks!
+2. name=Rex
+3. breed=Husky
+4. age=3
+
+=== OK ===
+[1/2] Transpiling oo_main.php, oo_models.php, oo_test.php => C...
+       + C:\project\php\TinyPHP\test\object\oo_models.php
+       + C:\project\php\TinyPHP\test\object\oo_test.php
+       [YES] C:\project\php\TinyPHP\build/oo_test.c
+[2/2] Compiling => C:\project\php\TinyPHP/build/object_oo.exe...
+       [YES] C:\project\php\TinyPHP/build/object_oo.exe
+=== OOP Test ===
+
+1. id=1
+2. name=Alice
+
+=== OK ===
+[1/2] Transpiling myapp_main.php, myapp_models.php, myapp_services.php => C...
+       + C:\project\php\TinyPHP\test\object\myapp_models.php
+       + C:\project\php\TinyPHP\test\object\myapp_services.php
+       + C:\project\php\TinyPHP\test\object\myapp_main.php
+       [YES] C:\project\php\TinyPHP\build/myapp_main.c
+[2/2] Compiling => C:\project\php\TinyPHP/build/object_ns.exe...
+       [YES] C:\project\php\TinyPHP/build/object_ns.exe
+=== Namespace OOP Test ===
+
+-- 1. Create --
+u1=Alice <alice@tphp.dev>
+u2=Bob <bob@tphp.dev> active=0
+
+-- 2. Process --
+r1=OK: Order#100 $150 [approved] by Alice <alice@tphp.dev>
+r2=FAIL: user inactive
+r3=OK: Order#101 $250 [approved] by Alice <alice@tphp.dev>
+
+-- 3. States --
+o1=approved
+o3=pending
+
+-- 4. Report --
+ok=1 fail=1 total=$400
+
+-- 5. Nullsafe --
+  (OK)
+
+-- 6. Strict --
+o1===100:1
+u1===true:1
+
+=== OK ===

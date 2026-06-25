@@ -79,9 +79,11 @@ static inline t_array* tphp_rt_build_argv(int argc, char **argv) {
 
 /** int → t_string（栈缓冲区，单线程安全） */
 static inline t_string tphp_rt_str_from_int(t_int v) {
-    static char _buf[32];
-    int len = snprintf(_buf, sizeof(_buf), "%lld", (long long)v);
-    return (t_string){_buf, len > 0 ? len : 0};
+    // 使用 str_pool_alloc 代替 static buf，避免多参数表达式中的覆盖问题
+    char* buf = str_pool_alloc(32);
+    if (!buf) return (t_string){NULL, 0};
+    int len = snprintf(buf, 32, "%lld", (long long)v);
+    return (t_string){buf, len > 0 ? len : 0};
 }
 
 static inline t_string tphp_rt_str_from_float(t_float v) {
@@ -190,11 +192,13 @@ static inline t_string tphp_rt_str_concat(t_string a, t_string b) {
 }
 
 /** tphp_rt_str_concat_multi — ROPE 多片段拼接（一次分配，AOT 友好）
- *  编译期将 "a"."b"."c" 展平为单次调用，避免中间临时字符串 */
+ *  编译期将 "a"."b"."c" 展平为单次调用，避免中间临时字符串。
+ *  注意：先复制每个片段的 data 指针后再计算总长+拷贝，
+ *  防止调用方使用 static 缓冲区导致 data 被后续调用覆盖。 */
 static inline t_string tphp_rt_str_concat_multi(int count, const t_string parts[]) {
     if (unlikely(count <= 0)) return (t_string){NULL, 0};
     if (count == 1) return parts[0];
-    // 第一遍：计算总长度
+    // 一次性：计算总长 + 立即暂存每个 data 指针（防止 static buf 覆盖）
     int total = 0;
     for (int i = 0; i < count; i++) {
         int len = (parts[i].length > 0 && parts[i].data != NULL) ? parts[i].length : 0;
@@ -203,10 +207,10 @@ static inline t_string tphp_rt_str_concat_multi(int count, const t_string parts[
         total += len;
     }
     if (total <= 0) return (t_string){NULL, 0};
-    // 一次分配
     char* buf = str_pool_alloc(total);
     if (unlikely(buf == NULL)) return (t_string){NULL, 0};
-    // 第二遍：逐片拷贝
+    // 拷贝：parts[i].data 可能指向调用方的 static 缓冲区（如 tphp_rt_str_from_int），
+    // 只能在一次性分配 buf 后即刻拷贝，不能两遍扫描
     int pos = 0;
     for (int i = 0; i < count; i++) {
         int len = (parts[i].length > 0 && parts[i].data != NULL) ? parts[i].length : 0;

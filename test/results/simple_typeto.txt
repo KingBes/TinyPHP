@@ -1,0 +1,76 @@
+COMPILE FAILED
+[1/2] Transpiling var.php => C...
+       + C:\project\php\TinyPHP\test\var\var.php
+       [YES] C:\project\php\TinyPHP\build/var.c
+[2/2] Compiling => C:\project\php\TinyPHP\var.exe...
+       [YES] C:\project\php\TinyPHP\var.exe
+[1/2] Transpiling string.php => C...
+       + C:\project\php\TinyPHP\test\var\string.php
+       [YES] C:\project\php\TinyPHP\build/string.c
+[2/2] Compiling => C:\project\php\TinyPHP\string.exe...
+       [YES] C:\project\php\TinyPHP\string.exe
+[1/2] Transpiling magic_const.php => C...
+       + C:\project\php\TinyPHP\test\var\magic_const.php
+       [YES] C:\project\php\TinyPHP\build/magic_const.c
+[2/2] Compiling => C:\project\php\TinyPHP\magic_const.exe...
+       [YES] C:\project\php\TinyPHP\magic_const.exe
+[1/2] Transpiling match_expr.php => C...
+       + C:\project\php\TinyPHP\test\var\match_expr.php
+       [YES] C:\project\php\TinyPHP\build/match_expr.c
+[2/2] Compiling => C:\project\php\TinyPHP\match_expr.exe...
+       [YES] C:\project\php\TinyPHP\match_expr.exe
+[1/2] Transpiling med_promote.php => C...
+       + C:\project\php\TinyPHP\test\var\med_promote.php
+       [YES] C:\project\php\TinyPHP\build/med_promote.c
+[2/2] Compiling => C:\project\php\TinyPHP\med_promote.exe...
+       [YES] C:\project\php\TinyPHP\med_promote.exe
+[1/2] Transpiling med_sprintf.php => C...
+       + C:\project\php\TinyPHP\test\var\med_sprintf.php
+       [YES] C:\project\php\TinyPHP\build/med_sprintf.c
+[2/2] Compiling => C:\project\php\TinyPHP\med_sprintf.exe...
+       [YES] C:\project\php\TinyPHP\med_sprintf.exe
+[1/2] Transpiling low_all.php => C...
+       + C:\project\php\TinyPHP\test\var\low_all.php
+       [YES] C:\project\php\TinyPHP\build/low_all.c
+[2/2] Compiling => C:\project\php\TinyPHP\low_all.exe...
+       [YES] C:\project\php\TinyPHP\low_all.exe
+[1/2] Transpiling operators.php => C...
+       + C:\project\php\TinyPHP\test\var\operators.php
+       [YES] C:\project\php\TinyPHP\build/operators.c
+[2/2] Compiling => C:\project\php\TinyPHP\operators.exe...
+       [YES] C:\project\php\TinyPHP\operators.exe
+[1/2] Transpiling arithmetic.php => C...
+       + C:\project\php\TinyPHP\test\var\arithmetic.php
+       [YES] C:\project\php\TinyPHP\build/arithmetic.c
+[2/2] Compiling => C:\project\php\TinyPHP\arithmetic.exe...
+       [YES] C:\project\php\TinyPHP\arithmetic.exe
+[1/2] Transpiling typeto.php => C...
+       + C:\project\php\TinyPHP\test\var\typeto.php
+[NO] Transpile failed: Parser error [18:20]: Expected method name, got 'null'
+#0 C:\project\php\TinyPHP\src\Parser.php(1639): Parser->error('Expected method...')
+#1 C:\project\php\TinyPHP\src\Parser.php(1385): Parser->parseMethodName()
+#2 C:\project\php\TinyPHP\src\Parser.php(1278): Parser->parsePrimary()
+#3 C:\project\php\TinyPHP\src\Parser.php(1272): Parser->parsePostfix()
+#4 C:\project\php\TinyPHP\src\Parser.php(1243): Parser->parseUnary()
+#5 C:\project\php\TinyPHP\src\Parser.php(1231): Parser->parsePower()
+#6 C:\project\php\TinyPHP\src\Parser.php(1219): Parser->parseMultiplicative()
+#7 C:\project\php\TinyPHP\src\Parser.php(1207): Parser->parseAdditive()
+#8 C:\project\php\TinyPHP\src\Parser.php(1194): Parser->parseShift()
+#9 C:\project\php\TinyPHP\src\Parser.php(1182): Parser->parseComparison()
+#10 C:\project\php\TinyPHP\src\Parser.php(1171): Parser->parseEquality()
+#11 C:\project\php\TinyPHP\src\Parser.php(1160): Parser->parseBitwiseAnd()
+#12 C:\project\php\TinyPHP\src\Parser.php(1149): Parser->parseBitwiseXor()
+#13 C:\project\php\TinyPHP\src\Parser.php(1138): Parser->parseBitwiseOr()
+#14 C:\project\php\TinyPHP\src\Parser.php(1127): Parser->parseLogicalAnd()
+#15 C:\project\php\TinyPHP\src\Parser.php(1110): Parser->parseLogicalOr()
+#16 C:\project\php\TinyPHP\src\Parser.php(1099): Parser->parseTernary()
+#17 C:\project\php\TinyPHP\src\Parser.php(1093): Parser->parseNullCoalesce()
+#18 C:\project\php\TinyPHP\src\Parser.php(1062): Parser->parseExpr()
+#19 C:\project\php\TinyPHP\src\Parser.php(710): Parser->parseExprStmt()
+#20 C:\project\php\TinyPHP\src\Parser.php(626): Parser->parseStmt()
+#21 C:\project\php\TinyPHP\src\Parser.php(430): Parser->parseMethod()
+#22 C:\project\php\TinyPHP\src\Parser.php(391): Parser->parseClassDeclBody(false)
+#23 C:\project\php\TinyPHP\src\Parser.php(136): Parser->parseClassDecl()
+#24 C:\project\php\TinyPHP\src\Parser.php(63): Parser->parseProgram()
+#25 C:\project\php\TinyPHP\tphp.php(175): Parser->parse()
+#26 {main}
