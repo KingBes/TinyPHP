@@ -19,13 +19,23 @@
 
 // ── 初始化 ────────────────────────────────────────────
 
-/** tphp_rt_init — 初始化运行时（Windows 下设置控制台 UTF-8） */
+/** tphp_rt_init — 初始化运行时（Windows 下设置控制台 UTF-8，预热数组池） */
 static inline void tphp_rt_init(void) {
 #ifdef _WIN32
     SetConsoleOutputCP(65001); // CP_UTF8
     SetConsoleCP(65001);
 #endif
-    (void)0;
+    // 预热数组复用池：预分配 16 个空数组，后续 [] 从池 O(1) 获取
+    for (int _pi = 0; _pi < 16 && arr_freelist_count < ARR_POOL_MAX; _pi++) {
+        size_t _sz = sizeof(t_array) + (size_t)4 * sizeof(t_arr_entry);
+        t_array *_pa = (t_array*)calloc(1, _sz);
+        if (_pa) {
+            _pa->refcount = 1;
+            _pa->capacity = 4;
+            _pa->length   = 0;
+            arr_freelist[arr_freelist_count++] = _pa;
+        }
+    }
 }
 
 // ── 安全内存 ──────────────────────────────────────────
@@ -177,6 +187,33 @@ static inline t_string tphp_rt_str_concat(t_string a, t_string b) {
     if (blen > 0) { memcpy(data + pos, b.data, (size_t)blen); pos += blen; }
     data[pos] = '\0';
     return (t_string){data, pos};
+}
+
+/** tphp_rt_str_concat_multi — ROPE 多片段拼接（一次分配，AOT 友好）
+ *  编译期将 "a"."b"."c" 展平为单次调用，避免中间临时字符串 */
+static inline t_string tphp_rt_str_concat_multi(int count, const t_string parts[]) {
+    if (unlikely(count <= 0)) return (t_string){NULL, 0};
+    if (count == 1) return parts[0];
+    // 第一遍：计算总长度
+    int total = 0;
+    for (int i = 0; i < count; i++) {
+        int len = (parts[i].length > 0 && parts[i].data != NULL) ? parts[i].length : 0;
+        if (len < 0) len = 0;
+        if (len > 0x7FFFFF) return (t_string){NULL, 0};
+        total += len;
+    }
+    if (total <= 0) return (t_string){NULL, 0};
+    // 一次分配
+    char* buf = str_pool_alloc(total);
+    if (unlikely(buf == NULL)) return (t_string){NULL, 0};
+    // 第二遍：逐片拷贝
+    int pos = 0;
+    for (int i = 0; i < count; i++) {
+        int len = (parts[i].length > 0 && parts[i].data != NULL) ? parts[i].length : 0;
+        if (len > 0) { memcpy(buf + pos, parts[i].data, (size_t)len); pos += len; }
+    }
+    buf[total] = '\0';
+    return (t_string){buf, total};
 }
 
 /** tphp_str_dup — 深拷贝 t_string（短串用池，长串堆分配） */

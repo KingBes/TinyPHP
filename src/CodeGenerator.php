@@ -1589,6 +1589,16 @@ class CodeGenerator implements ASTVisitor
             return $node->left->accept($this) . ' = ' . $node->right->accept($this);
         }
         if ($node->operator === '.') {
+            // ROPE 优化：展平 ". . ." 链为多片段拼接，一次分配
+            $parts = $this->flattenConcat($node);
+            if (count($parts) >= 3) {
+                $partCodes = array_map(fn($p) => $this->castToStr($p), $parts);
+                $count = count($parts);
+                // 生成: tphp_rt_str_concat_multi(N, (t_string[]){a, b, c, ...})
+                return "tphp_rt_str_concat_multi({$count}, (t_string[]){"
+                    . implode(', ', $partCodes) . '})';
+            }
+            // 2 片段：保持原有 pair-wise
             $left  = $this->castToStr($node->left);
             $right = $this->castToStr($node->right);
             return 'tphp_rt_str_concat(' . $left . ', ' . $right . ')';
@@ -3305,6 +3315,25 @@ class CodeGenerator implements ASTVisitor
         };
     }
 
+    /** 展平 . 链为叶子节点数组，用于 ROPE 多片段拼接
+     *  "a" . "b" . "c" → [StringLit("a"), StringLit("b"), StringLit("c")] */
+    private function flattenConcat(BinaryExpr $node): array
+    {
+        $parts = [];
+        $this->flattenConcatRec($node, $parts);
+        return $parts;
+    }
+
+    private function flattenConcatRec(ExprNode $node, array &$parts): void
+    {
+        if ($node instanceof BinaryExpr && $node->operator === '.') {
+            $this->flattenConcatRec($node->left, $parts);
+            $this->flattenConcatRec($node->right, $parts);
+        } else {
+            $parts[] = $node;
+        }
+    }
+
     /** 将任意表达式转为 t_string（用于 (string) 转换和 . 拼接）
      *  @param bool $strict true=显式转换时数组/对象报错，false=.拼接时静默转 "Array"/"Object" */
     private function castToStr(ExprNode $expr, bool $strict = false): string
@@ -3332,6 +3361,11 @@ class CodeGenerator implements ASTVisitor
                 // 未知 per-key 类型：检查函数名判断是否需要转字符串
                 if (str_contains($code, 'get_str_int') || str_contains($code, 'get_str_float')) {
                     return "tphp_rt_str_from_int({$code})";
+                }
+                // get_str_arr 返回 t_array*，在字符串上下文需要改用 get_str_str
+                if (str_contains($code, 'get_str_arr')) {
+                    $fixed = str_replace('get_str_arr', 'get_str_str', $code);
+                    return $fixed;
                 }
                 return $code;
             }

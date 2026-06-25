@@ -81,7 +81,7 @@
 | `array_merge($a, $b)` | 逐 entry 复制 | O(n+m) | — |
 | `array_sum($arr)` | 遍历累加，int+float 自动提升 | O(n) | — |
 | `array_product($arr)` | 遍历累乘，混合提升 | O(n) | — |
-| `array_unique($arr)` | 双重循环去重 | O(n²) | — |
+| `array_unique($arr)` | ≤16 元素 O(n²)；>16 用开放寻址哈希表 | O(n) 大数组 | — |
 | `array_reverse($arr, $pk?)` | 倒序复制 | O(n) | — |
 | `array_slice($arr, $off, $len?, $pk?)` | 截取复制 | O(k) | 不支持负 length |
 | `array_fill($start, $count, $v)` | `set_int` 填充 | O(n) | — |
@@ -96,21 +96,22 @@
 ## 字符串
 
 字符串为 16 字节值类型 `{ char* data; int length; }`。≤512B 通过 64KB bump allocator 分配，零 `malloc`。
+**拼接优化**：3+ 片段 `.` 链编译期展平为 ROPE，单次分配替代 N 次 pair-wise。
 
 | 函数 | C 实现 | 性能 | 差异 |
 |---|---|---|---|
 | `implode($glue, $arr)` | 计算总长 → `str_pool_alloc` → memcpy | O(n) | — |
 | `explode($sep, $s)` | 线性查找 + 逐段 `str_pool_alloc` | O(n) | — |
 | `strlen($s)` | `s.length` | O(1) | null → 0 |
-| `trim($s)` | 首尾遍历 → `str_pool_alloc` | O(n) | 仅 ASCII 空白 |
-| `ltrim($s)` / `rtrim($s)` | 遍历 → `str_pool_alloc` | O(n) | 同上 |
-| `substr($s, $off, $len?)` | 偏移截取 → `str_pool_alloc` | O(1) | 负 offset ✅ / 负 length ✅ |
+| `trim($s)` | 首尾遍历 → 无空白时零分配返回原串 | O(n) | 仅 ASCII 空白 |
+| `ltrim($s)` / `rtrim($s)` | 遍历 → 无空白时零分配 | O(n) | 同上 |
+| `substr($s, $off, $len?)` | 偏移截取 → 全复制时零分配返回原串 | O(1) | 负 offset ✅ / 负 length ✅ |
 | `strpos($h, $n)` | `memcmp` 线性查找 | O(n) | 未找到 → -1 |
 | `str_contains($h, $n)` | `strpos ≥ 0` | O(n) | — |
 | `str_replace($s, $r, $t)` | 两遍扫描 + `str_pool_alloc` | O(n) | 仅字符串参数 |
 | `sprintf($fmt, ...)` | `snprintf(NULL,0,...)` 测大小 → `str_pool_alloc` | O(n) | 无长度上限，全 C 格式符 |
-| `strtolower($s)` | 逐字符 `+32`（ASCII） | O(n) | 仅 ASCII |
-| `strtoupper($s)` | 逐字符 `-32`（ASCII） | O(n) | 仅 ASCII |
+| `strtolower($s)` | 逐字符检测 → 无大写时零分配返回原串 | O(n) | 仅 ASCII |
+| `strtoupper($s)` | 逐字符检测 → 无小写时零分配返回原串 | O(n) | 仅 ASCII |
 
 ---
 
@@ -155,7 +156,7 @@
 
 | 函数 | C 实现 | 内存安全 | 差异 |
 |---|---|---|---|
-| `json_encode($var)` | 递归编码 → 栈缓冲区 + `str_pool_alloc` | ✅ | 对象 → `{}`，无递归保护 |
+| `json_encode($var)` | 位图转义(256bit O(1)) + 批量安全字符 memcpy → `str_pool_alloc` | ✅ | 对象 → `{}`，无递归保护 |
 | `json_decode($s)` | 递归下降解析 → `t_var` | ✅ 无效→error | 无 `assoc` 参数 |
 
 ---

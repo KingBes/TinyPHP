@@ -18,26 +18,47 @@
 
 /* === JSON Encode ========================================= */
 
+/** JSON 转义位图 — 256 字符只需 O(1) 位测试
+ *  与 PHP 8.5 zend_string.c 同级优化：index[0] 覆盖 0x00-0x1f 控制字符，
+ *  index[1] bit2=", bit28=\ */
+static const uint32_t json_esc_bits[8] = {
+    0xffffffff,  // index 0: 0x00-0x1f (all control chars)
+    0x00000004,  // index 1: bit 2=0x22='"'
+    0x10000000,  // index 2: bit 28=0x5c='\'
+    0x00000000, 0x00000000, 0x00000000, 0x00000000, 0x00000000
+};
+
 /** 字符串 JSON 转义: " → \"  \ → \\  控制字符 → \u00XX
  *  返回 heap string (短串走池)，调用方负责释放 */
 static t_string json_encode_str(t_string s) {
     if (s.data == NULL || s.length <= 0)
         return tphp_rt_str_dup(STR_LIT("\"\""));
-    // 第一遍: 计算转义后长度
+    // 第一遍: 位图 O(1) 计算转义后长度
     int extra = 0;
     for (int i = 0; i < s.length; i++) {
         unsigned char c = (unsigned char)s.data[i];
-        if (c == '"' || c == '\\') extra += 1;
-        else if (c == '\n' || c == '\r' || c == '\t') extra += 1;
-        else if (c < 0x20) extra += 5;  // \u00XX
+        if (json_esc_bits[c >> 5] & (1u << (c & 0x1f))) {
+            if (c == '\n' || c == '\r' || c == '\t') extra += 1;
+            else extra += (c < 0x20) ? 5 : 1;  // \uXXXX or \X
+        }
     }
-    int out_len = s.length + extra + 2; // +2 for quotes
+    int out_len = s.length + extra + 2;
     char *out = str_pool_alloc(out_len);
     if (out == NULL) return (t_string){NULL, 0};
     int pos = 0;
     out[pos++] = '"';
+    // 批量安全字符写入：收集连续不需转义字符，一次性 memcpy
+    int safe_start = 0;
     for (int i = 0; i < s.length; i++) {
         unsigned char c = (unsigned char)s.data[i];
+        if (!(json_esc_bits[c >> 5] & (1u << (c & 0x1f)))) continue;
+        // 命中转义 → 先刷出累积的安全字符
+        if (i > safe_start) {
+            memcpy(out + pos, s.data + safe_start, (size_t)(i - safe_start));
+            pos += i - safe_start;
+        }
+        safe_start = i + 1;
+        // 转义写入
         if (c == '"')  { out[pos++] = '\\'; out[pos++] = '"'; }
         else if (c == '\\') { out[pos++] = '\\'; out[pos++] = '\\'; }
         else if (c == '\n') { out[pos++] = '\\'; out[pos++] = 'n'; }
@@ -48,9 +69,12 @@ static t_string json_encode_str(t_string s) {
             out[pos++] = '0'; out[pos++] = '0';
             out[pos++] = "0123456789abcdef"[c >> 4];
             out[pos++] = "0123456789abcdef"[c & 0xf];
-        } else {
-            out[pos++] = (char)c;
         }
+    }
+    // 刷出末尾安全字符
+    if (s.length > safe_start) {
+        memcpy(out + pos, s.data + safe_start, (size_t)(s.length - safe_start));
+        pos += s.length - safe_start;
     }
     out[pos++] = '"';
     return (t_string){.data = out, .length = pos};

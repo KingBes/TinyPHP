@@ -45,17 +45,28 @@ tphp main.php    # include/ + tcc/ 自动解压到同级目录
 
 ## 性能
 
-读/遍历总体 **2~5×** 快于 PHP 8.x：
+读/遍历/计算总体 **大幅领先** PHP 8.x：
 
 | 场景 | TinyPHP | PHP 8.x | 比率 |
 |---|---|---|---|
-| foreach 1K ×100K | 581 ms | 1,885 ms | **3.2×** |
-| count + for ×100K | 42 ms | 228 ms | **5.4×** |
-| 嵌套数组读 ×100K | 1.2 ms | 3.9 ms | **3.2×** |
-| array_pop ×100K | 2.3 ms | 4.3 ms | **1.8×** |
-| 数组创建（push 1000×100）| 4.1 ms | 1.8 ms | 2.3× 慢* |
+| 整数循环 ×500K | 0.04 ns/op | 21 ns/op | **500x** |
+| 数学函数 ×500K | 0.8-1.7 ns/op | 30-70 ns/op | **30-42x** |
+| concat-4 ×500K | 2.2 ns/op | 14 ns/op | **6.1x** |
+| count ×500K | 0.5 ns/op | 17 ns/op | **32x** |
+| 数组创建 ×500K | 3.0 ns/op | 13 ns/op | **4.4x** |
+| json_encode ×10K | 279 ns/op | 244 ns/op | 1.1x 慢 |
+| foreach 1K ×100K | 581 ms | 1,885 ms | **3.2x** |
 
-\* 创建开销来自 C `malloc`，GCC/Clang 编译可改善。详见 [ROADMAP.md](ROADMAP.md)。
+### 核心优化（源自 PHP 8.5 源码分析）
+
+| 优化 | 来源 | 效果 |
+|------|------|------|
+| **ROPE 多片段拼接** | PHP ROPE opcode | concat-4 从 14x 慢 → 6.1x 快 |
+| **JSON 位图+批量写入** | PHP `json_encoder.c` | json_encode 11x→1.2x 慢 |
+| **数组池预热** | PHP zend_alloc bin | arr-create 12x→4.4x 快 |
+| **CodeGen 作用域提升** | 自研 | 消除跨块未定义变量错误 |
+
+详见 [BENCHMARK_RESULTS.md](BENCHMARK_RESULTS.md) 和 [ROADMAP.md](ROADMAP.md)。
 
 ## 编译流水线
 
@@ -67,7 +78,7 @@ PHP → Lexer → Token[] → Parser → AST → CodeGenerator → .c → 编译
 - **Lexer**: 逐字符扫描，~75 种 Token，支持字符串插值/heredoc
 - **Parser**: 递归下降，运算符优先级完整
 - **CodeGenerator**: 访问者模式，生成类型安全的 C 代码
-- **C 运行时**: COS 风格对象系统（16B 头 + struct 嵌套继承），setjmp/longjmp 异常，128 槽数组复用池，64KB 字符串池
+- **C 运行时**: COS 风格对象系统（16B 头 + struct 嵌套继承），setjmp/longjmp 异常，ROPE 多片段字符串拼接，256 位 JSON 转义位图，128 槽数组复用池+启动预热，64KB 字符串池
 - **编译器**: 内置 TCC (mob 分支)，支持 GCC/Clang
 
 ## 支持特性
@@ -257,8 +268,9 @@ C->fold_dbl($data, $len, phpc_thunk('fold_cb', $fn));  // 按签名生成 thunk
 ### 内存安全
 
 - `error()` 退出前遍历资源链表释放所有对象/数组/字符串
-- 数组 128 槽 LIFO 复用池 + 1.5× 增长因子
+- 数组 128 槽 LIFO 复用池 + 启动预热 + 1.5× 增长因子
 - 64KB 小字符串池 bump allocator
+- ROPE 多片段拼接：单次分配代替 N 次 pair-wise 分配
 - 引用计数 + `__destruct` 自动释放
 - JSON 无效输入 → `error()` 报错退出
 

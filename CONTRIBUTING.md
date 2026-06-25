@@ -25,7 +25,7 @@ include/                         C 运行时头文件（静态 inline 库）
   ├── types.h                    类型定义 + likely/unlikely 分支预测
   ├── val.h                      便捷宏 (VAR_INT, STR_LIT, …)
   ├── array.h                    PHP 数组（128 槽复用池 + 1.5× 增长 + sort/shuffle/search）
-  ├── runtime.h                  运行时（64KB 字符串池、资源追踪、error、tphp_rt_free_all）
+  ├── runtime.h                  运行时（64KB 字符串池、ROPE 多片段拼接、数组池预热、资源追踪）
   ├── builtin.h                  公开内置（70+ 函数：类型/字符串/数学/转换）
   ├── rand.h                     MT19937 随机数
   ├── phpc.h                     C 互操作（类型桥/数组/对象/回调/thunk）
@@ -35,7 +35,7 @@ include/                         C 运行时头文件（静态 inline 库）
   │   └── try.h                  setjmp/longjmp 异常处理（TP_TRY/TP_CATCH/TP_THROW）
   └── os/
       ├── times.h                时间（time/date/sleep/hrtime/microtime）
-      ├── json.h                 JSON 编解码（递归下降解析+编码）
+      ├── json.h                 JSON 编解码（位图转义 + 批量安全字符写入）
       └── file.h                 文件 I/O（file_get/put_contents）
 ```
 
