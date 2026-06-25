@@ -332,7 +332,6 @@ C->fold_dbl($data, $len, phpc_thunk('fold_cb', $fn));  // 按签名生成 thunk
 
 | 文件 | 说明 |
 |---|---|
-| [TEST_CATALOG.md](TEST_CATALOG.md) | 测试用例目录（80+ 文件，按简单/复杂/多作用域分类） |
 | [FUNCTIONS.md](FUNCTIONS.md) | 每个函数的实现细节与 PHP 差异 |
 | [GRAMMAR.md](GRAMMAR.md) | 完整语法参考（基于 PHP 8.5 parser，标注支持程度） |
 | [CONTRIBUTING.md](CONTRIBUTING.md) | 架构、扩展指南、安全规范 |
