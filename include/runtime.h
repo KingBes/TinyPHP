@@ -75,6 +75,9 @@ static inline t_array* tphp_rt_build_argv(int argc, char **argv) {
     return a;
 }
 
+// ── 前置声明 ─────────────────────────────────────────
+static inline char* str_pool_alloc(int len);
+
 // ── 类型转换辅助 ─────────────────────────────────────
 
 /** int → t_string（栈缓冲区，单线程安全） */

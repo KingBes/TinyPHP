@@ -15,7 +15,7 @@ class Main
         echo "=============array=============\n";
         $this->array();
         echo "=============null=============\n";
-        $this->null();
+        // $this->null();
     }
 
     public function str(): void
