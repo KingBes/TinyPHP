@@ -11,7 +11,7 @@
  *        php tester.php test/var/string.php  (single)
  */
 $base   = __DIR__;
-$php    = 'php';
+$php    = '"' . PHP_BINARY . '"';
 $tphp   = $base . '/tphp.php';
 $debug  = in_array('--debug', $argv);
 $tmpDir = sys_get_temp_dir() . '/tphp_test';
