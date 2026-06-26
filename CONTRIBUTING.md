@@ -229,7 +229,57 @@ ExprNode（抽象，含 line/column）
 
 ---
 
-## 5. 安全编码规范
+## 5. 测试框架
+
+### tester.php
+
+项目根目录的 `tester.php` 是自动化测试工具，遍历 `test/` 目录下所有 `.php` 文件，编译并运行，检查退出码。
+
+```bash
+php tester.php                    # 全部测试
+php tester.php test/var/string.php # 单个测试
+php tester.php --debug             # 调试模式（显示编译输出）
+```
+
+### 注解
+
+测试文件前 10 行支持以下注解：
+
+| 注解 | 说明 | 示例 |
+|------|------|------|
+| `// @skip` | 跳过该测试 | `// @skip` |
+| `// @exit N` | 期望退出码（默认 0） | `// @exit 1` |
+| `// @with a.php,b.php` | 多文件编译 | `// @with models.php,services.php` |
+
+```php
+<?php
+
+// @with enums.php
+// @exit 0
+
+class Main {
+    public function main(): void {
+        echo "hello\n";
+    }
+}
+```
+
+### 测试结果
+
+```
+PASS          — 编译成功且退出码匹配
+FAIL          — 编译成功但退出码不匹配 / 运行崩溃
+COMPILE ERR   — 编译失败（语法错误 / C 编译错误）
+SKIPPED       — @skip 或空文件
+```
+
+### CI
+
+GitHub Actions 工作流 `tester.yml` 在 push/PR 时自动在 Linux x86_64、Linux aarch64、macOS aarch64、Windows x86_64 四个平台运行全量测试。
+
+---
+
+## 6. 安全编码规范
 
 ### 内存安全
 
@@ -270,11 +320,12 @@ ExprNode（抽象，含 line/column）
 
 ---
 
-## 6. 文件索引
+## 7. 文件索引
 
 | 文件 | 行数~ | 核心职责 |
 |------|------|---------|
-| `tphp.php` | ~420 | CLI 入口、多文件合并、`#flag`/`#callback` 过滤、PHAR 自解压、编译器调用、topo 排序 |
+| `tphp.php` | ~500 | CLI 入口、多文件合并、`#flag`/`#callback` 过滤、PHAR 自解压、跨编译(-os/-arch)、编译器调用 |
+| `tester.php` | ~165 | 自动化测试框架，注解驱动的编译+运行测试，多文件组合测试支持 |
 | `src/TokenType.php` | ~155 | Token 枚举（~90 token，含 `INTERFACE_KW`/`TRAIT_KW`/`TRY_KW`/`EXTENDS_KW`） |
 | `src/Token.php` | ~20 | Token 值对象 |
 | `src/AST/Node.php` | ~890 | AST 节点 + Visitor 接口 + `callbacks`/`implements`/`traits`/`TryStmtNode` |
@@ -293,6 +344,10 @@ ExprNode（抽象，含 line/column）
 | `include/os/times.h` | ~95 | 系统函数（跨平台） |
 | `include/os/json.h` | ~340 | JSON 编解码 |
 | `include/common.h` | ~16 | 总入口 |
-| `test/var/` | 45+ 文件 | 测试用例（low_all/closure/control_flow/builtin/match） |
+| `test/var/` | 50+ 文件 | 测试用例（builtin/control_flow/match/enum/closure/operators等） |
 | `test/phpc/` | 4 文件 | C 互操作测试（基础/数组/对象/回调） |
 | `test/files/` | 6+ 文件 | 多文件测试（const/命名空间） |
+| `test/main/` | 2 文件 | 最小完整用例 |
+| `test/object/` | 10+ 文件 | OOP 特性测试（extends/namespace/multi-file） |
+| `test/complex/` | 2 文件 | 复杂场景（枚举交叉引用） |
+| `.github/workflows/` | 2 文件 | CI：`build.yml`（构建发版）、`tester.yml`（全平台测试） |

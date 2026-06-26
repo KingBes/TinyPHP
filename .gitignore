@@ -12,3 +12,4 @@ build/
 tcc
 tcc-src/
 *.phar
+php

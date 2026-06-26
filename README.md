@@ -19,6 +19,11 @@ php tphp.php .
 
 # 指定输出 / 编译器
 php tphp.php main.php -o app -cc gcc
+
+# 跨平台编译
+php tphp.php main.php -os linux            # x86_64 Linux
+php tphp.php main.php -os linux -arch aarch64  # ARM64 Linux
+php tphp.php main.php -os windows          # Windows .exe
 ```
 
 ## 入口文件
@@ -133,12 +138,13 @@ throw new Exception('error');
 | 类别 | 函数 |
 |---|---|
 | 输出 | `echo`, `var_dump` |
-| 数组 | `count`, `array_push`, `array_pop`, `array_shift`, `array_unshift`, `in_array`, `array_key_exists`, `array_keys`, `array_values`, `array_merge`, `array_unique`, `array_reverse`, `array_slice`, `array_sum`, `array_product`, `array_fill`, `sort`, `rsort` |
-| 字符串 | `implode`, `explode`, `strlen`, `trim/ltrim/rtrim`, `substr`, `strpos`, `str_contains`, `str_replace`, `sprintf` |
+| 数组 | `count`, `array_push`, `array_pop`, `array_shift`, `array_unshift`, `in_array`, `array_key_exists`, `array_keys`, `array_values`, `array_merge`, `array_unique`, `array_reverse`, `array_slice`, `array_sum`, `array_product`, `array_fill`, `array_search`, `sort`, `rsort`, `shuffle` |
+| 字符串 | `implode`, `explode`, `strlen`, `trim/ltrim/rtrim`, `substr`, `strpos`, `str_contains`, `str_replace`, `strtolower`, `strtoupper`, `sprintf` |
 | 类型 | `is_int/float/string/bool/array/null/object/callable`, `isset`, `empty`, `unset` |
 | 转换 | `intval`, `floatval`, `strval`, `boolval` |
+| 数学 | `abs`, `round`, `ceil`, `floor`, `sqrt` |
 | 通用 | `max`, `min`, `range`, `rand`, `mt_rand`, `exit/die`, `error` |
-| 时间 | `time`, `date`, `sleep`, `usleep`, `hrtime` |
+| 时间 | `time`, `date`, `sleep`, `usleep`, `hrtime`, `microtime` |
 | JSON | `json_encode`, `json_decode` |
 
 > 详见 [FUNCTIONS.md](FUNCTIONS.md) — 每个函数与 PHP 的差异对照。
@@ -320,13 +326,33 @@ C->fold_dbl($data, $len, phpc_thunk('fold_cb', $fn));  // 按签名生成 thunk
 | GCC | ✅ |
 | Clang | ✅ |
 
+| 平台 | 状态 |
+|---|---|
+| Windows x86_64 | ✅ |
+| Linux x86_64 | ✅ |
+| Linux aarch64 | ✅ |
+| macOS aarch64 | ✅ |
+
 ## CLI 选项
 
 | 选项 | 说明 |
 |---|---|
 | `-o <output>` | 输出文件路径 |
 | `-cc <compiler>` | 指定 C 编译器（默认内置 TCC） |
+| `-os <target>` | 跨编译目标：`windows`、`linux`、`macos` |
+| `-arch <arch>` | 目标架构：`x86_64`、`aarch64`（Windows/Linux 默认 x86_64，macOS 默认 aarch64） |
 | `-h, --help` | 显示帮助 |
+
+## 测试
+
+```bash
+php tester.php                    # 全部测试
+php tester.php test/var/string.php # 单个测试
+```
+
+测试注解：`// @skip` 跳过, `// @exit N` 期望退出码, `// @with a.php,b.php` 多文件编译。
+
+CI (`tester.yml`) 在 Linux x86_64/aarch64、macOS aarch64、Windows x86_64 四个平台全量测试。
 
 ## 文档
 

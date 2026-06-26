@@ -8,20 +8,22 @@
 
 | 类别 | 函数数 | 跳转 |
 |---|---|---|
-| 输出/调试 | 2 | [↓](#输出--调试) |
-| 类型检测 | 8 | [↓](#类型检测) |
-| 类型转换 | 6 | [↓](#类型转换) |
-| 数组 | 21 | [↓](#数组) |
+| 输出/调试 | 4 | [↓](#输出--调试) |
+| 类型检测 | 11 | [↓](#类型检测) |
+| 类型转换 | 10 | [↓](#类型转换) |
+| 数组 | 26 | [↓](#数组) |
 | 字符串 | 13 | [↓](#字符串) |
-| 数学 | 7 | [↓](#数学) |
+| 数学 | 8 | [↓](#数学) |
 | 文件 I/O | 2 | [↓](#文件-io) |
 | 时间 | 6 | [↓](#时间) |
 | JSON | 2 | [↓](#json) |
 | 随机数 | 2 | [↓](#随机数) |
-| 异常 | 2 | [↓](#异常) |
-| OOP 语法 | 8 | [↓](#oop-语法) |
-| C 互操作 | 20+ | [↓](#c-互操作-phpc) |
-| **总计** | **70+** | |
+| 异常 | 4 | [↓](#异常) |
+| OOP 语法 | 10 | [↓](#oop-语法) |
+| C 互操作 | 24 | [↓](#c-互操作-phpc) |
+| 断言 | 5 | [↓](#断言测试框架用) |
+| **小计** | **103** | |
+| **待实现** | **66** | [↓](#待实现函数) |
 
 ---
 
@@ -235,3 +237,114 @@
 | 异常安全 | `tp_throw` 先 `tphp_rt_free_all()` 再 `longjmp` |
 | 分支预测 | `likely(x)` 热路径，`unlikely(x)` 错误边界 |
 | JSON 安全 | 无效 JSON → `error()` → `tphp_rt_free_all()` → `exit(1)` |
+
+---
+
+## 断言（测试框架用）
+
+| 函数 | C 实现 | 说明 |
+|---|---|---|
+| `assert_true($cond)` | `tphp_fn_assert_true()` | 断言为真 |
+| `assert_false($cond)` | `tphp_fn_assert_false()` | 断言为假 |
+| `assert_eq_int($a, $b)` | `tphp_fn_assert_eq_int()` | 整数相等断言 |
+| `assert_eq_float($a, $b)` | `tphp_fn_assert_eq_float()` | 浮点相等断言 |
+| `assert_eq_str($a, $b)` | `tphp_fn_assert_eq_str()` | 字符串相等断言 |
+
+---
+
+## 待实现函数
+
+> 基于 PHP 8.5.7 `ext/standard` + `ext/date` + `ext/pcntl` 对照分析。
+> 评分：常用度 ⭐1-5 × (6 − 难易度 ★1-5) = 收益分，≥20 为第一梯队。
+
+### 🔴 第一梯队（收益 ≥20，~2h）
+
+| 函数 | 常用度 | 难度 | 实现方式 |
+|------|--------|------|----------|
+| `ord($ch)` / `chr($n)` | ⭐⭐⭐⭐⭐ | ★ | `(int)ch` / 单字符 string |
+| `str_starts_with($h,$n)` | ⭐⭐⭐⭐⭐ | ★ | `strpos == 0` |
+| `str_ends_with($h,$n)` | ⭐⭐⭐⭐⭐ | ★ | `strrpos + len` |
+| `intdiv($a,$b)` | ⭐⭐⭐⭐⭐ | ★ | `(t_int)(a/b)`，零除→error |
+| `pow($base,$exp)` | ⭐⭐⭐⭐ | ★ | 复用 `tphp_rt_pow_float/int` |
+| `pi()` | ⭐⭐⭐⭐ | ★ | `return 3.141592653589793` |
+| `deg2rad($d)` / `rad2deg($r)` | ⭐⭐⭐ | ★ | `d * pi / 180` / `r * 180 / pi` |
+| `getenv($k)` / `putenv($k,$v)` | ⭐⭐⭐⭐⭐ | ★ | libc `getenv` / `putenv` |
+| `gettype($v)` | ⭐⭐⭐⭐⭐ | ★ | type switch → `"int"/"string"/...` |
+| `is_numeric($s)` | ⭐⭐⭐⭐⭐ | ★★ | `strtol`/`strtod` 消费检查 |
+| `number_format($n,$d?)` | ⭐⭐⭐⭐⭐ | ★★ | 整数部分+sprintf 小数 |
+| `array_key_first($a)` | ⭐⭐⭐⭐⭐ | ★ | `len>0 ? 0 : -1` |
+| `array_key_last($a)` | ⭐⭐⭐⭐⭐ | ★ | `len>0 ? len-1 : -1` |
+| `array_rand($a)` | ⭐⭐⭐⭐⭐ | ★★ | `rand(0, count-1)` |
+| `array_is_list($a)` | ⭐⭐⭐⭐ | ★★ | 遍历检查 key=0,1,2... |
+| `current($a)` / `key($a)` | ⭐⭐⭐⭐⭐ | ★ | `entries[cursor]` |
+| `next($a)` / `prev($a)` | ⭐⭐⭐⭐ | ★ | `cursor++` / `cursor--` |
+| `end($a)` / `reset($a)` | ⭐⭐⭐⭐ | ★ | `cursor=len-1` / `cursor=0` |
+| `bindec($s)` | ⭐⭐⭐⭐ | ★ | `strtol(s, NULL, 2)` |
+| `hexdec($s)` | ⭐⭐⭐⭐⭐ | ★ | `strtol(s, NULL, 16)` |
+| `octdec($s)` | ⭐⭐⭐ | ★ | `strtol(s, NULL, 8)` |
+| `decbin($n)` / `decoct($n)` | ⭐⭐⭐ | ★ | `sprintf "%b"/"%o"` |
+| `dechex($n)` | ⭐⭐⭐⭐ | ★ | `sprintf "%x"` |
+| `strtotime($s)` | ⭐⭐⭐⭐⭐ | ★★ | 解析 `Y-m-d H:i:s` + mktime 计算 |
+| `mktime($h,$m,$s,$mo,$d,$y)` | ⭐⭐⭐⭐ | ★ | 日历天数累加 |
+| `uniqid()` | ⭐⭐⭐⭐⭐ | ★★ | `sprintf "%08x%05x",time,rand` |
+
+> 共 27 个函数，实现位置：`include/builtin.h` + `src/CodeGenerator.php::visitCall()`
+
+### 🟡 第二梯队（收益 15-19，~4h）
+
+| 函数 | 常用度 | 难度 | 实现方式 |
+|------|--------|------|----------|
+| `ucfirst($s)` / `lcfirst($s)` | ⭐⭐⭐⭐ | ★★ | toupper/tolower 首字符 |
+| `strrev($s)` | ⭐⭐⭐⭐ | ★★ | 倒序复制 |
+| `str_repeat($s,$n)` | ⭐⭐⭐⭐ | ★★ | `len*n` 分配 + 循环 memcpy |
+| `str_split($s,$n?)` | ⭐⭐⭐⭐ | ★★ | 逐段切片到数组 |
+| `str_pad($s,$len,$pad?)` | ⭐⭐⭐ | ★★ | 计算填充 + memcpy |
+| `substr_count($h,$n)` | ⭐⭐⭐⭐ | ★★ | strpos 循环计数 |
+| `str_shuffle($s)` | ⭐⭐⭐ | ★★ | Fisher-Yates |
+| `addslashes($s)` | ⭐⭐⭐⭐ | ★★ | 扫描 `' " \ \0` 插入 `\` |
+| `stripslashes($s)` | ⭐⭐⭐ | ★★ | 扫描 `\` 跳过 |
+| `bin2hex($s)` / `hex2bin($s)` | ⭐⭐⭐⭐ | ★★ | 查表 `0x0-0xf` |
+| `urlencode($s)` | ⭐⭐⭐⭐⭐ | ★★ | 非字母→`%XX` |
+| `urldecode($s)` | ⭐⭐⭐⭐⭐ | ★★ | `%XX`→字符 |
+| `array_chunk($a,$size)` | ⭐⭐⭐⭐ | ★★ | 按 size 切片 |
+| `array_combine($k,$v)` | ⭐⭐⭐⭐ | ★★ | keys→keys, values→values |
+| `array_flip($a)` | ⭐⭐⭐⭐ | ★★ | key↔value 互换 |
+| `array_column($a,$col)` | ⭐⭐⭐⭐⭐ | ★★★ | 遍历提取字段 |
+
+> 共 19 个函数
+
+### 🟢 第三梯队（收益 10-14，~2-3d）
+
+| 函数 | 常用度 | 难度 | 说明 |
+|------|--------|------|------|
+| `md5($s)` | ⭐⭐⭐⭐⭐ | ★★★★ | MD5 算法 ~120 行 C |
+| `sha1($s)` | ⭐⭐⭐⭐ | ★★★★ | SHA1 算法 |
+| `crc32($s)` | ⭐⭐⭐ | ★★★ | 256 项查表算法 |
+| `parse_url($u)` | ⭐⭐⭐⭐⭐ | ★★★ | scheme/user/host/port/path/query |
+| `parse_str($s)` | ⭐⭐⭐⭐ | ★★★ | `a=1&b=2` → array |
+| `strtr($s,$from,$to?)` | ⭐⭐⭐ | ★★★ | 字符/字符串翻译表 |
+| `ksort($a)` / `krsort($a)` | ⭐⭐⭐ | ★★★ | 按 key 排序 |
+| `asort($a)` / `arsort($a)` | ⭐⭐⭐ | ★★★ | 按 value 排序保 key |
+| `pcntl_fork()` | ⭐⭐⭐⭐ | ★★ | POSIX fork 封装 |
+| `pcntl_waitpid($pid,&$st,$opt?)` | ⭐⭐⭐⭐ | ★★ | POSIX 进程等待 |
+| `pcntl_wait(&$st)` | ⭐⭐⭐ | ★★ | 等待任意子进程 |
+| `pcntl_exec($p,$a?)` | ⭐⭐⭐ | ★★ | execve 执行新程序 |
+| `pcntl_alarm($sec)` | ⭐⭐ | ★ | SIGALRM 闹钟 |
+| `pcntl_get_last_error()` | ⭐⭐⭐ | ★ | 获取 errno |
+| `pcntl_strerror($no)` | ⭐⭐⭐ | ★ | errno→错误消息 |
+
+> 共 20 个函数。pcntl 为 POSIX 专属（不支持 Windows）。
+
+### 🔵 暂缓（低频 / AOT 不可行）
+
+| 函数 | 原因 |
+|------|------|
+| `pcntl_signal/signal_dispatch/async_signals` | 依赖 PHP 回调/VM tick，AOT 不可行 |
+| `pcntl_rfork/forkx/unshare/setns/getcpu*` | 单平台专属（BSD/Solaris/Linux） |
+| `Date* OO API` (30+) | 需完整 DateTime 类 |
+| `serialize` / `unserialize` | PHP 序列化格式完整解析器 |
+| `array_intersect*` / `array_diff*` (14 个) | 使用频率极低 |
+| `array_multisort` / `natsort` / `natcasesort` | 专用场景 |
+| `usort` / `uasort` / `uksort` | 需闭包回调 |
+| `array_filter` / `array_map` / `array_reduce` | 需闭包回调 |
+| `sin/cos/tan` 等三角函数 | 直接 libc 调用，低优先级 |

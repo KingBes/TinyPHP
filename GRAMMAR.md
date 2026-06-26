@@ -22,9 +22,9 @@ statement_top:
   | #include 指令               ✅ TinyPHP 扩展
   | #flag 指令                  ✅ TinyPHP 扩展
   | #callback 指令              ✅ TinyPHP 扩展
-  | interface_decl             ⬜
-  | trait_decl                 ⬜
-  | abstract_class_decl        ⬜
+  | interface_decl             ✅
+  | trait_decl                 ✅
+  | abstract_class_decl        ✅
 ```
 
 ---
@@ -56,21 +56,21 @@ class_decl:
     modifier* 'class' IDENTIFIER extends? implements? '{' member* '}'   ✅ 部分
 
 modifier:
-    'abstract'      ⬜
+    'abstract'      ✅
   | 'final'         ✅ (仅修饰符，无运行时检查)
   | 'readonly'      ✅ (仅修饰符)
 
 extends:
-    'extends' name   ⬜
+    'extends' name   ✅
 
 implements:
-    'implements' name (',' name)*   ⬜
+    'implements' name (',' name)*   ✅
 
 member:
     property_decl         ✅
   | method_decl           ✅
   | const_decl            ✅
-  | 'use' trait_name      ⬜
+  | 'use' trait_name      ✅
   | enum_case             ✅ (enum only)
 ```
 
@@ -247,10 +247,10 @@ goto_stmt:
     IDENTIFIER ':'           ✅ (标签)
 
 try_stmt:
-    'try' '{' statement* '}' catch* finally?   ⬜
+    'try' '{' statement* '}' catch* finally?   ✅
 
 throw_stmt:
-    'throw' expr ';'   ⬜
+    'throw' expr ';'   ✅
 ```
 
 ---
@@ -413,8 +413,8 @@ DIRECTORY_SEPARATOR   ✅
 $this                 ✅
 self                  ✅
 $GLOBALS              ❌
-__CLASS__             ⬜
-__METHOD__            ⬜
+__CLASS__             ✅
+__METHOD__            ✅
 __FUNCTION__          ⬜
 __TRAIT__             ❌
 ```
@@ -477,7 +477,7 @@ phpc_memory:
 
 | 语法 | PHP 8.5 | TinyPHP | 备注 |
 |---|---|---|---|
-| `class` | ✅ | ✅ | 无 extends/implements |
+| `class` | ✅ | ✅ | — |
 | `extends` | ✅ | ✅ | COS struct 嵌套 |
 | `implements` | ✅ | ✅ | 编译期契约（interface） |
 | `interface` | ✅ | ✅ | 纯抽象类，编译期检查 |
@@ -489,7 +489,7 @@ phpc_memory:
 | `try/catch/finally` | ✅ | ✅ | COS 风格 setjmp/longjmp |
 | `throw` | ✅ | ✅ | — |
 | `yield` | ✅ | ❌ | — |
-| `instanceof` | ✅ | ⬜ | — |
+| `instanceof` | ✅ | ✅ | 遍历类链 |
 | `fn =>` | ✅ | ✅ | — |
 | `match` 多条件 | ✅ | ✅ | — |
 | `?->` nullsafe | ✅ | ✅ | — |
