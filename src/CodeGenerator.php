@@ -584,6 +584,25 @@ class CodeGenerator implements ASTVisitor
         return implode("\n", array_merge($header, $declLines, $bodyLines, $tail));
     }
 
+    /** 根据 C 返回类型生成零值 return（兼容 GCC/Clang -Wreturn-mismatch） */
+    private function zeroReturn(string $cType): string
+    {
+        return match ($cType) {
+            'void'    => 'return;',
+            't_int'   => 'return 0;',
+            't_float' => 'return 0.0;',
+            't_bool'  => 'return false;',
+            't_string'=> 'return (t_string){NULL, 0};',
+            't_array*'=> 'return NULL;',
+            't_var'   => 'return (t_var){0};',
+            't_callback' => 'return (t_callback){NULL, NULL};',
+            'void*'   => 'return NULL;',
+            default   => str_ends_with($cType, '*')
+                ? 'return NULL;'
+                : 'return 0;',
+        };
+    }
+
     public function visitMethod(MethodNode $node): string
     {
         $this->currentMethodName = $node->name;
@@ -600,7 +619,7 @@ class CodeGenerator implements ASTVisitor
         // Phase 1: header
         $header = [];
         $header[] = $this->methodImpl($node) . ' {';
-        $header[] = $this->ind('if (self == NULL) return;');
+        $header[] = $this->ind('if (self == NULL) ' . $this->zeroReturn($this->currentRetType));
 
         // Phase 2: body (侧作用: 填充 funcScopeDecls)
         $bodyLines = [];
@@ -2144,7 +2163,7 @@ class CodeGenerator implements ASTVisitor
                     default      => "{$code} = 0;",
                 };
                 if (str_starts_with($type, 'tphp_class_') || str_starts_with($type, 'tphp_enum_')) {
-                    $lines[count($lines)-1] = "tphp_rt_unregister((void*){$code}); tphp_fn_unset_obj((t_object**)&{$code});";
+                    $lines[count($lines)-1] = "tphp_rt_unregister((void*){$code}); tphp_fn_unset_obj((void**)&{$code});";
                     $vn = self::varName($arg->name);
                     $this->scopeObjects = array_values(array_filter($this->scopeObjects, fn($o) => $o !== $vn));
                 }

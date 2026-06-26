@@ -50,7 +50,9 @@ tphp main.php    # include/ + tcc/ 自动解压到同级目录
 
 ## 性能
 
-2026-06-26 实测，PHP 8.5.1 vs TinyPHP × 3 编译器 (bench_tphp, 100K loops)：
+2026-06-26 实测，PHP 8.5.1 vs TinyPHP × 3 编译器：
+
+### 数组操作 (bench_tphp, 100K loops)
 
 | 场景 | PHP 8.5 | TCC | GCC -O2 | Clang -O2 |
 |---|---|---|---|---|
@@ -60,23 +62,32 @@ tphp main.php    # include/ + tcc/ 自动解压到同级目录
 | int key 读取 ×100K | 2.1 ms | 0.30 ms (**7.1x**) | 0.12 ms ⚡ **18.0x** | 0.16 ms ⚡ **13.2x** |
 | array_pop ×100K | 2.9 ms | 1.4 ms (**2.0x**) | 0.38 ms ⚡ **7.6x** | 0.29 ms ⚡ **9.9x** |
 | in_array ×100K | 48 ms | 97 ms (0.5x) | 18 ms ⚡ **2.6x** | 24 ms ⚡ **2.0x** |
-| explode+implode ×10K | 2.9 ms | **9.8 ms** (0.3x) | **5.4 ms** (0.5x) | **5.8 ms** (0.5x) |
-| array_push ×100K | 1.8 ms | 4.4 ms (0.4x) | 3.3 ms (0.5x) | 2.9 ms (0.6x) |
+| explode+implode ×10K | 2.9 ms | 9.8 ms (0.3x) | 5.4 ms (0.5x) | 5.8 ms (0.5x) |
 
-> ⚡ **GCC/Clang -O2 下 7/10 项反超 PHP，最高 36.1x。**  
-> 🔧 explode+implode 经 O(N²)→O(N) 优化后 **2-3x 提速**（18.7→9.8ms TCC, 15.8→5.4ms GCC）。  
+### OOP 操作 (bench_oop, 500K loops)
+
+| 场景 | PHP 8.5 | TCC | GCC -O2 | Clang -O2 |
+|---|---|---|---|---|
+| new+unset Dog() ×500K | 37 ms | 49 ms (0.76x) | 28 ms ⚡ **1.32x** 🏆 | 30 ms ⚡ **1.26x** 🏆 |
+| prop read ×500K | 8.8 ms | 0.55 ms ⚡16x | ~0 🔥 | ~0 🔥 |
+| method call ×500K | 16.6 ms | 0.98 ms ⚡17x | ~0 🔥 | ~0 🔥 |
+| interface impl ×500K | 14.6 ms | 0.91 ms ⚡16x | ~0 🔥 | ~0 🔥 |
+
+> ⚡ GCC/Clang -O2 下数组 7/10 项反超 PHP。OOP 读取/调用近乎 0ns。  
+> 🏆 对象池使 new+unset 反超 PHP（28ms vs 37ms）。  
 > 用法: `tphp main.php -cc gcc` 或 `tphp main.php -cc clang`
 
 ### 核心优化
 
 | 优化 | 来源 | 效果 |
 |------|------|------|
-| **ROPE 多片段拼接** | PHP ROPE opcode | concat-4 从 14x 慢 → 6.1x 快 |
-| **implode 两遍扫描** | 自研 (O(N²)→O(N)) | explode+implode **2-3x 提速** |
-| **explode 精确容量** | 预数分隔符 | 消除全部 realloc |
-| **JSON 位图+批量写入** | PHP `json_encoder.c` | json_encode 11x→1.2x 慢 |
-| **数组池预热** | PHP zend_alloc bin | arr-create 12x→4.4x 快 |
-| **CodeGen 作用域提升** | 自研 | 消除跨块未定义变量错误 |
+| **ROPE 多片段拼接** | PHP ROPE opcode | concat-4: 14x慢→6.1x快 |
+| **implode 两遍扫描** | O(N²)→O(N) | explode+implode **2-3x提速** |
+| **explode 精确容量** | 预数分隔符 | 零 realloc |
+| **对象复用池** | LIFO 128槽 | new+unset **36-52%提速** |
+| **return 兼容性** | 零值匹配类型 | GCC/Clang 不再报错 |
+| **JSON 位图+批量写入** | PHP json_encoder.c | json_encode 接近持平 |
+| **数组池预热** | PHP zend_alloc | arr-create 12x慢→4.4x快 |
 
 详见 [BENCHMARK_RESULTS.md](BENCHMARK_RESULTS.md) 和 [ROADMAP.md](ROADMAP.md)。
 

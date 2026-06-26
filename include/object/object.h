@@ -12,6 +12,7 @@
 #include <stdint.h>
 #include <stdlib.h>
 #include <stddef.h>
+#include <string.h>
 
 // ── Object header (16 bytes packed) ───────────────────────
 //   cls:      direct pointer to class descriptor (no lookup needed)
@@ -33,11 +34,44 @@ typedef struct _t_class {
 
 // ── Object lifecycle ──────────────────────────────────────
 
+// ── Object freelist pool (LIFO, eliminates calloc/free for hot paths)
+#define OBJ_FREELIST_MAX 128
+typedef struct { void *ptr; uint32_t size; } _obj_pool_slot;
+static _obj_pool_slot _obj_freelist[OBJ_FREELIST_MAX];
+static int _obj_freelist_count = 0;
+
+/** Recycle object into pool instead of free() */
+static inline void _obj_pool_put(void *obj, uint32_t sz) {
+    if (unlikely(obj == NULL)) return;
+    if (_obj_freelist_count >= OBJ_FREELIST_MAX) { free(obj); return; }
+    _obj_freelist[_obj_freelist_count].ptr  = obj;
+    _obj_freelist[_obj_freelist_count].size = sz;
+    _obj_freelist_count++;
+}
+
+/** Try to get a recycled object of at least needSize (zeroed) */
+static inline void* _obj_pool_get(uint32_t needSize) {
+    for (int i = _obj_freelist_count - 1; i >= 0; i--) {
+        if (_obj_freelist[i].size >= needSize) {
+            void *ptr = _obj_freelist[i].ptr;
+            _obj_freelist[i] = _obj_freelist[--_obj_freelist_count];
+            memset(ptr, 0, (size_t)needSize);
+            return ptr;
+        }
+    }
+    return NULL;
+}
+
 /** Allocate raw object memory (zeroed), set class pointer and refcount=1 */
 static inline void* tp_obj_alloc(const t_class *cls) {
     if (unlikely(cls == NULL || cls->instance_size == 0)) return NULL;
-    t_object *obj = (t_object*)calloc(1, (size_t)cls->instance_size);
-    if (unlikely(obj == NULL)) return NULL;
+    uint32_t sz = cls->instance_size;
+    // Try freelist first (eliminates calloc for recycled objects)
+    t_object *obj = (t_object*)_obj_pool_get(sz);
+    if (obj == NULL) {
+        obj = (t_object*)calloc(1, (size_t)sz);
+        if (unlikely(obj == NULL)) return NULL;
+    }
     obj->cls = cls;
     obj->refcount = 1;
     return obj;
@@ -52,7 +86,7 @@ static inline void* tp_obj_retain(void *obj) {
     return obj;
 }
 
-/** Release (decref → dtor → free). Returns NULL. */
+/** Release (decref → dtor → pool). Returns NULL. */
 static inline void* tp_obj_release(void *obj) {
     if (obj == NULL) return NULL;
     t_object *o = (t_object*)obj;
@@ -63,7 +97,8 @@ static inline void* tp_obj_release(void *obj) {
         void (*dtor)(void*) = (void (*)(void*))cls->dtor;
         dtor(obj);
     }
-    free(obj);
+    // Recycle into pool instead of free()
+    _obj_pool_put(obj, cls ? cls->instance_size : 0);
     return NULL;
 }
 
