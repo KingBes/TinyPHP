@@ -97,8 +97,8 @@ type:
   | 'mixed'     ✅ → t_var
   | 'callable'  ✅ → t_callback
   | name        ✅ (类/枚举类型)
-  | '?' type    ⬜ (nullable)
-  | type '|' type   ⬜ (union types)
+  | '?' type    ❌ 不做（AOT 哲学冲突，鼓励 t_var=丢性能）
+  | type '|' type   ❌ 不做
   | '(' type (',' type)+ ')'   ⬜ (intersection types)
 ```
 
@@ -495,8 +495,8 @@ phpc_memory:
 | `?->` nullsafe | ✅ | ✅ | — |
 | 命名参数 | ✅ | ❌ | 影响性能 |
 | `...$args` 可变参数 | ✅ | ❌ | 影响性能 |
-| nullable `?type` | ✅ | ⬜ | — |
-| union `A\|B` | ✅ | ⬜ | — |
+| nullable `?type` | ✅ | ❌ | 不做 |
+| union `A\|B` | ✅ | ❌ | 不做 |
 | `__construct` 属性提升 | ✅ | ✅ | — |
 | 默认参数值 | ✅ | ⬌ | 部分支持 |
 | `declare(strict_types)` | ✅ | ⬜ | 当前跳过 |

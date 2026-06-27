@@ -718,6 +718,21 @@ class Parser
             $this->advance(); // skip :
             return new LabelStmtNode($label);
         }
+        // 数组 push: $a[] = expr;
+        if ($this->check(TokenType::IDENTIFIER) && $this->checkNext(TokenType::LBRACKET)) {
+            $save = $this->current;
+            $this->advance(); // IDENTIFIER
+            $this->advance(); // LBRACKET
+            if ($this->check(TokenType::RBRACKET)) {
+                $varName = $this->tokens[$save]->lexeme;
+                $this->advance(); // RBRACKET
+                $this->consume(TokenType::EQUALS, 'Expected =');
+                $expr = $this->parseExpr();
+                $this->consume(TokenType::SEMICOLON, 'Expected ;');
+                return new AssignArrayPushStmtNode($varName, $expr);
+            }
+            $this->current = $save; // 回退
+        }
         // 赋值: $var = expr;
         if ($this->check(TokenType::IDENTIFIER) && $this->checkNext(TokenType::EQUALS)) {
             return $this->parseAssignStmt();

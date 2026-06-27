@@ -241,9 +241,24 @@ class AssignArrayStmtNode extends StmtNode
         public readonly ExprNode $value,
     ) {}
 
+
     public function accept(ASTVisitor $visitor): string
     {
         return $visitor->visitAssignArrayStmt($this);
+    }
+}
+
+// $arr[] = value  (array push 语法糖)
+class AssignArrayPushStmtNode extends StmtNode
+{
+    public function __construct(
+        public readonly string $varName,
+        public readonly ExprNode $value,
+    ) {}
+
+    public function accept(ASTVisitor $visitor): string
+    {
+        return $visitor->visitAssignArrayPushStmt($this);
     }
 }
 
@@ -852,6 +867,7 @@ interface ASTVisitor
     public function visitAssignStmt(AssignStmtNode $node): string;
     public function visitAssignPropStmt(AssignPropStmtNode $node): string;
     public function visitAssignArrayStmt(AssignArrayStmtNode $node): string;
+    public function visitAssignArrayPushStmt(AssignArrayPushStmtNode $node): string;
     public function visitExprStmt(ExprStmtNode $node): string;
     public function visitStringLiteral(StringLiteralExpr $node): string;
     public function visitIntLiteral(IntLiteralExpr $node): string;

@@ -802,7 +802,14 @@ class CodeGenerator implements ASTVisitor
                 $code = "{$declType} {$var} = {$expr};";
             }
         } else {
-            $code = "{$var} = {$expr};";
+            // 自动释放：对象/t_string 重赋值时先释放旧值
+            $release = '';
+            if (str_starts_with($prevType, 'tphp_class_') || str_starts_with($prevType, 'tphp_enum_')) {
+                $release = "tp_obj_release((void*){$var}); ";
+            } elseif ($prevType === 't_string') {
+                $release = "tphp_rt_str_free(&{$var}); ";
+            }
+            $code = $release . "{$var} = {$expr};";
         }
 
         // 数组赋值 → 推导元素类型（支持对象/回调/嵌套数组）
@@ -1202,6 +1209,15 @@ class CodeGenerator implements ASTVisitor
             return "tphp_rt_str_free(&{$target}); {$target} = tphp_rt_str_dup({$val});";
         }
         return "{$target} = {$val};";
+    }
+
+    public function visitAssignArrayPushStmt(AssignArrayPushStmtNode $node): string
+    {
+        $var  = self::varName($node->varName);
+        $arr  = $this->wrapVar(new VariableExpr($node->varName));
+        $vCode = $node->value->accept($this);
+        $val   = $this->wrapArrayElement($node->value, $vCode);
+        return 'tphp_fn_array_push(&' . $arr . ', ' . $val . ');';
     }
 
     public function visitAssignArrayStmt(AssignArrayStmtNode $node): string
