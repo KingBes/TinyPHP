@@ -366,17 +366,6 @@ C->fold_dbl($data, $len, phpc_thunk('fold_cb', $fn));  // 按签名生成 thunk
 | `-arch <arch>` | 目标架构：`x86_64`、`aarch64`（Windows/Linux 默认 x86_64，macOS 默认 aarch64） |
 | `-h, --help` | 显示帮助 |
 
-## 测试
-
-```bash
-php tester.php                    # 全部测试
-php tester.php test/var/string.php # 单个测试
-```
-
-测试注解：`// @skip` 跳过, `// @exit N` 期望退出码, `// @with a.php,b.php` 多文件编译。
-
-CI (`tester.yml`) 在 Linux x86_64/aarch64、macOS aarch64、Windows x86_64 四个平台全量测试。
-
 ## 文档
 
 | 文件 | 说明 |
