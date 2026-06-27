@@ -159,20 +159,66 @@ static inline t_bool tphp_rt_str_ge(t_string a, t_string b)  { return tphp_rt_st
 static inline t_bool tphp_rt_str_eq(t_string a, t_string b)  { return tphp_rt_str_cmp(a, b) == 0; }
 static inline t_bool tphp_rt_str_ne(t_string a, t_string b)  { return tphp_rt_str_cmp(a, b) != 0; }
 
-// ── 小字符串池 (bump allocator, 64KB, yyjson-style) ────
+// ── 字符串池 + Arena (bump allocator, 128KB主池 + 链接溢出块) ──
 
-#define STR_POOL_SIZE 65536
+#define STR_POOL_SIZE 131072
 static char  str_pool_buf[STR_POOL_SIZE];
 static char *str_pool_cur = str_pool_buf;
 
-/** 从小字符串池分配 len+1 字节（<=512 字节用池，超限回退 malloc） */
+// Arena 溢出块链表（主池满时分配，tphp_rt_free_all 时释放）
+typedef struct _str_arena_block {
+    char  *buf;
+    char  *cur;
+    int    size;
+    struct _str_arena_block *next;
+} str_arena_block;
+static str_arena_block *str_arena_head = NULL;
+
+/** 分配一个新的 arena 块（64KB），挂在链表头部 */
+static inline str_arena_block* str_arena_new_block(int minSize) {
+    int sz = (minSize + 1 > 65536) ? (minSize + 1 + 4095) & ~4095 : 65536;
+    str_arena_block *b = (str_arena_block*)malloc(sizeof(str_arena_block));
+    if (unlikely(b == NULL)) return NULL;
+    b->buf = (char*)malloc((size_t)sz);
+    if (unlikely(b->buf == NULL)) { free(b); return NULL; }
+    b->cur  = b->buf;
+    b->size = sz;
+    b->next = str_arena_head;
+    str_arena_head = b;
+    return b;
+}
+
+/** 释放所有 arena 溢出块 */
+static inline void str_arena_free_all(void) {
+    str_arena_block *b = str_arena_head;
+    while (b) {
+        str_arena_block *next = b->next;
+        if (b->buf) free(b->buf);
+        free(b);
+        b = next;
+    }
+    str_arena_head = NULL;
+}
+
+/** 从小字符串池分配 len+1 字节（<=512 用池；池满→arena块；超512→独立malloc） */
 static inline char* str_pool_alloc(int len) {
     if (len <= 0) return NULL;
+    // 大块：直接 malloc（不走池也不走 arena）
     if (unlikely(len > 512)) return (char*)malloc((size_t)len + 1);
-    if (unlikely(str_pool_cur + len + 1 > str_pool_buf + STR_POOL_SIZE))
-        return (char*)malloc((size_t)len + 1);
-    char *p = str_pool_cur;
-    str_pool_cur += len + 1;
+    // 主池足够 → O(1) bump
+    if (likely(str_pool_cur + len + 1 <= str_pool_buf + STR_POOL_SIZE)) {
+        char *p = str_pool_cur;
+        str_pool_cur += len + 1;
+        return p;
+    }
+    // 主池满 → 尝试当前 arena 块，不够则新建块
+    str_arena_block *b = str_arena_head;
+    if (b == NULL || b->cur + len + 1 > b->buf + b->size) {
+        b = str_arena_new_block(len);
+        if (unlikely(b == NULL)) return (char*)malloc((size_t)len + 1);
+    }
+    char *p = b->cur;
+    b->cur += len + 1;
     return p;
 }
 
@@ -236,14 +282,23 @@ static inline t_string tphp_rt_str_dup(t_string s) {
     return (t_string){d, s.length};
 }
 
-/** tphp_str_free — 安全释放 t_string 的堆 data（池内指针跳过，置 NULL 防 double-free） */
+/** tphp_str_free — 安全释放 t_string 的堆 data（池/arena 内指针跳过） */
 static inline void tphp_rt_str_free(t_string* s) {
     if (unlikely(s == NULL || s->data == NULL || s->length <= 0)) return;
-    // 小字符串池内的指针不释放（bump allocator 无需逐块 free）
+    // 主池内的指针不释放
     if (s->data >= str_pool_buf && s->data < str_pool_buf + STR_POOL_SIZE) {
         s->data = NULL;
         s->length = 0;
         return;
+    }
+    // Arena 溢出块内的指针不释放（整个块在 tphp_rt_free_all 统一释放）
+    str_arena_block *b;
+    for (b = str_arena_head; b; b = b->next) {
+        if (s->data >= b->buf && s->data < b->buf + b->size) {
+            s->data = NULL;
+            s->length = 0;
+            return;
+        }
     }
     free(s->data);
     s->data = NULL;
@@ -329,6 +384,7 @@ static inline void tphp_rt_free_all(void) {
         n = next;
     }
     tphp_alloc_head = NULL;
+    str_arena_free_all();
 }
 
 // ============================================================

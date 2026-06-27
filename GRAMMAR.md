@@ -488,7 +488,7 @@ phpc_memory:
 | `enum` | ✅ | ✅ | — |
 | `try/catch/finally` | ✅ | ✅ | COS 风格 setjmp/longjmp |
 | `throw` | ✅ | ✅ | — |
-| `yield` | ✅ | ❌ | — |
+| `yield` | ✅ | ❌ | 不做 |
 | `instanceof` | ✅ | ✅ | 遍历类链 |
 | `fn =>` | ✅ | ✅ | — |
 | `match` 多条件 | ✅ | ✅ | — |

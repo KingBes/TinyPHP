@@ -954,6 +954,8 @@ static inline t_string tphp_fn_bin2hex(t_string s) {
 static inline int _is_hex(char c) {
     return (c >= '0' && c <= '9') || (c >= 'a' && c <= 'f') || (c >= 'A' && c <= 'F');
 }
+static int _hexval(char x); // 前置声明
+
 static inline t_string tphp_fn_hex2bin(t_string s) {
     if (s.data == NULL || s.length == 0) return (t_string){NULL, 0};
     if (s.length % 2 != 0) {

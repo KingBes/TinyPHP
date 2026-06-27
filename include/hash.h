@@ -113,8 +113,8 @@ static inline t_string tphp_fn_sha1(t_string s) {
 
 /* ─── CRC32 ────────────────────────────────────────────── */
 
-static inline uint32_t _crc32_tab[256];
-static inline int _crc32_tab_init = 0;
+static uint32_t _crc32_tab[256];
+static int _crc32_tab_init = 0;
 
 static inline void _crc32_make_tab() {
     for (uint32_t i = 0; i < 256; i++) {

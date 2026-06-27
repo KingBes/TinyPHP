@@ -1,16 +1,22 @@
 #pragma once
 // ============================================================
 // compat.h — 编译器兼容层
-// TCC 的 <math.h> 可能不声明部分 C89/C99 函数（链接时能找到）
-// 此头文件提供声明 + 缺失函数的 fallback 实现
-// 必须在所有使用 math.h 的头文件之前被 include
+// 确保所有编译器 (TCC/GCC/Clang) 都能正确编译
 // ============================================================
 
+#ifndef _USE_MATH_DEFINES
+#define _USE_MATH_DEFINES
+#endif
+
 #include <stdlib.h>
+#include <math.h>
 
-#ifdef __TINYC__
+#include "types.h"  // 需要 t_string 类型用于 tphp_fn_error 前置声明
 
-/* ── 声明：TCC 可能未声明的 math 函数 ── */
+// 前置声明：tphp_fn_error（定义在 runtime.h，math.h/array.h 先用到）
+static void tphp_fn_error(t_string msg, const char *php_file, int php_line);
+
+/* ── 显式声明 math 函数（各编译器/平台的 <math.h> 可能不完整）── */
 double ceil(double);
 double floor(double);
 double sqrt(double);
@@ -18,6 +24,24 @@ double pow(double, double);
 double fabs(double);
 double round(double);
 
+/* ── isnan / isinf — MinGW/GCC 16 可能不声明 ── */
+#ifndef isnan
+#ifdef _WIN32
+#define isnan(x) _isnan(x)
+#else
+int isnan(double);
+#endif
+#endif
+
+#ifndef isinf
+#ifdef _WIN32
+#define isinf(x) (!_finite(x) && !_isnan(x))
+#else
+int isinf(double);
+#endif
+#endif
+
+#ifdef __TINYC__
 /* ── round — TCC 库中无此函数，自行实现 ── */
 static inline double _tphp_round(double x) {
     double r;
@@ -25,6 +49,6 @@ static inline double _tphp_round(double x) {
     else          { r = (double)((long long)(x - 0.5)); }
     return r;
 }
+#undef round
 #define round(x) _tphp_round(x)
-
 #endif /* __TINYC__ */

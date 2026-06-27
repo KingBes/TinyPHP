@@ -7,13 +7,12 @@
 
 #include "types.h"
 #include "val.h"
-#include "compat.h"
-#include <math.h>              // 系统 math.h，runtime.h/object.h 等需要 pow/ceil/floor
-#include "runtime.h"           // tphp_fn_error 定义在此，必须在 array/math 之前
-#include "object/object.h"
-#include "array.h"
+#include "compat.h"            // math.h + 跨编译器 math 声明
+#include "object/object.h"     // tp_obj_alloc/release — runtime.h 需要
+#include "array.h"             // arr_freelist/tphp_fn_arr_* — runtime.h 需要
+#include "runtime.h"           // tphp_fn_error 定义在此
 #include "builtin.h"
-#include "math.h"              // TinyPHP math 扩展
+#include "tphp_math.h"         // TinyPHP math 扩展
 #include "conv.h"
 #include "hash.h"
 #include "object/exception.h"
