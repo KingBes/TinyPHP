@@ -156,16 +156,18 @@ throw new Exception('error');
 | 类别 | 函数 |
 |---|---|
 | 输出 | `echo`, `var_dump` |
-| 数组 | `count`, `array_push`, `array_pop`, `array_shift`, `array_unshift`, `in_array`, `array_key_exists`, `array_keys`, `array_values`, `array_merge`, `array_unique`, `array_reverse`, `array_slice`, `array_sum`, `array_product`, `array_fill`, `array_search`, `sort`, `rsort`, `shuffle`, `array_key_first`, `array_key_last`, `array_rand`, `array_is_list`, `current`, `key`, `next`, `prev`, `end`, `reset` |
-| 字符串 | `implode`, `explode`, `strlen`, `trim/ltrim/rtrim`, `substr`, `strpos`, `str_contains`, `str_replace`, `strtolower`, `strtoupper`, `sprintf`, `ord`, `chr`, `str_starts_with`, `str_ends_with`, `is_numeric` |
+| 数组 | `count`, `array_push`, `array_pop`, `array_shift`, `array_unshift`, `in_array`, `array_key_exists`, `array_keys`, `array_values`, `array_merge`, `array_unique`, `array_reverse`, `array_slice`, `array_sum`, `array_product`, `array_fill`, `array_search`, `sort`, `rsort`, `shuffle`, `array_key_first`, `array_key_last`, `array_rand`, `array_is_list`, `current`, `key`, `next`, `prev`, `end`, `reset`, `array_chunk`, `array_combine`, `array_flip`, `array_column`, `ksort`, `krsort`, `asort`, `arsort` |
+| 字符串 | `implode`, `explode`, `strlen`, `trim/ltrim/rtrim`, `substr`, `strpos`, `str_contains`, `str_replace`, `strtolower`, `strtoupper`, `sprintf`, `ord`, `chr`, `str_starts_with`, `str_ends_with`, `is_numeric`, `ucfirst`, `lcfirst`, `strrev`, `str_repeat`, `str_split`, `str_pad`, `substr_count`, `str_shuffle`, `addslashes`, `stripslashes`, `bin2hex`, `hex2bin`, `urlencode`, `urldecode`, `strtr`, `parse_url`, `parse_str` |
 | 类型 | `is_int/float/string/bool/array/null/object/callable`, `isset`, `empty`, `unset`, `gettype` |
 | 转换 | `intval`, `floatval`, `strval`, `boolval` |
 | 数学 | `abs`, `round`, `ceil`, `floor`, `sqrt`, `pow`, `pi`, `deg2rad`, `rad2deg`, `intdiv` |
 | 进制 | `bindec`, `hexdec`, `octdec`, `decbin`, `decoct`, `dechex`, `number_format` |
+| 哈希 | `md5`, `sha1`, `crc32` |
 | 通用 | `max`, `min`, `range`, `rand`, `mt_rand`, `exit/die`, `error` |
 | 时间 | `time`, `date`, `sleep`, `usleep`, `hrtime`, `microtime`, `strtotime`, `mktime`, `uniqid` |
 | JSON | `json_encode`, `json_decode` |
 | 环境 | `getenv`, `putenv` |
+| 进程 | `pcntl_fork/waitpid/wait/exec/alarm/get_last_error/strerror`（POSIX 专属） |
 
 > 详见 [FUNCTIONS.md](FUNCTIONS.md) — 每个函数与 PHP 的差异对照。
 

@@ -29,8 +29,8 @@ static inline t_float tphp_fn_rad2deg(t_float rad) {
 }
 
 // ── intdiv($a, $b) — 整数除法（零除 → error） ──────────────
-// 前向声明 error（3 参数版：msg, php_file, php_line）
-static inline void tphp_fn_error(t_string msg, const char *php_file, int php_line);
+// 前向声明 error（实现位于 runtime.h）
+void tphp_fn_error(t_string msg, const char *php_file, int php_line);
 
 static inline t_int tphp_fn_intdiv(t_int a, t_int b) {
     if (unlikely(b == 0)) {

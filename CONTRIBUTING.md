@@ -344,6 +344,8 @@ GitHub Actions 工作流 `tester.yml` 在 push/PR 时自动在 Linux x86_64、Li
 | `include/math.h` | ~55 | 扩展数学函数（pi/deg2rad/rad2deg/intdiv/pow） |
 | `include/conv.h` | ~125 | 进制转换 + number_format（TCC pow10 fallback） |
 | `include/compat.h` | ~25 | 编译器兼容层（TCC ceil/floor/sqrt/pow/round fallback） |
+| `include/hash.h` | ~100 | MD5/SHA1/CRC32 哈希（纯 C，零依赖） |
+| `include/os/pcntl.h` | ~55 | 进程控制（POSIX 实现 + Windows stub error） |
 | `include/os/times.h` | ~95 | 系统函数（跨平台） |
 | `include/os/json.h` | ~340 | JSON 编解码 |
 | `include/common.h` | ~16 | 总入口 |

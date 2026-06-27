@@ -645,7 +645,10 @@ static inline t_int tphp_fn_array_key_last(t_array* a) {
 static inline t_int tphp_fn_rand_int(t_int min, t_int max);
 
 static inline t_int tphp_fn_array_rand(t_array* a) {
-    if (a == NULL || a->length == 0) return -1;
+    if (a == NULL || a->length == 0) {
+        tphp_fn_error((t_string){"array_rand(): Argument #1 ($array) cannot be empty", 50}, "<php>", 0);
+        return -1;
+    }
     int idx = (int)tphp_fn_rand_int(0, a->length - 1);
     return (a->entries[idx].key.type == TYPE_INT) ? a->entries[idx].key.value._int : idx;
 }
@@ -699,3 +702,156 @@ static inline t_var tphp_fn_reset(t_array* a) {
     return a->entries[0].val;
 }
 
+// ── 第二梯队数组函数 ────────────────────────────────────────
+
+// array_chunk($arr, $size) — 分组切片
+static inline t_array* tphp_fn_array_chunk(t_array* a, t_int size) {
+    t_array* out = tphp_fn_arr_create(0);
+    if (out == NULL) return NULL;
+    tphp_rt_register((void*)out, 1);
+    if (size < 1) {
+        tphp_fn_error((t_string){"array_chunk(): Argument #2 ($length) must be greater than 0", 58}, "<php>", 0);
+        return out;
+    }
+    if (a == NULL || a->length == 0) return out;
+    int chunks = (a->length + (int)size - 1) / (int)size;
+    for (int c = 0; c < chunks; c++) {
+        t_array* chunk = tphp_fn_arr_create((int)size);
+        if (chunk == NULL) break;
+        tphp_rt_register((void*)chunk, 1);
+        int start = c * (int)size;
+        int end = start + (int)size;
+        if (end > a->length) end = a->length;
+        for (int i = start; i < end; i++)
+            chunk = tphp_fn_arr_push(chunk, a->entries[i].val);
+        out = tphp_fn_arr_push(out, VAR_ARRAY(chunk));
+    }
+    return out;
+}
+
+// array_combine($keys, $values) — 键值合并
+static inline t_array* tphp_fn_array_combine(t_array* keys, t_array* values) {
+    if (keys == NULL || values == NULL) return NULL;
+    if (keys->length != values->length) {
+        tphp_fn_error((t_string){"array_combine(): keys and values must be the same length", 53}, "<php>", 0);
+        return NULL;
+    }
+    t_array* out = tphp_fn_arr_create(keys->length);
+    if (out == NULL) return NULL;
+    tphp_rt_register((void*)out, 1);
+    for (int i = 0; i < keys->length; i++) {
+        t_var k = keys->entries[i].val;
+        t_var v = values->entries[i].val;
+        if (k.type == TYPE_INT)
+            out = tphp_fn_arr_set_int(out, k.value._int, v);
+        else if (k.type == TYPE_STRING)
+            out = tphp_fn_arr_set_str(out, k.value._string, v);
+    }
+    return out;
+}
+
+// array_flip($arr) — 键值互换
+static inline t_array* tphp_fn_array_flip(t_array* a) {
+    t_array* out = tphp_fn_arr_create(a ? a->length : 4);
+    if (out == NULL) return NULL;
+    tphp_rt_register((void*)out, 1);
+    if (a == NULL) return out;
+    for (int i = 0; i < a->length; i++) {
+        t_var *kv = &a->entries[i].key;
+        t_var *vv = &a->entries[i].val;
+        if (vv->type == TYPE_INT)
+            out = tphp_fn_arr_set_int(out, vv->value._int, *kv);
+        else if (vv->type == TYPE_STRING)
+            out = tphp_fn_arr_set_str(out, vv->value._string, *kv);
+    }
+    return out;
+}
+
+// array_column($arr, $col) — 提取列
+// col 为 string 键名或 int 列索引（不支持 null 第3参数，暂支持双参）
+static inline t_array* tphp_fn_array_column_str(t_array* a, t_string col) {
+    t_array* out = tphp_fn_arr_create(a ? a->length : 4);
+    if (out == NULL) return NULL;
+    tphp_rt_register((void*)out, 1);
+    if (a == NULL) return out;
+    for (int i = 0; i < a->length; i++) {
+        t_var *v = &a->entries[i].val;
+        if (v->type == TYPE_ARRAY && v->value._array != NULL) {
+            t_array *row = v->value._array;
+            for (int j = 0; j < row->length; j++) {
+                if (row->entries[j].key.type == TYPE_STRING &&
+                    tphp_rt_str_eq(row->entries[j].key.value._string, col)) {
+                    out = tphp_fn_arr_push(out, row->entries[j].val);
+                    break;
+                }
+            }
+        } else if (v->type == TYPE_OBJECT) {
+            // 对象暂不支持 > 返回 null 占位
+            out = tphp_fn_arr_push(out, (t_var){TYPE_NULL, {0}});
+        }
+    }
+    return out;
+}
+
+
+// ── ksort/krsort/asort/arsort (qsort pointer sort) ──────
+static int _cmp_val(const void *a, const void *b) {
+    t_int va = (*(t_arr_entry**)a)->val.value._int;
+    t_int vb = (*(t_arr_entry**)b)->val.value._int;
+    return (va > vb) - (va < vb);
+}
+static int _cmp_key(const void *a, const void *b) {
+    t_int va = (*(t_arr_entry**)a)->key.value._int;
+    t_int vb = (*(t_arr_entry**)b)->key.value._int;
+    return (va > vb) - (va < vb);
+}
+static int _cmp_key_r(const void *a, const void *b) {
+    t_int va = (*(t_arr_entry**)a)->key.value._int;
+    t_int vb = (*(t_arr_entry**)b)->key.value._int;
+    return (vb > va) - (vb < va);
+}
+static inline void tphp_fn_asort(t_array* a) {
+    if (a == NULL || a->length < 2) return;
+    t_arr_entry **ptrs = (t_arr_entry**)malloc((size_t)a->length * sizeof(t_arr_entry*));
+    if (!ptrs) return;
+    for (int i = 0; i < a->length; i++) ptrs[i] = &a->entries[i];
+    qsort(ptrs, (size_t)a->length, sizeof(t_arr_entry*), _cmp_val);
+    t_arr_entry *tmp = (t_arr_entry*)malloc((size_t)a->length * sizeof(t_arr_entry));
+    if (!tmp) { free(ptrs); return; }
+    for (int i = 0; i < a->length; i++) tmp[i] = *ptrs[i];
+    for (int i = 0; i < a->length; i++) a->entries[i] = tmp[i];
+    free(tmp); free(ptrs);
+}
+static inline void tphp_fn_arsort(t_array* a) {
+    if (a == NULL || a->length < 2) return;
+    tphp_fn_asort(a);
+    for (int i = 0, j = a->length - 1; i < j; i++, j--) {
+        t_arr_entry t = a->entries[i]; a->entries[i] = a->entries[j]; a->entries[j] = t;
+    }
+}
+static inline void tphp_fn_ksort(t_array* a) {
+    if (a == NULL || a->length < 2) return;
+    for (int i = 0; i < a->length; i++) if (a->entries[i].key.type != TYPE_INT) return;
+    t_arr_entry **ptrs = (t_arr_entry**)malloc((size_t)a->length * sizeof(t_arr_entry*));
+    if (!ptrs) return;
+    for (int i = 0; i < a->length; i++) ptrs[i] = &a->entries[i];
+    qsort(ptrs, (size_t)a->length, sizeof(t_arr_entry*), _cmp_key);
+    t_arr_entry *tmp = (t_arr_entry*)malloc((size_t)a->length * sizeof(t_arr_entry));
+    if (!tmp) { free(ptrs); return; }
+    for (int i = 0; i < a->length; i++) tmp[i] = *ptrs[i];
+    for (int i = 0; i < a->length; i++) a->entries[i] = tmp[i];
+    free(tmp); free(ptrs);
+}
+static inline void tphp_fn_krsort(t_array* a) {
+    if (a == NULL || a->length < 2) return;
+    for (int i = 0; i < a->length; i++) if (a->entries[i].key.type != TYPE_INT) return;
+    t_arr_entry **ptrs = (t_arr_entry**)malloc((size_t)a->length * sizeof(t_arr_entry*));
+    if (!ptrs) return;
+    for (int i = 0; i < a->length; i++) ptrs[i] = &a->entries[i];
+    qsort(ptrs, (size_t)a->length, sizeof(t_arr_entry*), _cmp_key_r);
+    t_arr_entry *tmp = (t_arr_entry*)malloc((size_t)a->length * sizeof(t_arr_entry));
+    if (!tmp) { free(ptrs); return; }
+    for (int i = 0; i < a->length; i++) tmp[i] = *ptrs[i];
+    for (int i = 0; i < a->length; i++) a->entries[i] = tmp[i];
+    free(tmp); free(ptrs);
+}

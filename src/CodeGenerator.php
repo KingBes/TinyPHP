@@ -1105,6 +1105,34 @@ class CodeGenerator implements ASTVisitor
             if ($expr->name === 'strtotime')       return 't_int';
             if ($expr->name === 'mktime')          return 't_int';
             if ($expr->name === 'uniqid')          return 't_string';
+            // ── 第二梯队 ──
+            if ($expr->name === 'ucfirst' || $expr->name === 'lcfirst') return 't_string';
+            if ($expr->name === 'strrev' || $expr->name === 'str_repeat') return 't_string';
+            if ($expr->name === 'str_split')      return 't_array*';
+            if ($expr->name === 'str_pad')        return 't_string';
+            if ($expr->name === 'substr_count')   return 't_int';
+            if ($expr->name === 'str_shuffle')    return 't_string';
+            if ($expr->name === 'addslashes' || $expr->name === 'stripslashes') return 't_string';
+            if ($expr->name === 'bin2hex' || $expr->name === 'hex2bin') return 't_string';
+            if ($expr->name === 'urlencode' || $expr->name === 'urldecode') return 't_string';
+            if ($expr->name === 'array_chunk')    return 't_array*';
+            if ($expr->name === 'array_combine')  return 't_array*';
+            if ($expr->name === 'array_flip')     return 't_array*';
+            if ($expr->name === 'array_column')   return 't_array*';
+            // ── 第三梯队 ──
+            if ($expr->name === 'md5' || $expr->name === 'sha1') return 't_string';
+            if ($expr->name === 'crc32')          return 't_int';
+            if ($expr->name === 'parse_url' || $expr->name === 'parse_str') return 't_array*';
+            if ($expr->name === 'strtr')          return 't_string';
+            if ($expr->name === 'asort' || $expr->name === 'arsort' || $expr->name === 'ksort' || $expr->name === 'krsort') return 'void';
+            // ── pcntl ──
+            if ($expr->name === 'pcntl_fork')     return 't_int';
+            if ($expr->name === 'pcntl_waitpid')  return 't_int';
+            if ($expr->name === 'pcntl_wait')     return 't_int';
+            if ($expr->name === 'pcntl_exec')     return 'void';
+            if ($expr->name === 'pcntl_alarm')    return 't_int';
+            if ($expr->name === 'pcntl_get_last_error') return 't_int';
+            if ($expr->name === 'pcntl_strerror') return 't_string';
         }
         // 闭包调用 → 查 closureSigs
         if ($expr->name === '__invoke' && $expr->callee instanceof VariableExpr) {
@@ -2272,6 +2300,69 @@ class CodeGenerator implements ASTVisitor
                 $tb = ($this->inferType($node->args[1]) === 't_int') ? "VAR_INT({$a[1]})" : "VAR_FLOAT((t_float)({$a[1]}))";
                 return "tphp_fn_pow({$ta}, {$tb})";
             }
+        }
+
+        // ── 第二梯队 ────────────────────────────────────────
+        if ($node->callee === null) {
+            $n2 = $node->name;
+            $a2 = array_map(fn($a) => $a->accept($this), $node->args);
+            $c2 = count($a2) > 0 ? $a2[0] : '';
+            // 单参字符串
+            if (in_array($n2, ['ucfirst','lcfirst','strrev','addslashes','stripslashes','bin2hex','hex2bin','urlencode','urldecode','str_shuffle']))
+                return "tphp_fn_{$n2}({$c2})";
+            // 双参
+            if ($n2 === 'str_repeat') return "tphp_fn_str_repeat({$a2[0]}, {$a2[1]})";
+            if ($n2 === 'substr_count') return "tphp_fn_substr_count({$a2[0]}, {$a2[1]})";
+            // str_split($s, $chunk=1)
+            if ($n2 === 'str_split') {
+                $ck = count($a2) >= 2 ? $a2[1] : '1';
+                return "tphp_fn_str_split({$c2}, {$ck})";
+            }
+            // str_pad($s, $len, $pad, $type)
+            if ($n2 === 'str_pad') {
+                $pad = count($a2) >= 3 ? $a2[2] : '(t_string){NULL,0}';
+                $ty  = count($a2) >= 4 ? $a2[3] : '0';
+                return "tphp_fn_str_pad({$c2}, {$a2[1]}, {$pad}, {$ty})";
+            }
+            // 数组
+            if ($n2 === 'array_chunk') return "tphp_fn_array_chunk({$a2[0]}, {$a2[1]})";
+            if ($n2 === 'array_combine') return "tphp_fn_array_combine({$a2[0]}, {$a2[1]})";
+            if ($n2 === 'array_flip') return "tphp_fn_array_flip({$c2})";
+            if ($n2 === 'array_column') return "tphp_fn_array_column_str({$a2[0]}, {$a2[1]})";
+        }
+
+        // ── 第三梯队 ────────────────────────────────────────
+        if ($node->callee === null) {
+            $n3 = $node->name;
+            $a3 = array_map(fn($a) => $a->accept($this), $node->args);
+            $c3 = count($a3) > 0 ? $a3[0] : '';
+            if ($n3 === 'md5')             return "tphp_fn_md5({$c3})";
+            if ($n3 === 'sha1')            return "tphp_fn_sha1({$c3})";
+            if ($n3 === 'crc32')           return "tphp_fn_crc32_str({$c3})";
+            if ($n3 === 'parse_url')       return "tphp_fn_parse_url({$c3})";
+            if ($n3 === 'parse_str')       return "tphp_fn_parse_str({$c3})";
+            if ($n3 === 'strtr') {
+                if (count($a3) >= 3) return "tphp_fn_strtr2({$a3[0]}, {$a3[1]}, {$a3[2]})";
+                return $c3;
+            }
+            if ($n3 === 'asort')           return "tphp_fn_asort({$c3})";
+            if ($n3 === 'arsort')          return "tphp_fn_arsort({$c3})";
+            if ($n3 === 'ksort')           return "tphp_fn_ksort({$c3})";
+            if ($n3 === 'krsort')          return "tphp_fn_krsort({$c3})";
+        }
+
+        // ── pcntl (POSIX, Windows→error) ──────────────────
+        if ($node->callee === null) {
+            $n4 = $node->name;
+            $a4 = array_map(fn($a) => $a->accept($this), $node->args);
+            $c4 = count($a4) > 0 ? $a4[0] : '';
+            if ($n4 === 'pcntl_fork')      return "pcntl_fork()";
+            if ($n4 === 'pcntl_waitpid')   return "pcntl_waitpid({$a4[0]}, &{$a4[1]}, " . ($a4[2] ?? '0') . ")";
+            if ($n4 === 'pcntl_wait')      return "pcntl_wait(&{$a4[0]})";
+            if ($n4 === 'pcntl_exec')      return "pcntl_exec({$c4})";
+            if ($n4 === 'pcntl_alarm')     return "pcntl_alarm({$c4})";
+            if ($n4 === 'pcntl_get_last_error') return "pcntl_get_last_error()";
+            if ($n4 === 'pcntl_strerror')  return "pcntl_strerror({$c4})";
         }
 
         // 闭包调用: $h() → ((t_int(*)(...))h.func)(args)

@@ -757,6 +757,395 @@ static inline void tphp_fn_putenv(t_string key) {
     putenv(_buf);
 }
 
+// ── 第二梯队字符串函数 ──────────────────────────────────────
+
+// ucfirst($s) — 首字符大写，其余不变
+static inline t_string tphp_fn_ucfirst(t_string s) {
+    if (s.data == NULL || s.length == 0) return s;
+    if (s.data[0] < 'a' || s.data[0] > 'z') return s; // 已是零分配
+    char *d = str_pool_alloc(s.length);
+    if (d == NULL) return s;
+    d[0] = (char)(s.data[0] - 32);
+    if (s.length > 1) memcpy(d + 1, s.data + 1, (size_t)(s.length - 1));
+    d[s.length] = '\0';
+    return (t_string){d, s.length};
+}
+
+// lcfirst($s) — 首字符小写，其余不变
+static inline t_string tphp_fn_lcfirst(t_string s) {
+    if (s.data == NULL || s.length == 0) return s;
+    if (s.data[0] < 'A' || s.data[0] > 'Z') return s;
+    char *d = str_pool_alloc(s.length);
+    if (d == NULL) return s;
+    d[0] = (char)(s.data[0] + 32);
+    if (s.length > 1) memcpy(d + 1, s.data + 1, (size_t)(s.length - 1));
+    d[s.length] = '\0';
+    return (t_string){d, s.length};
+}
+
+// strrev($s) — 反转字符串
+static inline t_string tphp_fn_strrev(t_string s) {
+    if (s.data == NULL || s.length <= 0) return s;
+    char *d = str_pool_alloc(s.length);
+    if (d == NULL) return s;
+    for (int i = 0; i < s.length; i++) d[i] = s.data[s.length - 1 - i];
+    d[s.length] = '\0';
+    return (t_string){d, s.length};
+}
+
+// str_repeat($s, $n) — 重复字符串
+static inline t_string tphp_fn_str_repeat(t_string s, t_int n) {
+    if (s.data == NULL || s.length <= 0) return (t_string){NULL, 0};
+    if (n < 0) {
+        tphp_fn_error((t_string){"str_repeat(): Argument #2 ($times) must be greater than or equal to 0", 71}, "<php>", 0);
+        return (t_string){NULL, 0};
+    }
+    if (n == 0) return (t_string){NULL, 0};
+    int total = s.length * (int)n;
+    if (total <= 0 || total > 0x3FFFFF) return (t_string){NULL, 0};
+    char *d = str_pool_alloc(total);
+    if (d == NULL) return (t_string){NULL, 0};
+    for (int i = 0; i < (int)n; i++)
+        memcpy(d + i * s.length, s.data, (size_t)s.length);
+    d[total] = '\0';
+    return (t_string){d, total};
+}
+
+// str_split($s, $chunk?) — 分割字符串为数组，默认 chunk=1
+static inline t_array* tphp_fn_str_split(t_string s, t_int chunk) {
+    if (chunk < 1) {
+        tphp_fn_error((t_string){"str_split(): Argument #2 ($length) must be greater than 0", 56}, "<php>", 0);
+        return NULL;
+    }
+    t_array* out = tphp_fn_arr_create(0);
+    if (out == NULL) return NULL;
+    tphp_rt_register((void*)out, 1);
+    if (s.data == NULL || s.length <= 0) return out;
+    int pieces = (s.length + (int)chunk - 1) / (int)chunk;
+    for (int i = 0; i < pieces; i++) {
+        int start = i * (int)chunk;
+        int len = (int)chunk;
+        if (start + len > s.length) len = s.length - start;
+        char *p = str_pool_alloc(len);
+        if (p == NULL) break;
+        memcpy(p, s.data + start, (size_t)len);
+        p[len] = '\0';
+        out = tphp_fn_arr_push(out, VAR_STRING(((t_string){p, len})));
+    }
+    return out;
+}
+
+// str_pad($s, $len, $pad?, $type?) — 填充字符串
+// type: 0=RIGHT(默认) / 1=LEFT / 2=BOTH
+static inline t_string tphp_fn_str_pad(t_string s, t_int len, t_string pad, t_int type) {
+    if (s.data == NULL && pad.data == NULL) return (t_string){NULL, 0};
+    int slen = (s.data != NULL) ? s.length : 0;
+    int plen = (pad.data != NULL && pad.length > 0) ? pad.length : 1;
+    if (len <= slen) return s; // 零分配返回原串
+    char *d = str_pool_alloc(len);
+    if (d == NULL) return s;
+    int gap = len - slen;
+    if (type == 1) { // LEFT
+        for (int i = 0; i < gap; i++) d[i] = (pad.data != NULL) ? pad.data[i % plen] : ' ';
+        if (slen > 0) memcpy(d + gap, s.data, (size_t)slen);
+    } else if (type == 2) { // BOTH
+        int left = gap / 2;
+        for (int i = 0; i < left; i++) d[i] = (pad.data != NULL) ? pad.data[i % plen] : ' ';
+        if (slen > 0) memcpy(d + left, s.data, (size_t)slen);
+        int right = gap - left;
+        for (int i = 0; i < right; i++) d[left + slen + i] = (pad.data != NULL) ? pad.data[(left + slen + i) % plen] : ' ';
+    } else { // RIGHT (default)
+        if (slen > 0) memcpy(d, s.data, (size_t)slen);
+        for (int i = 0; i < gap; i++) d[slen + i] = (pad.data != NULL) ? pad.data[i % plen] : ' ';
+    }
+    d[len] = '\0';
+    return (t_string){d, len};
+}
+
+// substr_count($h, $n) — 统计子串出现次数
+static inline t_int tphp_fn_substr_count(t_string haystack, t_string needle) {
+    if (haystack.data == NULL || needle.data == NULL) return 0;
+    if (needle.length == 0 || needle.length > haystack.length) return 0;
+    t_int count = 0;
+    for (int i = 0; i <= haystack.length - needle.length; i++) {
+        if (memcmp(haystack.data + i, needle.data, (size_t)needle.length) == 0) {
+            count++;
+            i += needle.length - 1;
+        }
+    }
+    return count;
+}
+
+// str_shuffle($s) — 随机打乱字符串
+static inline t_int tphp_fn_rand_int(t_int min, t_int max);
+
+static inline t_string tphp_fn_str_shuffle(t_string s) {
+    if (s.data == NULL || s.length <= 0) return s;
+    char *d = str_pool_alloc(s.length);
+    if (d == NULL) return s;
+    memcpy(d, s.data, (size_t)s.length);
+    // Fisher-Yates
+    for (int i = s.length - 1; i > 0; i--) {
+        int j = (int)tphp_fn_rand_int(0, i);
+        if (j != i) { char t = d[i]; d[i] = d[j]; d[j] = t; }
+    }
+    d[s.length] = '\0';
+    return (t_string){d, s.length};
+}
+
+// addslashes($s) — 转义 ' " \ \0
+static inline t_string tphp_fn_addslashes(t_string s) {
+    if (s.data == NULL || s.length == 0) return s;
+    // Pass 1: 数需要转义的字符
+    int extra = 0;
+    for (int i = 0; i < s.length; i++) {
+        char c = s.data[i];
+        if (c == '\'' || c == '"' || c == '\\' || c == '\0') extra++;
+    }
+    if (extra == 0) return s; // 零分配
+    int newlen = s.length + extra;
+    char *d = str_pool_alloc(newlen);
+    if (d == NULL) return s;
+    int pos = 0;
+    for (int i = 0; i < s.length; i++) {
+        char c = s.data[i];
+        if (c == '\'' || c == '"' || c == '\\') d[pos++] = '\\';
+        d[pos++] = c;
+    }
+    d[newlen] = '\0';
+    return (t_string){d, newlen};
+}
+
+// stripslashes($s) — 反转义
+static inline t_string tphp_fn_stripslashes(t_string s) {
+    if (s.data == NULL || s.length == 0) return s;
+    // Pass 1: 数实际上需要的字符数
+    int newlen = 0;
+    for (int i = 0; i < s.length; i++) {
+        if (s.data[i] == '\\' && i + 1 < s.length) { i++; } // 跳转义符
+        newlen++;
+    }
+    if (newlen == s.length) return s; // 零分配
+    char *d = str_pool_alloc(newlen);
+    if (d == NULL) return s;
+    int pos = 0;
+    for (int i = 0; i < s.length; i++) {
+        if (s.data[i] == '\\' && i + 1 < s.length) { i++; } // 跳过 \\
+        d[pos++] = s.data[i];
+    }
+    d[newlen] = '\0';
+    return (t_string){d, newlen};
+}
+
+// bin2hex($s) / hex2bin($s) — 二进制 ↔ 十六进制
+static inline t_string tphp_fn_bin2hex(t_string s) {
+    if (s.data == NULL || s.length == 0) return (t_string){NULL, 0};
+    static const char hexc[] = "0123456789abcdef";
+    char *d = str_pool_alloc(s.length * 2);
+    if (d == NULL) return (t_string){NULL, 0};
+    for (int i = 0; i < s.length; i++) {
+        d[i*2]   = hexc[(unsigned char)s.data[i] >> 4];
+        d[i*2+1] = hexc[(unsigned char)s.data[i] & 0xF];
+    }
+    d[s.length*2] = '\0';
+    return (t_string){d, s.length * 2};
+}
+
+static inline int _is_hex(char c) {
+    return (c >= '0' && c <= '9') || (c >= 'a' && c <= 'f') || (c >= 'A' && c <= 'F');
+}
+static inline t_string tphp_fn_hex2bin(t_string s) {
+    if (s.data == NULL || s.length == 0) return (t_string){NULL, 0};
+    if (s.length % 2 != 0) {
+        tphp_fn_error((t_string){"hex2bin(): Hexadecimal input string must have an even length", 58}, "<php>", 0);
+        return (t_string){NULL, 0};
+    }
+    // validate characters
+    for (int i = 0; i < s.length; i++) {
+        if (!_is_hex(s.data[i])) {
+            tphp_fn_error((t_string){"hex2bin(): Input string must be hexadecimal string", 50}, "<php>", 0);
+            return (t_string){NULL, 0};
+        }
+    }
+    int outlen = s.length / 2;
+    char *d = str_pool_alloc(outlen);
+    if (d == NULL) return (t_string){NULL, 0};
+    for (int i = 0; i < outlen; i++) {
+        int hi = _hexval(s.data[i*2]), lo = _hexval(s.data[i*2+1]);
+        d[i] = (char)((hi << 4) | lo);
+    }
+    d[outlen] = '\0';
+    return (t_string){d, outlen};
+}
+
+// urlencode($s) / urldecode($s)
+static inline int _is_url_safe(char c) {
+    return (c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') ||
+           (c >= '0' && c <= '9') || c == '-' || c == '_' || c == '.' || c == '~';
+}
+
+static inline t_string tphp_fn_urlencode(t_string s) {
+    if (s.data == NULL || s.length == 0) return s;
+    // Pass 1: 计算需要%编码的字符
+    int extra = 0;
+    for (int i = 0; i < s.length; i++) {
+        if (!_is_url_safe(s.data[i])) extra += 2;
+    }
+    if (extra == 0) return s; // 零分配
+    char *d = str_pool_alloc(s.length + extra);
+    if (d == NULL) return s;
+    static const char hx[] = "0123456789ABCDEF";
+    int pos = 0;
+    for (int i = 0; i < s.length; i++) {
+        unsigned char c = (unsigned char)s.data[i];
+        if (_is_url_safe((char)c)) { d[pos++] = (char)c; }
+        else { d[pos++] = '%'; d[pos++] = hx[c >> 4]; d[pos++] = hx[c & 0xF]; }
+    }
+    d[pos] = '\0';
+    return (t_string){d, pos};
+}
+
+static inline int _hexval(char x) {
+    if (x >= '0' && x <= '9') return x - '0';
+    if (x >= 'A' && x <= 'F') return x - 'A' + 10;
+    if (x >= 'a' && x <= 'f') return x - 'a' + 10;
+    return 0;
+}
+
+static inline t_string tphp_fn_urldecode(t_string s) {
+    if (s.data == NULL || s.length == 0) return s;
+    // count transformations
+    int extra = 0;
+    for (int i = 0; i < s.length; i++) {
+        if (s.data[i] == '%' && i + 2 < s.length) { extra++; i += 2; }
+        else if (s.data[i] == '+') extra++;
+    }
+    if (extra == 0) return s; // zero-alloc
+    char *d = str_pool_alloc(s.length);
+    if (d == NULL) return s;
+    int pos = 0;
+    for (int i = 0; i < s.length; i++) {
+        if (s.data[i] == '%' && i + 2 < s.length) {
+            int hi = _hexval(s.data[i+1]), lo = _hexval(s.data[i+2]);
+            d[pos++] = (char)((hi << 4) | lo);
+            i += 2;
+        } else if (s.data[i] == '+') {
+            d[pos++] = ' ';
+        } else {
+            d[pos++] = s.data[i];
+        }
+    }
+    d[pos] = '\0';
+    return (t_string){d, pos};
+}
+
+// ── 第三梯队 ────────────────────────────────────────────────
+
+// parse_str($s) — 解析 query string → 数组 (写入全局作用域风格的简单版)
+// 仅返回 key=val 对构成的数组。不支持嵌套键 (a[b]=c)。
+static inline t_array* tphp_fn_parse_str(t_string s) {
+    t_array *out = tphp_fn_arr_create(8);
+    if (out == NULL) return NULL;
+    tphp_rt_register((void*)out, 1);
+    if (s.data == NULL || s.length == 0) return out;
+    int start = 0;
+    for (int i = 0; i <= s.length; i++) {
+        if (i == s.length || s.data[i] == '&') {
+            int seglen = i - start;
+            if (seglen > 0) {
+                char seg[256]; int sl = seglen < 255 ? seglen : 255;
+                memcpy(seg, s.data + start, (size_t)sl); seg[sl] = '\0';
+                // 解码 %XX
+                char dk[256]; int dp = 0;
+                for (int j = 0; j < sl; j++) {
+                    if (seg[j] == '%' && j+2 < sl) { int hi=_hexval(seg[j+1]),lo=_hexval(seg[j+2]); seg[j]=(char)((hi<<4)|lo); memmove(seg+j+1,seg+j+3,(size_t)(sl-j-2)); sl-=2; }
+                    if (seg[j] == '+') seg[j] = ' ';
+                }
+                // 找 =
+                int eq = -1;
+                for (int j = 0; j < sl; j++) if (seg[j] == '=') { eq = j; break; }
+                t_string key, val;
+                if (eq >= 0) { key = (t_string){seg, eq}; val = (t_string){seg+eq+1, sl-eq-1}; }
+                else { key = (t_string){seg, sl}; val = (t_string){NULL, 0}; }
+                out = tphp_fn_arr_set_str(out, key, VAR_STRING(val));
+            }
+            start = i + 1;
+        }
+    }
+    return out;
+}
+
+// parse_url($u) — 解析 URL → 关联数组 (scheme,host,port,path,query)
+static inline t_array* tphp_fn_parse_url(t_string u) {
+    t_array *out = tphp_fn_arr_create(8);
+    if (out == NULL) return NULL;
+    tphp_rt_register((void*)out, 1);
+    if (u.data == NULL || u.length == 0) return out;
+
+    int pos = 0, len = u.length;
+
+    // scheme://
+    int sch = -1;
+    for (int i = 0; i < len-2; i++) { if (u.data[i]==':' && u.data[i+1]=='/' && u.data[i+2]=='/') { sch=i; break; } }
+    if (sch > 0) {
+        t_string _sc = {u.data, sch};
+        out = tphp_fn_arr_set_str(out, (t_string){"scheme",6}, VAR_STRING(_sc));
+        pos = sch + 3;
+    }
+
+    // host[:port][/path][?query]
+    int host_end = -1, port_n = -1, path_s = -1, q_s = -1;
+    for (int i = pos; i < len; i++) {
+        if (u.data[i] == ':') { if (port_n < 0) { if (host_end < 0) host_end = i; port_n = i; } }
+        else if (u.data[i] == '/') { if (path_s < 0) { if (host_end < 0) host_end = i; path_s = i; } }
+        else if (u.data[i] == '?') { if (q_s < 0) { if (host_end < 0) host_end = i; if (path_s < 0) path_s = i; q_s = i; } }
+    }
+    if (host_end < 0) host_end = len;
+    if (host_end > pos) {
+        t_string _h = {u.data+pos, host_end-pos};
+        out = tphp_fn_arr_set_str(out, (t_string){"host",4}, VAR_STRING(_h));
+    }
+
+    // port: from host_end+1 to next / or ?
+    if (port_n >= 0) {
+        int pe = (path_s >= 0) ? path_s : ((q_s >= 0) ? q_s : len);
+        if (pe > port_n + 1) {
+            t_string ps = {u.data+port_n+1, pe-port_n-1};
+            out = tphp_fn_arr_set_str(out, (t_string){"port",4}, VAR_STRING(ps));
+        }
+    }
+
+    if (path_s >= 0 && path_s < len) {
+        int pe = (q_s >= 0 && q_s < len) ? q_s : len;
+        if (pe > path_s) {
+            t_string _pa = {u.data+path_s, pe-path_s};
+            out = tphp_fn_arr_set_str(out, (t_string){"path",4}, VAR_STRING(_pa));
+        }
+    }
+
+    if (q_s >= 0 && q_s < len-1) {
+        t_string _q = {u.data+q_s+1, len-q_s-1};
+        out = tphp_fn_arr_set_str(out, (t_string){"query",5}, VAR_STRING(_q));
+    }
+
+    return out;
+}
+
+// strtr($s, $from, $to?) — 字符/字符串翻译
+static inline t_string tphp_fn_strtr2(t_string s, t_string from, t_string to) {
+    if (s.data == NULL || from.data == NULL) return s;
+    // 预建翻译表 (仅 ASCII 0-127)
+    char map[128]; for (int i = 0; i < 128; i++) map[i] = (char)i;
+    int flen = from.length < to.length ? from.length : to.length;
+    for (int i = 0; i < flen; i++) map[(unsigned char)from.data[i]] = to.data[i];
+
+    char *d = str_pool_alloc(s.length);
+    if (d == NULL) return s;
+    for (int i = 0; i < s.length; i++) d[i] = (unsigned char)s.data[i] < 128 ? map[(unsigned char)s.data[i]] : s.data[i];
+    d[s.length] = '\0';
+    return (t_string){d, s.length};
+}
+
 // ── 断言 ────────────────────────────────────────────────────
 static inline void tphp_fn_assert_true(t_bool cond) {
     if (unlikely(!cond)) {

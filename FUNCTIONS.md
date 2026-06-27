@@ -11,21 +11,23 @@
 | 输出/调试 | 4 | [↓](#输出--调试) |
 | 类型检测 | 12 | [↓](#类型检测) |
 | 类型转换 | 10 | [↓](#类型转换) |
-| 数组 | 36 | [↓](#数组) |
-| 字符串 | 21 | [↓](#字符串) |
+| 数组 | 44 | [↓](#数组) |
+| 字符串 | 38 | [↓](#字符串) |
 | 数学 | 13 | [↓](#数学) |
 | 进制转换 | 7 | [↓](#进制转换) |
+| 哈希 | 3 | [↓](#哈希) |
 | 文件 I/O | 2 | [↓](#文件-io) |
 | 时间 | 9 | [↓](#时间) |
 | JSON | 2 | [↓](#json) |
 | 随机数 | 2 | [↓](#随机数) |
 | 环境/类型 | 3 | [↓](#环境--类型) |
+| 进程控制 | 7 | [↓](#进程控制-pcntl) |
 | 异常 | 4 | [↓](#异常) |
 | OOP 语法 | 10 | [↓](#oop-语法) |
 | C 互操作 | 24 | [↓](#c-互操作-phpc) |
 | 断言 | 5 | [↓](#断言测试框架用) |
-| **小计** | **130** | |
-| **待实现** | **39** | [↓](#待实现函数) |
+| **合计** | **166** | |
+| | | [↓](#待实现--暂缓) |
 
 ---
 
@@ -103,6 +105,12 @@
 | `key($a)` | `entries[cursor].key` | O(1) | — |
 | `next($a)` / `prev($a)` | `cursor++` / `cursor--` | O(1) | 越界返回 null |
 | `end($a)` / `reset($a)` | `cursor=len-1` / `cursor=0` | O(1) | — |
+| `array_chunk($a, $size)` | 按 size 切片为子数组 | O(n) | — |
+| `array_combine($k, $v)` | keys + values → 新数组 | O(n) | 长度不等→error |
+| `array_flip($a)` | key↔value 互换 | O(n) | 重复值覆盖 |
+| `array_column($a, $col)` | 提取指定 key 的列 | O(n×m) | 仅支持 string 列名 |
+| `ksort($a)` / `krsort($a)` | qsort 指针排序，按键 | O(n log n) | 仅 int key |
+| `asort($a)` / `arsort($a)` | qsort 指针排序，按值保键 | O(n log n) | 仅 int val |
 
 ---
 
@@ -129,6 +137,23 @@
 | `str_starts_with($h,$n)` | 单次 `memcmp` 前缀 | O(len(n)) | — |
 | `str_ends_with($h,$n)` | 单次 `memcmp` 后缀 | O(len(n)) | — |
 | `is_numeric($s)` | null-terminated 副本 + `strtoll/strtod` 扫描 | O(n) | — |
+| `ucfirst($s)` | 首字符 toupper → 无变化时零分配 | O(1) | 仅 ASCII |
+| `lcfirst($s)` | 首字符 tolower → 无变化时零分配 | O(1) | 仅 ASCII |
+| `strrev($s)` | 倒序复制到新字符串 | O(n) | — |
+| `str_repeat($s, $n)` | 一次分配 + 循环 memcpy | O(len×n) | 上限 4MB |
+| `str_split($s, $n?)` | 逐段切片 → 数组 | O(n) | 默认 chunk=1 |
+| `str_pad($s, $len, $pad?, $type?)` | 计算填充 + memcpy | O(len) | type: 0=RIGHT 1=LEFT 2=BOTH |
+| `substr_count($h, $n)` | 线性遍历 memcmp 计数 | O(n) | 不重叠统计 |
+| `str_shuffle($s)` | Fisher-Yates 洗牌 | O(n) | — |
+| `addslashes($s)` | 两遍扫描：数转义 → 一次分配 + memcpy | O(n) | 无转义时零分配 |
+| `stripslashes($s)` | 两遍扫描：解析转义 | O(n) | 无转义时零分配 |
+| `bin2hex($s)` | 查表 `0-9a-f` → 双倍输出 | O(n) | — |
+| `hex2bin($s)` | 每 2 字符解码为 1 字节 | O(n) | 奇数长度忽略 |
+| `urlencode($s)` | 非安全字符 → `%XX` | O(n) | 全安全时零分配 |
+| `urldecode($s)` | `%XX`→字符 + `+`→空格 | O(n) | 无变换时零分配 |
+| `strtr($s,$from,$to)` | 查表翻译（128 字符） | O(n) | 仅 3 参形式 |
+| `parse_url($u)` | URL 解析 → 关联数组 | O(n) | scheme/host/port/path/query |
+| `parse_str($s)` | query string → 关联数组 | O(n) | `%XX` 和 `+` 解码 |
 
 ---
 
@@ -163,6 +188,18 @@
 | `decoct($n)` | `snprintf "%llo"` | O(1) |
 | `dechex($n)` | `snprintf "%llx"` | O(1) |
 | `number_format($n, $d?)` | 自研千分位分组 + 四舍五入 | O(log n) |
+
+---
+
+## 哈希
+
+全部零堆分配，纯 C 算法实现（RFC 1321 / FIPS 180-4 / 查表法）。
+
+| 函数 | C 实现 | 性能 |
+|---|---|---|
+| `md5($s)` | RFC 1321，输出 32 位 hex 字符串 | O(n) |
+| `sha1($s)` | FIPS 180-4，输出 40 位 hex 字符串 | O(n) |
+| `crc32($s)` | 256 项查表法，返回 int | O(n) |
 
 ---
 
@@ -216,6 +253,22 @@
 | `gettype($v)` | type switch → 字符串常 | 类型名为 PHP 风格 (`"int"/"float"/...`) |
 | `getenv($k)` | libc `getenv()` + 静态缓冲 | Windows/Linux 通用 |
 | `putenv($s)` | libc `putenv()` | `KEY=VALUE` 格式 |
+
+---
+
+## 进程控制 (pcntl)
+
+POSIX 专属（Windows 调用触发 `tphp_fn_error()` 退出）。`include/os/pcntl.h`。
+
+| 函数 | C 实现 | 说明 |
+|---|---|---|
+| `pcntl_fork()` | `fork()` | 子进程返回 0，父进程返回 PID，失败 -1 |
+| `pcntl_waitpid($pid,&$st,$opt?)` | `waitpid()` | 等待指定子进程 |
+| `pcntl_wait(&$st)` | `wait()` | 等待任意子进程 |
+| `pcntl_exec($path)` | `execv()` | 执行新程序替换当前进程 |
+| `pcntl_alarm($sec)` | `alarm()` | SIGALRM 闹钟 |
+| `pcntl_get_last_error()` | `errno` | 获取 errno |
+| `pcntl_strerror($no)` | `strerror()` | errno→错误消息 |
 
 ---
 
@@ -301,51 +354,9 @@
 
 ---
 
-## 待实现函数
+三轮梯队已全部实现（83 个函数）。
 
-> 基于 PHP 8.5.7 `ext/standard` + `ext/date` + `ext/pcntl` 对照分析。
-
-### 🟡 第二梯队（~4h）
-
-| 函数 | 常用度 | 难度 | 实现方式 |
-|------|--------|------|----------|
-| `ucfirst($s)` / `lcfirst($s)` | ⭐⭐⭐⭐ | ★★ | toupper/tolower 首字符 |
-| `strrev($s)` | ⭐⭐⭐⭐ | ★★ | 倒序复制 |
-| `str_repeat($s,$n)` | ⭐⭐⭐⭐ | ★★ | `len*n` 分配 + 循环 memcpy |
-| `str_split($s,$n?)` | ⭐⭐⭐⭐ | ★★ | 逐段切片到数组 |
-| `str_pad($s,$len,$pad?)` | ⭐⭐⭐ | ★★ | 计算填充 + memcpy |
-| `substr_count($h,$n)` | ⭐⭐⭐⭐ | ★★ | strpos 循环计数 |
-| `str_shuffle($s)` | ⭐⭐⭐ | ★★ | Fisher-Yates |
-| `addslashes($s)` / `stripslashes($s)` | ⭐⭐⭐⭐ | ★★ | 扫描转义/反转义 |
-| `bin2hex($s)` / `hex2bin($s)` | ⭐⭐⭐⭐ | ★★ | 查表 `0x0-0xf` |
-| `urlencode($s)` / `urldecode($s)` | ⭐⭐⭐⭐⭐ | ★★ | 编码/解码 |
-| `array_chunk($a,$size)` | ⭐⭐⭐⭐ | ★★ | 按 size 切片 |
-| `array_combine($k,$v)` | ⭐⭐⭐⭐ | ★★ | keys+values 合并 |
-| `array_flip($a)` | ⭐⭐⭐⭐ | ★★ | key↔value 互换 |
-| `array_column($a,$col)` | ⭐⭐⭐⭐⭐ | ★★★ | 遍历提取字段 |
-
-> 共 19 个函数
-
-### 🟢 第三梯队（~2-3d）
-
-| 函数 | 常用度 | 难度 | 说明 |
-|------|--------|------|------|
-| `md5($s)` | ⭐⭐⭐⭐⭐ | ★★★★ | MD5 算法 ~120 行 C |
-| `sha1($s)` | ⭐⭐⭐⭐ | ★★★★ | SHA1 算法 |
-| `crc32($s)` | ⭐⭐⭐ | ★★★ | 256 项查表算法 |
-| `parse_url($u)` | ⭐⭐⭐⭐⭐ | ★★★ | scheme/user/host/port/path/query |
-| `parse_str($s)` | ⭐⭐⭐⭐ | ★★★ | `a=1&b=2` → array |
-| `strtr($s,$from,$to?)` | ⭐⭐⭐ | ★★★ | 字符/字符串翻译表 |
-| `ksort($a)` / `krsort($a)` | ⭐⭐⭐ | ★★★ | 按 key 排序 |
-| `asort($a)` / `arsort($a)` | ⭐⭐⭐ | ★★★ | 按 value 排序保 key |
-| `pcntl_fork()` | ⭐⭐⭐⭐ | ★★ | POSIX fork 封装 |
-| `pcntl_waitpid($pid,&$st,$opt?)` | ⭐⭐⭐⭐ | ★★ | POSIX 进程等待 |
-| `pcntl_wait(&$st)` | ⭐⭐⭐ | ★★ | 等待任意子进程 |
-| `pcntl_exec($p,$a?)` | ⭐⭐⭐ | ★★ | execve 执行新程序 |
-| `pcntl_alarm($sec)` | ⭐⭐ | ★ | SIGALRM 闹钟 |
-| `pcntl_get_last_error()` / `pcntl_strerror($no)` | ⭐⭐⭐ | ★ | errno 获取/转换 |
-
-> 共 20 个函数。pcntl 为 POSIX 专属（不支持 Windows）。
+## 暂缓
 
 ### 🔵 暂缓（低频 / AOT 不可行）
 
@@ -398,3 +409,15 @@ function gen(): array {
 | 无限生成器 (`while(true) yield`) | ❌ 编译报错（会 OOM） |
 
 **优点**：C 代码质量高（零堆分配、零状态机），性能比 Generator 高 5-15 倍。工作量 ~100 行 Parser，无 runtime 改动。
+
+三轮梯队已全部实现（共 63 个函数）。
+
+暂缓：pcntl_signal等回调依赖、Date OO API、serialize、array_intersect/diff、posix等。
+
+---
+
+## 语法特性计划
+
+### yield -> 数组展开（编译期降级）
+
+状态：待实现。Parser 编译期将 yield 展开为纯数组代码，性能比 Generator 高 5-15 倍。
