@@ -48,7 +48,7 @@ jobs:
 
       - name: Run tests
         shell: pwsh
-        run: php.exe ci/test_runner.php
+        run: .\php.exe ci/test_runner.php
         env:
           TPHP_CC: ${{ matrix.cc }}
 
@@ -86,7 +86,7 @@ jobs:
           chmod +x php
 
       - name: Run tests
-        run: php ci/test_runner.php
+        run: ./php ci/test_runner.php
         env:
           TPHP_CC: ${{ matrix.cc }}
 
@@ -124,7 +124,7 @@ jobs:
           chmod +x php
 
       - name: Run tests
-        run: php ci/test_runner.php
+        run: ./php ci/test_runner.php
         env:
           TPHP_CC: ${{ matrix.cc }}
 
@@ -179,6 +179,6 @@ jobs:
           chmod +x php
 
       - name: Run tests
-        run: php ci/test_runner.php
+        run: ./php ci/test_runner.php
         env:
           TPHP_CC: ${{ matrix.cc }}
