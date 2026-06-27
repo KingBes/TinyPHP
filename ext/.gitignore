@@ -1,0 +1,11 @@
+*.exe
+*.dll
+*.pdb
+*.lib
+*.o
+*.obj
+*.a
+*.so
+*.dylib
+*.log
+*.tmp

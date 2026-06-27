@@ -1,4 +1,36 @@
 <?php
+#debug int(10)
+#debug string(5) "hello"
+#debug bool(true)
+#debug float(1.01)
+#debug NULL
+#debug array(3) {
+#debug   [0]=>
+#debug   int(1)
+#debug   [1]=>
+#debug   int(2)
+#debug   [2]=>
+#debug   int(3)
+#debug }
+#debug array(4) {
+#debug   [0]=>
+#debug   int(10)
+#debug   [1]=>
+#debug   string(3) "str"
+#debug   [2]=>
+#debug   bool(true)
+#debug   [3]=>
+#debug   array(2) {
+#debug     [0]=>
+#debug     int(4)
+#debug     [1]=>
+#debug     int(5)
+#debug   }
+#debug }
+#debug callable
+#debug int(10)
+#debug callable
+#debug int(3)
 
 class Main
 {

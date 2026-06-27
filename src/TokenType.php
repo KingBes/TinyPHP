@@ -38,9 +38,10 @@ enum TokenType: string
     case MAGIC_FILE  = '__FILE__';
     case MAGIC_DIR   = '__DIR__';
     case DIR_SEP     = 'DIRECTORY_SEPARATOR';
-    case HASH_INCLUDE = '#include';
-    case CC_FLAG      = '#flag';
+    case HASH_INCLUDE  = '#include';
+    case CC_FLAG       = '#flag';
     case HASH_CALLBACK = '#callback';
+    case HASH_DEBUG    = '#debug';
     case TRY_KW       = 'try';
     case CATCH_KW     = 'catch';
     case FINALLY_KW   = 'finally';

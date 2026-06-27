@@ -1,4 +1,5 @@
 <?php
+#debug hello world
 
 class Main
 {

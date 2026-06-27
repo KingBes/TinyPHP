@@ -1,4 +1,61 @@
 <?php
+#debug ===== if/else =====
+#debug pass
+#debug small
+#debug B
+#debug nested: both true
+#debug correct
+#debug ===== while =====
+#debug 012
+#debug int(0)
+#debug ===== for =====
+#debug 012
+#debug 321
+#debug ===== foreach =====
+#debug int(10)
+#debug int(20)
+#debug int(30)
+#debug 0:10
+#debug 1:20
+#debug 2:30
+#debug ===== else if =====
+#debug small
+#debug ===== break/continue =====
+#debug 012
+#debug ===== compound assign =====
+#debug int(15)
+#debug int(12)
+#debug ===== ++ -- =====
+#debug int(6)
+#debug int(5)
+#debug int(6)
+#debug ===== string interpolation =====
+#debug hello world
+#debug ===== associative array =====
+#debug array(3) {
+#debug   ["a"]=>
+#debug   int(1)
+#debug   ["b"]=>
+#debug   int(2)
+#debug   ["c"]=>
+#debug   int(3)
+#debug }
+#debug array(2) {
+#debug   ["name"]=>
+#debug   string(4) "test"
+#debug   ["data"]=>
+#debug   array(3) {
+#debug     [0]=>
+#debug     int(1)
+#debug     [1]=>
+#debug     int(2)
+#debug     [2]=>
+#debug     int(3)
+#debug   }
+#debug }
+#debug ===== memory safety =====
+#debug int(6)
+#debug all done
 
 class Main
 {

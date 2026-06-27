@@ -28,7 +28,7 @@ require_once __DIR__ . '/src/CodeGenerator.php';
 require_once __DIR__ . '/src/Compiler.php';
 
 // --- Parse arguments ---
-$options = getopt('f:o:h', ['help', 'os:', 'arch:']);
+$options = getopt('f:o:h', ['help', 'os:', 'arch:', 'debug']);
 $cc        = null;
 $targetOS  = null; // -os windows|linux|macos
 $targetArch = null; // -arch x86_64|aarch64
@@ -161,6 +161,7 @@ echo "[1/2] Transpiling {$allFilesStr} => C...\n";
     $allIncludes = [];
     $allFlags     = [];
     $allCallbacks = [];
+    $allDebugs    = [];
 
     // Two-phase parsing: parse auxiliary files (non-Main) first,
     // collect enums/classes, then parse Main entry last.
@@ -182,6 +183,10 @@ echo "[1/2] Transpiling {$allFilesStr} => C...\n";
     }
     $entryFile = $mainFile;
 
+    // --debug: enable #debug directive and print compile command
+    // (manual parse, because getopt stops at first positional argument)
+    $debugMode = in_array('--debug', $argv, true);
+
     // Collect known enum names (for cross-file references)
     $knownEnumNames = [];
 
@@ -193,9 +198,9 @@ echo "[1/2] Transpiling {$allFilesStr} => C...\n";
             die("Error: PHP file is empty: {$file}\n");
         }
 
-        $lexer  = new Lexer($source);
+        $lexer  = new Lexer($source, $debugMode);
         $tokens = $lexer->tokenize();
-        $parser = new Parser($tokens);
+        $parser = new Parser($tokens, $debugMode);
         // Inject enum names declared in other files (for cross-file enum references)
         $parser->setKnownEnums($knownEnumNames);
         $ast    = $parser->parse();
@@ -221,6 +226,7 @@ echo "[1/2] Transpiling {$allFilesStr} => C...\n";
         $allIncludes  = array_merge($allIncludes, $ast->includes);
         $allFlags     = array_merge($allFlags, $ast->ccFlags);
         $allCallbacks = array_merge($allCallbacks, $ast->callbacks);
+        $allDebugs    = array_merge($allDebugs, $ast->debugs);
 
         // Collect enum names (FQN) declared in this file for later files
         foreach ($ast->enums as $e) {
@@ -269,7 +275,7 @@ echo "[1/2] Transpiling {$allFilesStr} => C...\n";
         return true;
     }));
 
-    $merged = new ProgramNode($mainClass, $extraClasses, $functions, $constants, $enums, $allIncludes, $allFlags, $allCallbacks);
+    $merged = new ProgramNode($mainClass, $extraClasses, $functions, $constants, $enums, $allIncludes, $allFlags, $allCallbacks, $allDebugs);
 
     // Resolve #include paths relative to each PHP file's directory
     $extraFlags = '';
@@ -508,6 +514,8 @@ $cmd = sprintf(
 
 $tccOutput = [];
 $retval = 0;
+// --debug: print full compile command
+if ($debugMode) echo "[DEBUG] {$cmd}\n";
 // TCC on Linux may resolve lib paths relative to CWD
 $savedCwd = getcwd();
 if ($savedCwd !== false && @chdir(__DIR__)) {
@@ -524,6 +532,28 @@ if ($retval !== 0 || !file_exists($outExe) || filesize($outExe) < 64) {
 }
 
 echo "       [YES] {$outExe}\n";
+
+// --debug: run binary and compare expected vs actual output
+if ($debugMode) {
+    $debugLines = !empty($allDebugs) ? $allDebugs : $merged->debugs;
+    if (empty($debugLines)) {
+        // nothing to compare
+    } else {
+        exec('"' . $outExe . '" 2>&1', $actualOutput, $runRet);
+        echo "\n";
+        $count = max(count($debugLines), count($actualOutput));
+        for ($i = 0; $i < $count; $i++) {
+            $expect = $debugLines[$i] ?? '';
+            $actual = $actualOutput[$i] ?? '';
+            if ($expect === $actual) {
+                echo "[YES] {$expect}\n";
+            } else {
+                echo "[NO] expected: {$expect}\n";
+                echo "     got     : {$actual}\n";
+            }
+        }
+    }
+}
 
 // ============================================================
 /** @param string[] $args
@@ -630,6 +660,7 @@ Options:
   -cc <compiler>    specify C compiler (default: built-in TCC)
   -os <target>      cross-compile target: windows, linux, macos
   -arch <arch>      target architecture: x86_64, aarch64 (default: host)
+  --debug           print full compile command
   -h, --help        show help
 
 Examples:

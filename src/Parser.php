@@ -45,10 +45,13 @@ class Parser
     /** 当前文件声明的枚举名集合（完全限定名 → true，用于 Color::RED 识别） */
     private array $enumNames = [];
 
+    private bool $debugMode;
+
     /** @param Token[] $tokens */
-    public function __construct(array $tokens)
+    public function __construct(array $tokens, bool $debugMode = false)
     {
         $this->tokens = $tokens;
+        $this->debugMode = $debugMode;
     }
 
     /** 注入其他文件已声明的枚举名（完全限定名 → true），用于跨文件枚举引用 */
@@ -90,17 +93,22 @@ class Parser
             $this->consume(TokenType::SEMICOLON, 'Expected ;');
         }
 
-        // 预处理指令（任意顺序：include/flag/callback 可混合出现）
+        // 预处理指令（任意顺序：include/flag/callback/debug 可混合出现）
         $includes = [];
         $ccFlags = [];
         $callbacks = [];
-        while ($this->check(TokenType::HASH_INCLUDE) || $this->check(TokenType::CC_FLAG) || $this->check(TokenType::HASH_CALLBACK)) {
+        $debugs  = [];
+        while ($this->check(TokenType::HASH_INCLUDE) || $this->check(TokenType::CC_FLAG) || $this->check(TokenType::HASH_CALLBACK) || $this->check(TokenType::HASH_DEBUG)) {
             if ($this->match(TokenType::HASH_INCLUDE)) {
                 $includes[] = $this->previous()->literal;
             } elseif ($this->match(TokenType::CC_FLAG)) {
                 $ccFlags[] = $this->previous()->literal;
             } elseif ($this->match(TokenType::HASH_CALLBACK)) {
                 $callbacks[] = $this->previous()->literal;
+            } elseif ($this->match(TokenType::HASH_DEBUG)) {
+                if ($this->debugMode) {
+                    $debugs[] = $this->previous()->lexeme;
+                }
             }
         }
 
@@ -150,12 +158,20 @@ class Parser
             } elseif ($this->check(TokenType::ECHO_KW) || $this->check(TokenType::IDENTIFIER) || $this->check(TokenType::VAR_DUMP)) {
                 $tok = $this->peek();
                 $this->error("Unsupported top-level code '{$tok->lexeme}' (multi-file compilation only accepts namespace/use/class/function/const/enum declarations)");
+            } elseif ($this->check(TokenType::HASH_INCLUDE)) {
+                $this->error('#include 指令必须放在文件最前面（namespace/use/class/function 声明之前）');
+            } elseif ($this->check(TokenType::CC_FLAG)) {
+                $this->error('#flag 指令必须放在文件最前面（namespace/use/class/function 声明之前）');
+            } elseif ($this->check(TokenType::HASH_CALLBACK)) {
+                $this->error('#callback 指令必须放在文件最前面（namespace/use/class/function 声明之前）');
+            } elseif ($this->check(TokenType::HASH_DEBUG)) {
+                $this->error('#debug 指令必须放在文件最前面（namespace/use/class/function 声明之前）');
             } else {
                 $this->error('Expected namespace/use/class/function/const/enum, got ' . $this->peek()->lexeme);
             }
         }
 
-        return new ProgramNode($mainClass, $extraClasses, $functions, $constants, $enums, $includes, $ccFlags, $callbacks);
+        return new ProgramNode($mainClass, $extraClasses, $functions, $constants, $enums, $includes, $ccFlags, $callbacks, $debugs);
     }
 
     // ============================================================

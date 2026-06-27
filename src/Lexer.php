@@ -11,6 +11,7 @@ class Lexer
 
     /** @var Token[] */
     private array $tokens = [];
+    private bool $debugMode;
 
     private static array $keywords = [
         'class'       => TokenType::CLASS_KW,
@@ -98,9 +99,10 @@ class Lexer
         'match'       => TokenType::MATCH,
     ];
 
-    public function __construct(string $source)
+    public function __construct(string $source, bool $debugMode = false)
     {
         $this->source = $source;
+        $this->debugMode = $debugMode;
     }
 
     /** @return Token[] */
@@ -199,6 +201,14 @@ class Lexer
                 $this->addToken(TokenType::CC_FLAG, $compiler . ':' . $platform . ':' . $flags, [
                     'platform' => $platform, 'compiler' => $compiler, 'flags' => $flags,
                 ]);
+                $this->advance(strlen($m[0]));
+                return;
+            }
+            // #debug text — 仅 --debug 模式产生 token，否则当作注释跳过
+            if (preg_match('/^#debug ([^\r\n]+)/', $rest, $m)) {
+                if ($this->debugMode) {
+                    $this->addToken(TokenType::HASH_DEBUG, $m[1]);
+                }
                 $this->advance(strlen($m[0]));
                 return;
             }
