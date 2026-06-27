@@ -62,15 +62,15 @@ static tp_ex_frame *_tp_ex_top = NULL;
     do { \
         tphp_class_Exception *_e = (tphp_class_Exception*)(ex); \
         if (_tp_ex_top != NULL) { \
-            if (_e && _e->message.data) \
-                snprintf(_tp_ex_top->msg_buf, 256, "%.*s", _e->message.length, _e->message.data); \
+            if (_e && STR_PTR_V(_e->message)) \
+                snprintf(_tp_ex_top->msg_buf, 256, "%.*s", _e->message.length, STR_PTR_V(_e->message)); \
             _tp_ex_top->thrown  = 1; \
             tphp_rt_free_all(); \
             longjmp(_tp_ex_top->jmp_buf, 1); \
         } else { \
             tphp_rt_free_all(); \
             fprintf(stderr, "\nFatal error: Uncaught exception: %s\n\n", \
-                _e && _e->message.data ? _e->message.data : "(null)"); \
+                _e && STR_PTR_V(_e->message) ? STR_PTR_V(_e->message) : "(null)"); \
             exit(1); \
         } \
     } while(0)

@@ -72,7 +72,7 @@ static inline t_array* tphp_rt_build_argv(int argc, char **argv) {
             t_string s = {argv[i], (int)strlen(argv[i])};
             a = tphp_fn_arr_push(a, VAR_STRING(s));
         } else {
-            a = tphp_fn_arr_push(a, VAR_STRING(((t_string){NULL, 0})));
+            a = tphp_fn_arr_push(a, VAR_STRING(((t_string){.data = NULL, .length = 0, .is_local = false})));
         }
     }
     return a;
@@ -83,13 +83,12 @@ static inline char* str_pool_alloc(int len);
 
 // ── 类型转换辅助 ─────────────────────────────────────
 
-/** int → t_string（栈缓冲区，单线程安全） */
+/** int → t_string */
 static inline t_string tphp_rt_str_from_int(t_int v) {
-    // 使用 str_pool_alloc 代替 static buf，避免多参数表达式中的覆盖问题
     char* buf = str_pool_alloc(32);
-    if (!buf) return (t_string){NULL, 0};
+    if (!buf) return (t_string){.data = NULL, .length = 0, .is_local = false};
     int len = snprintf(buf, 32, "%lld", (long long)v);
-    return (t_string){buf, len > 0 ? len : 0};
+    return (t_string){.data = buf, .length = len > 0 ? len : 0, .is_local = false};
 }
 
 static inline t_string tphp_rt_str_from_float(t_float v) {
@@ -106,15 +105,16 @@ static inline t_string tphp_rt_str_from_bool(t_bool v) {
 
 /** 从字符串解析整数（跳前导空白，符号位，连续数字） */
 static inline t_int tphp_rt_parse_int(t_string s) {
-    if (s.data == NULL || s.length <= 0) return 0;
+    const char *d = STR_PTR(s);
+    if (d == NULL || s.length <= 0) return 0;
     int i = 0;
-    while (i < s.length && (s.data[i] == ' ' || s.data[i] == '\t')) i++;
+    while (i < s.length && (d[i] == ' ' || d[i] == '\t')) i++;
     int sign = 1;
-    if (i < s.length && s.data[i] == '-') { sign = -1; i++; }
-    else if (i < s.length && s.data[i] == '+') { i++; }
+    if (i < s.length && d[i] == '-') { sign = -1; i++; }
+    else if (i < s.length && d[i] == '+') { i++; }
     t_int val = 0;
-    while (i < s.length && s.data[i] >= '0' && s.data[i] <= '9') {
-        val = val * 10 + (t_int)(s.data[i] - '0');
+    while (i < s.length && d[i] >= '0' && d[i] <= '9') {
+        val = val * 10 + (t_int)(d[i] - '0');
         i++;
     }
     return val * sign;
@@ -122,18 +122,20 @@ static inline t_int tphp_rt_parse_int(t_string s) {
 
 /** 从字符串解析浮点数（支持科学计数法） */
 static inline t_float tphp_rt_parse_float(t_string s) {
-    if (s.data == NULL || s.length <= 0) return 0.0;
+    const char *d = STR_PTR(s);
+    if (d == NULL || s.length <= 0) return 0.0;
     char temp[128];
     int len = (s.length < 127) ? s.length : 127;
-    memcpy(temp, s.data, (size_t)len);
+    memcpy(temp, d, (size_t)len);
     temp[len] = '\0';
     return strtod(temp, NULL);
 }
 
 /** 字符串是否为 PHP 假值（空串或 "0"） */
 static inline t_bool tphp_rt_str_is_falsy(t_string s) {
-    if (s.data == NULL || s.length <= 0) return true;
-    if (s.length == 1 && s.data[0] == '0') return true;
+    const char *d = STR_PTR(s);
+    if (d == NULL || s.length <= 0) return true;
+    if (s.length == 1 && d[0] == '0') return true;
     return false;
 }
 
@@ -141,11 +143,12 @@ static inline t_bool tphp_rt_str_is_falsy(t_string s) {
 
 /** tphp_str_cmp — 字典序比较（memcmp 语义，返回 -1/0/1） */
 static inline int tphp_rt_str_cmp(t_string a, t_string b) {
-    if (a.data == b.data) return 0;
-    if (a.data == NULL) return -1;
-    if (b.data == NULL) return 1;
+    const char *ad = STR_PTR(a), *bd = STR_PTR(b);
+    if (ad == bd) return 0;
+    if (ad == NULL) return -1;
+    if (bd == NULL) return 1;
     int minlen = (a.length < b.length) ? a.length : b.length;
-    int r = memcmp(a.data, b.data, (size_t)minlen);
+    int r = memcmp(ad, bd, (size_t)minlen);
     if (r != 0) return r;
     if (a.length < b.length) return -1;
     if (a.length > b.length) return 1;
@@ -224,83 +227,82 @@ static inline char* str_pool_alloc(int len) {
 
 // ── 字符串拼接/拷贝/释放 ─────────────────────────────
 
-/** tphp_str_concat — 字符串拼接（短串用池，长串堆分配） */
+/** tphp_str_concat — 字符串拼接 */
 static inline t_string tphp_rt_str_concat(t_string a, t_string b) {
-    int alen = (a.length > 0 && a.data != NULL) ? a.length : 0;
-    int blen = (b.length > 0 && b.data != NULL) ? b.length : 0;
-    if (alen == 0 && blen == 0) return (t_string){NULL, 0};
-    if (alen < 0) alen = 0;
-    if (blen < 0) blen = 0;
-    if (alen > 0x7FFFFF || blen > 0x7FFFFF) return (t_string){NULL, 0};
+    const char *ad = STR_PTR(a), *bd = STR_PTR(b);
+    int alen = (a.length > 0 && ad != NULL) ? a.length : 0;
+    int blen = (b.length > 0 && bd != NULL) ? b.length : 0;
+    if (alen == 0 && blen == 0) return (t_string){.data = NULL, .length = 0, .is_local = false};
+    if (alen < 0) alen = 0; if (blen < 0) blen = 0;
+    if (alen > 0x7FFFFF || blen > 0x7FFFFF) return (t_string){.data = NULL, .length = 0, .is_local = false};
     int len = alen + blen;
-    if (len <= 0) return (t_string){NULL, 0};
+    if (len <= 0) return (t_string){.data = NULL, .length = 0, .is_local = false};
     char* data = str_pool_alloc(len);
-    if (data == NULL) return (t_string){NULL, 0};
+    if (data == NULL) return (t_string){.data = NULL, .length = 0, .is_local = false};
     int pos = 0;
-    if (alen > 0) { memcpy(data + pos, a.data, (size_t)alen); pos += alen; }
-    if (blen > 0) { memcpy(data + pos, b.data, (size_t)blen); pos += blen; }
+    if (alen > 0) { memcpy(data + pos, ad, (size_t)alen); pos += alen; }
+    if (blen > 0) { memcpy(data + pos, bd, (size_t)blen); pos += blen; }
     data[pos] = '\0';
-    return (t_string){data, pos};
+    return (t_string){.data = data, .length = pos, .is_local = false};
 }
 
-/** tphp_rt_str_concat_multi — ROPE 多片段拼接（一次分配，AOT 友好）
- *  编译期将 "a"."b"."c" 展平为单次调用，避免中间临时字符串。
- *  注意：先复制每个片段的 data 指针后再计算总长+拷贝，
- *  防止调用方使用 static 缓冲区导致 data 被后续调用覆盖。 */
+/** tphp_rt_str_concat_multi — ROPE 多片段拼接 */
 static inline t_string tphp_rt_str_concat_multi(int count, const t_string parts[]) {
-    if (unlikely(count <= 0)) return (t_string){NULL, 0};
+    if (unlikely(count <= 0)) return (t_string){.data = NULL, .length = 0, .is_local = false};
     if (count == 1) return parts[0];
-    // 一次性：计算总长 + 立即暂存每个 data 指针（防止 static buf 覆盖）
     int total = 0;
     for (int i = 0; i < count; i++) {
-        int len = (parts[i].length > 0 && parts[i].data != NULL) ? parts[i].length : 0;
+        const char *pd = STR_PTR(parts[i]);
+        int len = (parts[i].length > 0 && pd != NULL) ? parts[i].length : 0;
         if (len < 0) len = 0;
-        if (len > 0x7FFFFF) return (t_string){NULL, 0};
+        if (len > 0x7FFFFF) return (t_string){.data = NULL, .length = 0, .is_local = false};
         total += len;
     }
-    if (total <= 0) return (t_string){NULL, 0};
+    if (total <= 0) return (t_string){.data = NULL, .length = 0, .is_local = false};
     char* buf = str_pool_alloc(total);
-    if (unlikely(buf == NULL)) return (t_string){NULL, 0};
-    // 拷贝：parts[i].data 可能指向调用方的 static 缓冲区（如 tphp_rt_str_from_int），
-    // 只能在一次性分配 buf 后即刻拷贝，不能两遍扫描
+    if (unlikely(buf == NULL)) return (t_string){.data = NULL, .length = 0, .is_local = false};
     int pos = 0;
     for (int i = 0; i < count; i++) {
-        int len = (parts[i].length > 0 && parts[i].data != NULL) ? parts[i].length : 0;
-        if (len > 0) { memcpy(buf + pos, parts[i].data, (size_t)len); pos += len; }
+        const char *pd = STR_PTR(parts[i]);
+        int len = (parts[i].length > 0 && pd != NULL) ? parts[i].length : 0;
+        if (len > 0) { memcpy(buf + pos, pd, (size_t)len); pos += len; }
     }
     buf[total] = '\0';
-    return (t_string){buf, total};
+    return (t_string){.data = buf, .length = total, .is_local = false};
 }
 
-/** tphp_str_dup — 深拷贝 t_string（短串用池，长串堆分配） */
+/** tphp_str_dup — 深拷贝 t_string（≤23字节用 SSO，否则走池） */
 static inline t_string tphp_rt_str_dup(t_string s) {
-    if (s.data == NULL || s.length <= 0) return (t_string){NULL, 0};
+    const char *src = STR_PTR(s);
+    if (src == NULL || s.length <= 0) return (t_string){.data = NULL, .length = 0, .is_local = false};
+    // SSO: 短串直接内联，零堆分配
+    if (likely(s.length <= STR_SSO_MAX)) {
+        t_string r = {.is_local = true, .length = s.length};
+        memcpy(r.local, src, (size_t)s.length);
+        r.local[s.length] = '\0';
+        return r;
+    }
     char* d = str_pool_alloc(s.length);
-    if (d == NULL) return (t_string){NULL, 0};
-    memcpy(d, s.data, (size_t)s.length);
+    if (d == NULL) return (t_string){.data = NULL, .length = 0, .is_local = false};
+    memcpy(d, src, (size_t)s.length);
     d[s.length] = '\0';
-    return (t_string){d, s.length};
+    return (t_string){.data = d, .length = s.length, .is_local = false};
 }
 
-/** tphp_str_free — 安全释放 t_string 的堆 data（池/arena 内指针跳过） */
+/** tphp_str_free — 安全释放 t_string（SSO 跳过，池/arena 跳过，否则 free） */
 static inline void tphp_rt_str_free(t_string* s) {
-    if (unlikely(s == NULL || s->data == NULL || s->length <= 0)) return;
+    if (unlikely(s == NULL || s->length <= 0)) return;
+    if (s->is_local) { s->length = 0; s->is_local = false; return; }
+    char *d = STR_PTR_P(s);
+    if (d == NULL) { s->length = 0; return; }
     // 主池内的指针不释放
-    if (s->data >= str_pool_buf && s->data < str_pool_buf + STR_POOL_SIZE) {
-        s->data = NULL;
-        s->length = 0;
-        return;
-    }
-    // Arena 溢出块内的指针不释放（整个块在 tphp_rt_free_all 统一释放）
+    if (d >= str_pool_buf && d < str_pool_buf + STR_POOL_SIZE) { s->data = NULL; s->length = 0; return; }
+    // Arena 溢出块内的指针不释放
     str_arena_block *b;
     for (b = str_arena_head; b; b = b->next) {
-        if (s->data >= b->buf && s->data < b->buf + b->size) {
-            s->data = NULL;
-            s->length = 0;
-            return;
-        }
+        if (d >= b->buf && d < b->buf + b->size) { s->data = NULL; s->length = 0; return; }
     }
-    free(s->data);
+    free(d);
     s->data = NULL;
     s->length = 0;
 }
@@ -376,7 +378,7 @@ static inline void tphp_rt_free_all(void) {
             switch (n->type) {
                 case 0: tp_obj_release(n->ptr); break;
                 case 1: tphp_fn_arr_free((t_array *)n->ptr);    break;
-                case 2: { t_string *s = (t_string *)n->ptr; free(s->data); free(s); } break;
+                case 2: { t_string *s = (t_string *)n->ptr; free(STR_PTR_P(s)); free(s); } break;
                 case 3: free(n->ptr); break; /* closure capture env / generic heap */
             }
         }
@@ -394,6 +396,6 @@ static inline void tphp_rt_free_all(void) {
 static inline void tphp_fn_error(t_string msg, const char *php_file, int php_line) {
     tphp_rt_free_all();
     fprintf(stderr, "\nFatal error: %.*s\n  in %s on line %d\n\n",
-            msg.length > 0 ? msg.length : 0, msg.data ? msg.data : "", php_file, php_line);
+            msg.length > 0 ? msg.length : 0, STR_PTR(msg) ? STR_PTR(msg) : "", php_file, php_line);
     exit(1);
 }

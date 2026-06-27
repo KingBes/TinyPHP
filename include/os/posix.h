@@ -63,7 +63,7 @@ static inline t_int posix_getegid(void)  { return (t_int)getegid(); }
 // ── getcwd ────────────────────────────────────────────────
 static inline t_string posix_getcwd(void) {
     static char _buf[4096];
-    if (getcwd(_buf, sizeof(_buf)) == NULL) return (t_string){NULL, 0};
+    if (getcwd(_buf, sizeof(_buf)) == NULL) return (t_string){.data = NULL, .length = 0, .is_local = false};
     int len = (int)strlen(_buf);
     return (t_string){_buf, len};
 }
@@ -85,7 +85,7 @@ static inline t_int posix_get_last_error(void) { return (t_int)errno; }
 // ── ttyname ───────────────────────────────────────────────
 static inline t_string posix_ttyname(t_int fd) {
     char *t = ttyname((int)fd);
-    if (t == NULL) return (t_string){NULL, 0};
+    if (t == NULL) return (t_string){.data = NULL, .length = 0, .is_local = false};
     int len = (int)strlen(t);
     return (t_string){t, len};
 }

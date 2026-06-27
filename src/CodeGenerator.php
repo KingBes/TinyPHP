@@ -766,6 +766,9 @@ class CodeGenerator implements ASTVisitor
         // (array)xxx → 标量转单元素数组
         if ($node->expr instanceof CastExpr && $node->expr->castType === 'array') {
             $this->varTypes[$var] = 't_array*';
+            // 推导 cast 源类型作为数组元素类型
+            $srcType = $this->inferType($node->expr->expr);
+            $this->arrElementTypes[$var] = ($srcType === 'null' || $srcType === 'void*') ? 't_int' : $srcType;
             if (!$isDeclared) {
                 if ($this->scopeDepth > 0) {
                     $this->funcScopeDecls[$var] = 't_array*';

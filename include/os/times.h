@@ -23,13 +23,13 @@ static inline t_string tphp_fn_date(t_string fmt, t_int timestamp) {
     static char out[256];
     time_t t = (time_t)(timestamp >= 0 ? timestamp : time(NULL));
     struct tm *tm = localtime(&t);
-    if (tm == NULL) return (t_string){NULL, 0};
+    if (tm == NULL) return (t_string){.data = NULL, .length = 0, .is_local = false};
 
     char *d = out;
     char *end = out + sizeof(out) - 1;
     int i = 0;
     while (i < fmt.length && d < end) {
-        char c = fmt.data[i];
+        char c = STR_PTR_V(fmt)[i];
         switch (c) {
             case 'Y': d += snprintf(d, (size_t)(end - d), "%04d", tm->tm_year + 1900); break;
             case 'y': d += snprintf(d, (size_t)(end - d), "%02d", tm->tm_year % 100);  break;
@@ -137,24 +137,24 @@ static inline t_int tphp_fn_strtotime(t_string s) {
     // 纯数字 → 直接返回
     t_bool allDig = true;
     for (int i = 0; i < s.length; i++) {
-        if (s.data[i] < '0' || s.data[i] > '9') { allDig = false; break; }
+        if (STR_PTR(s)[i] < '0' || STR_PTR(s)[i] > '9') { allDig = false; break; }
     }
-    if (allDig) return (t_int)strtoll(s.data, NULL, 10);
+    if (allDig) return (t_int)strtoll(STR_PTR(s), NULL, 10);
 
     // 解析 Y-m-d H:i:s 或 Y/m/d H:i:s
     int Y = 1970, M = 1, D = 1, H = 0, I = 0, S = 0;
     int n = 0;
     char sep = '-'; // 试探分隔符
-    if (s.length > 4 && s.data[4] == '/') sep = '/';
+    if (s.length > 4 && STR_PTR(s)[4] == '/') sep = '/';
 
     // Y-m-d 部分
     char part[32];
     int start = 0, pi = 0;
     for (int j = 0; j <= s.length; j++) {
-        char c = (j < s.length) ? s.data[j] : ' ';
+        char c = (j < s.length) ? STR_PTR(s)[j] : ' ';
         if (c == sep || c == ' ' || c == '\0' || c == 'T') {
             if (pi > 0) {
-                memcpy(part, s.data + start, (size_t)pi);
+                memcpy(part, STR_PTR(s) + start, (size_t)pi);
                 part[pi] = '\0';
                 int val = atoi(part);
                 if (n == 0) Y = val; else if (n == 1) M = val; else if (n == 2) D = val;
@@ -165,7 +165,7 @@ static inline t_int tphp_fn_strtotime(t_string s) {
             if (c == ' ' || c == 'T') break;
         } else if (c == ':') {
             if (pi > 0) {
-                memcpy(part, s.data + start, (size_t)pi);
+                memcpy(part, STR_PTR(s) + start, (size_t)pi);
                 part[pi] = '\0';
                 int val = atoi(part);
                 if (n == 3) H = val; else if (n == 4) I = val; else if (n == 5) S = val;
@@ -178,7 +178,7 @@ static inline t_int tphp_fn_strtotime(t_string s) {
         }
     }
     if (pi > 0 && n >= 3) {
-        memcpy(part, s.data + start, (size_t)pi);
+        memcpy(part, STR_PTR(s) + start, (size_t)pi);
         part[pi] = '\0';
         int val = atoi(part);
         if (n == 3) H = val; else if (n == 4) I = val; else if (n == 5) S = val;
@@ -198,11 +198,11 @@ static inline t_string tphp_fn_uniqid(t_string prefix) {
     t_int t = tphp_fn_time();
     t_int r = tphp_fn_rand_int(0, 99999);
 
-    int plen = (prefix.data != NULL && prefix.length > 0) ? prefix.length : 0;
+    int plen = (STR_PTR(prefix) != NULL && prefix.length > 0) ? prefix.length : 0;
     if (plen > 32) plen = 32;
 
     int pos = 0;
-    if (plen > 0) { memcpy(buf, prefix.data, (size_t)plen); pos += plen; }
+    if (plen > 0) { memcpy(buf, STR_PTR(prefix), (size_t)plen); pos += plen; }
     pos += snprintf(buf + pos, sizeof(buf) - (size_t)pos,
                     "%08lx%05lx", (unsigned long)t, (unsigned long)r);
     buf[pos] = '\0';
@@ -210,5 +210,5 @@ static inline t_string tphp_fn_uniqid(t_string prefix) {
 }
 
 static inline t_string tphp_fn_uniqid0(void) {
-    return tphp_fn_uniqid((t_string){NULL, 0});
+    return tphp_fn_uniqid((t_string){.data = NULL, .length = 0, .is_local = false});
 }

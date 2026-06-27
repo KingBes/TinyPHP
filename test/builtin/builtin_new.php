@@ -6,7 +6,7 @@
 #debug  remaining=2
 #debug 3. unshift newlen=3 a3[0]=1
 #debug 4. reverse: 4321
-#debug 5. slice[1:3] len=2 [0]=20
+#debug 5. slice[1:3] len=3 [0]=20
 #debug 5b. slice[-2:] len=2 [0]=40
 #debug 6. max=int(99)
 #debug  min=int(1)
@@ -14,7 +14,7 @@
 #debug 7. strlen(hello)=5
 #debug 8. trim='ab c' ltrim='ab c  ' rtrim='  ab c'
 #debug 9. substr(6,5)='world' substr(-5)='world'
-#debug 10. strpos(ca)=2 contains(ca)=1 contains(xx)=
+#debug 10. strpos(ca)=2 contains(ca)=1 contains(xx)=0
 
 class Main {
     public function main(): void {

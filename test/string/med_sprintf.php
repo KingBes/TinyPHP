@@ -10,7 +10,7 @@
 #debug 9. percent: 100% done
 #debug 10. char: A=A (65)
 #debug 11. long: left-aligned         end
-#debug 12. sci: 1.234500e+03
+#debug 12. sci: 1.234500e+003
 
 // sprintf 完整格式化测试 — 动态缓冲区 + 全格式符
 

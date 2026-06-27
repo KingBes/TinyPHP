@@ -47,7 +47,7 @@ static inline t_int pcntl_wait(t_int *status) {
 static inline void pcntl_exec(t_string path) {
     if (path.data == NULL || path.length == 0) return;
     char _buf[1024]; int len = path.length < 1023 ? path.length : 1023;
-    memcpy(_buf, path.data, (size_t)len); _buf[len] = '\0';
+    memcpy(_buf, STR_PTR(path), (size_t)len); _buf[len] = '\0';
     char *argv[] = {_buf, NULL};
     execv(_buf, argv);
     // exec only returns on error

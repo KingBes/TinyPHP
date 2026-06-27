@@ -52,12 +52,28 @@ typedef bool    t_bool;
 #define null ((void *)0)
 
 // ============================================================
-// 2. string
+// 2. string — SSO: ≤23 字节走内联缓冲区，零堆分配
 // ============================================================
+#define STR_SSO_MAX 23
+
 typedef struct {
-    char *data;
+    union {
+        char *data;              // heap/pool pointer (when !is_local)
+        char  local[STR_SSO_MAX+1]; // SSO inline buffer (when is_local)
+    };
     int   length;
+    bool  is_local;
 } t_string;
+
+// ── SSO 零开销访问器 ────────────────────────────────────
+// STR_PTR(s):    从 t_string 值获取只读数据指针
+// STR_PTR_P(p):  从 t_string* 获取只读数据指针
+// STR_PTR_V(v):  从 t_string 值（非左值表达式）获取只读指针
+// STR_MUT_P(p):  从 t_string* 获取可写数据指针
+#define STR_PTR(s)   ((const char*)((s).is_local ? (s).local : (s).data))
+#define STR_PTR_P(p) ((const char*)((p)->is_local ? (p)->local : (p)->data))
+#define STR_PTR_V(v) ((const char*)((v).is_local ? (v).local : (v).data))
+#define STR_MUT_P(p) ((char*)((p)->is_local ? (p)->local : (p)->data))
 
 // ============================================================
 // 前向声明

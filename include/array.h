@@ -216,7 +216,7 @@ static inline t_float tphp_arr_item_float(t_array *a, int idx) {
 }
 
 static inline t_string tphp_arr_item_str(t_array *a, int idx) {
-    if (unlikely(a == NULL || idx < 0 || idx >= a->length)) return (t_string){NULL, 0};
+    if (unlikely(a == NULL || idx < 0 || idx >= a->length)) return (t_string){.data = NULL, .length = 0, .is_local = false};
     t_var *v = &a->entries[idx].val;
     if (v->type == TYPE_STRING) return v->value._string;
     if (v->type == TYPE_INT) {
@@ -224,7 +224,7 @@ static inline t_string tphp_arr_item_str(t_array *a, int idx) {
         int n = snprintf(_b, sizeof(_b), "%lld", (long long)v->value._int);
         return (t_string){.data = _b, .length = n};
     }
-    return (t_string){NULL, 0};
+    return (t_string){.data = NULL, .length = 0, .is_local = false};
 }
 
 static inline t_bool tphp_arr_item_bool(t_array *a, int idx) {
@@ -288,14 +288,14 @@ static inline t_int tphp_fn_arr_get_str_int(t_array *a, t_string key) {
 
 static inline t_string tphp_fn_arr_get_str_str(t_array *a, t_string key) {
     t_var *v = tphp_fn_arr_get_str(a, key);
-    if (v == NULL) return (t_string){NULL, 0};
+    if (v == NULL) return (t_string){.data = NULL, .length = 0, .is_local = false};
     if (v->type == TYPE_STRING) return v->value._string;
     if (v->type == TYPE_INT) {
         static char _b[32];
         int n = snprintf(_b, sizeof(_b), "%lld", (long long)v->value._int);
         return (t_string){.data = _b, .length = n};
     }
-    return (t_string){NULL, 0};
+    return (t_string){.data = NULL, .length = 0, .is_local = false};
 }
 
 static inline t_array* tphp_fn_arr_get_str_arr(t_array *a, t_string key) {
@@ -461,7 +461,7 @@ static inline t_int tphp_fn_arr_search(t_array *a, t_var needle) {
         if (v->type == TYPE_INT    && v->value._int    == needle.value._int)    return i;
         if (v->type == TYPE_FLOAT  && v->value._float  == needle.value._float)  return i;
         if (v->type == TYPE_STRING && needle.value._string.length == v->value._string.length
-            && memcmp(v->value._string.data, needle.value._string.data, (size_t)needle.value._string.length) == 0) return i;
+            && memcmp(STR_PTR_V(v->value._string), STR_PTR_V(needle.value._string), (size_t)needle.value._string.length) == 0) return i;
         if (v->type == TYPE_BOOL   && v->value._bool   == needle.value._bool)   return i;
     }
     return -1;
@@ -533,7 +533,7 @@ static inline uint32_t _arr_val_hash(t_var v) {
     if (v.type == TYPE_STRING) {
         uint32_t h = 5381;
         for (int i = 0; i < v.value._string.length; i++)
-            h = ((h << 5) + h) + (unsigned char)v.value._string.data[i];
+            h = ((h << 5) + h) + (unsigned char)STR_PTR_V(v.value._string)[i];
         return h;
     }
     return (uint32_t)v.type;
@@ -544,8 +544,8 @@ static inline bool _arr_val_eq(t_var a, t_var b) {
     if (a.type == TYPE_INT)    return a.value._int    == b.value._int;
     if (a.type == TYPE_FLOAT)  return a.value._float  == b.value._float;
     if (a.type == TYPE_STRING) return a.value._string.length == b.value._string.length
-        && (a.value._string.data == b.value._string.data
-            || memcmp(a.value._string.data, b.value._string.data, (size_t)a.value._string.length) == 0);
+        && (STR_PTR_V(a.value._string) == STR_PTR_V(b.value._string)
+            || memcmp(STR_PTR_V(a.value._string), STR_PTR_V(b.value._string), (size_t)a.value._string.length) == 0);
     if (a.type == TYPE_BOOL)   return a.value._bool   == b.value._bool;
     return a.type == TYPE_NULL;
 }
@@ -634,7 +634,7 @@ static inline int tphp_fn_str_hash(t_string s) {
     if (s.data == NULL) return 0;
     unsigned int h = 5381;
     for (int i = 0; i < s.length; i++)
-        h = ((h << 5) + h) + (unsigned char)s.data[i];
+        h = ((h << 5) + h) + (unsigned char)STR_PTR(s)[i];
     return (int)h;
 }
 

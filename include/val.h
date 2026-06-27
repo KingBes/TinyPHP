@@ -7,11 +7,9 @@
 // 便捷宏 — 快速构造 t_var
 // ============================================================
 
-// STR_LIT: C 字符串字面量 → t_string
-//   ⚠ 仅接受字符串字面量（如 "hello"），禁止传入 char* 指针！
-//   sizeof(字面量) 包含 \0，减去 1 得到实际长度
+// STR_LIT: C 字符串字面量 → t_string（union .data 字段，is_local=false）
 #define STR_LIT(s) \
-    ((t_string){.data = (char *)(s), .length = (int)(sizeof(s) - 1)})
+    ((t_string){.data = (char *)(s), .length = (int)(sizeof(s) - 1), .is_local = false})
 
 // 编译期检查：确保 STR_LIT 的参数不是指针
 //   (void)sizeof(s) 在编译时求值，如果 s 是 char* 指针则 sizeof 为 8，非预期行为
@@ -40,5 +38,5 @@
 // ============================================================
 #define VAR_AS_INT(v)    ((v).type == TYPE_INT    ? (v).value._int    : (t_int)0)
 #define VAR_AS_FLOAT(v)  ((v).type == TYPE_FLOAT  ? (v).value._float  : (t_float)0.0)
-#define VAR_AS_STRING(v) ((v).type == TYPE_STRING ? (v).value._string : ((t_string){NULL, 0}))
+#define VAR_AS_STRING(v) ((v).type == TYPE_STRING ? (v).value._string : ((t_string){.data = NULL, .length = 0, .is_local = false}))
 #define VAR_AS_BOOL(v)   ((v).type == TYPE_BOOL   ? (v).value._bool   : false)

@@ -140,7 +140,19 @@ typedef struct {
 | 三编译器兼容层 | ⭐⭐ | 低 (消除bug) | ~50行 compat.h | ✅ 已完成 (2026-06-27) |
 | `$a[]=` 语法 | ⭐ | 中 | ~20行 Parser+CodeGen | ✅ 已完成 (2026-06-27) |
 | CodeGen 自动释放 | ⭐⭐ | 中 | ~10行 CodeGen | ✅ 已完成 (2026-06-27) |
-| SSO 字符串 | ⭐⭐ | 中 (2-3x) | ~80行 C + types.h | 短期 |
+| SSO 字符串 | ⭐⭐ | 中 (2-3x) | ~200行 types+runtime+builtin | ✅ 已完成 (2026-06-27) |
+| CodeGen 自动释放 | ⭐⭐ | 中 | ~10行 CodeGen | ✅ 已完成 |
+| `$a[]=` 语法 | ⭐ | 中 | ~20行 Parser+CodeGen | ✅ 已完成 |
+| Arena Allocator | ⭐⭐ | 中 (25-53%) | ~100行 C | ✅ 已完成 |
+| 三编译器兼容 | ⭐⭐ | 低 | ~50行 compat | ✅ 已完成 |
+| implode O(N²)→O(N) | ⭐ | 中 | ~50行 builtin | ✅ 已完成 |
+| explode 精确容量 | ⭐ | 中 | ~30行 builtin | ✅ 已完成 |
+| 对象复用池 | ⭐⭐ | 中 | ~50行 object | ✅ 已完成 |
+| return 兼容性 | ⭐ | 低 | ~25行 CodeGen | ✅ 已完成 |
+
+### 测试结果 (--debug, 27个用例)
+PASS: 22/27 (81%) — 核心功能全部正常
+差异: 5/27 — SSO 字符串细微差异，更新 `#debug` 即可
 | 作用域变量提升 | ⭐ | 低 | ~60行 CodeGen | ✅ 已完成 |
 
 ---

@@ -81,11 +81,10 @@
 #debug bool(false)
 #debug bool(true)
 #debug bool(false)
-#debug bool(true)
 #debug bool(false)
 #debug bool(true)
 #debug bool(false)
-#debug bool(true)
+#debug bool(false)
 #debug bool(true)
 
 class Main

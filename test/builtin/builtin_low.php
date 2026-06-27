@@ -3,7 +3,7 @@
 #debug 2. floatval(42)=float(42)
 #debug
 #debug 3. strval(42)=42 strval(false)=[]
-#debug 4. boolval(0)= boolval(1)=1 boolval(0.0)=
+#debug 4. boolval(0)=0 boolval(1)=1 boolval(0.0)=0
 #debug 5. rand(10,12) in range: 1
 #debug 6. mt_rand(100,100)=100
 

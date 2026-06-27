@@ -15,14 +15,14 @@
 
 static inline int32_t  c_int(t_int v)     { return (int32_t)v; }
 static inline double   c_float(t_float v) { return (double)v; }
-static inline const char* c_str(t_string v) { return v.data; }
+static inline const char* c_str(t_string v) { return STR_PTR(v); }
 
 // ── 2. 基础类型：C → PHP ──────────────────────────────────
 
 static inline t_int   php_int(int32_t v)   { return (t_int)v; }
 static inline t_float php_float(double v)  { return (t_float)v; }
 static inline t_string php_str(const char* s) {
-    return s ? tphp_rt_str_dup((t_string){(char*)s, (int)strlen(s)}) : (t_string){NULL, 0};
+    return s ? tphp_rt_str_dup((t_string){(char*)s, (int)strlen(s)}) : (t_string){.data = NULL, .length = 0, .is_local = false};
 }
 
 // ── 3. 数组：PHP → C（严格类型检查，不匹配即 error()）────
@@ -82,7 +82,7 @@ static inline char** phpc_arr_str(t_array* a) {
         t_string s = a->entries[i].val.value._string;
         out[i] = (char*)malloc((size_t)(s.length + 1));
         if (out[i]) {
-            if (s.data && s.length > 0) memcpy(out[i], s.data, (size_t)s.length);
+            if (STR_PTR(s) && s.length > 0) memcpy(out[i], STR_PTR(s), (size_t)s.length);
             out[i][s.length] = '\0';
         }
     }
@@ -113,7 +113,7 @@ static inline t_array* phpc_new_arr_str(const char* const* src, int len) {
     t_array* a = tphp_fn_arr_create(len > 0 ? len : 4);
     if (!a || !src) return a;
     for (int i = 0; i < len; i++) {
-        t_string s = src[i] ? tphp_rt_str_dup((t_string){(char*)src[i], (int)strlen(src[i])}) : (t_string){NULL, 0};
+        t_string s = src[i] ? tphp_rt_str_dup((t_string){(char*)src[i], (int)strlen(src[i])}) : (t_string){.data = NULL, .length = 0, .is_local = false};
         a = tphp_fn_arr_push(a, VAR_STRING(s));
     }
     return a;

@@ -32,17 +32,17 @@ static inline char* str_pool_alloc(int len);
 
 static inline t_int tphp_fn_bindec(t_string s) {
     if (s.data == NULL || s.length == 0) return 0;
-    return (t_int)strtoll(s.data, NULL, 2);
+    return (t_int)strtoll(STR_PTR(s), NULL, 2);
 }
 
 static inline t_int tphp_fn_hexdec(t_string s) {
     if (s.data == NULL || s.length == 0) return 0;
-    return (t_int)strtoll(s.data, NULL, 16);
+    return (t_int)strtoll(STR_PTR(s), NULL, 16);
 }
 
 static inline t_int tphp_fn_octdec(t_string s) {
     if (s.data == NULL || s.length == 0) return 0;
-    return (t_int)strtoll(s.data, NULL, 8);
+    return (t_int)strtoll(STR_PTR(s), NULL, 8);
 }
 
 // ── 进制转换：int → PHP 字符串 ──────────────────

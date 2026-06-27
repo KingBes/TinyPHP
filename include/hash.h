@@ -53,7 +53,7 @@ static inline void _md5_block(_md5_ctx *c) {
 
 static inline t_string tphp_fn_md5(t_string s) {
     _md5_ctx c; _md5_init(&c);
-    uint8_t *d = (uint8_t*)(s.data ? s.data : "");
+    uint8_t *d = (uint8_t*)(STR_PTR(s) ? STR_PTR(s) : "");
     int len = s.length;
     uint64_t blen = (uint64_t)len * 8;
     while (len > 0) { int r = (len < 64 - c.pos) ? len : 64 - c.pos; memcpy(c.buf+c.pos, d, (size_t)r); c.pos += r; d += r; len -= r; if (c.pos == 64) { _md5_block(&c); c.pos = 0; } }
@@ -96,7 +96,7 @@ static inline void _sha1_block(_sha1_ctx *c) {
 
 static inline t_string tphp_fn_sha1(t_string s) {
     _sha1_ctx c; _sha1_init(&c);
-    uint8_t *d = (uint8_t*)(s.data ? s.data : "");
+    uint8_t *d = (uint8_t*)(STR_PTR(s) ? STR_PTR(s) : "");
     int len = s.length;
     uint64_t blen = (uint64_t)len * 8;
     while (len > 0) { int r = (len < 64 - c.pos) ? len : 64 - c.pos; memcpy(c.buf+c.pos, d, (size_t)r); c.pos += r; d += r; len -= r; if (c.pos == 64) { _sha1_block(&c); c.pos = 0; } }
@@ -128,6 +128,6 @@ static inline void _crc32_make_tab() {
 static inline t_int tphp_fn_crc32_str(t_string s) {
     if (!_crc32_tab_init) _crc32_make_tab();
     uint32_t crc = 0xFFFFFFFF;
-    for (int i = 0; i < s.length; i++) crc = (crc >> 8) ^ _crc32_tab[(crc ^ (unsigned char)s.data[i]) & 0xFF];
+    for (int i = 0; i < s.length; i++) crc = (crc >> 8) ^ _crc32_tab[(crc ^ (unsigned char)STR_PTR(s)[i]) & 0xFF];
     return (t_int)(crc ^ 0xFFFFFFFF);
 }

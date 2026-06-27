@@ -44,12 +44,12 @@ static const uint32_t json_esc_bits[8] = {
 /** 字符串 JSON 转义: " → \"  \ → \\  控制字符 → \u00XX
  *  返回 heap string (短串走池)，调用方负责释放 */
 static t_string json_encode_str(t_string s) {
-    if (s.data == NULL || s.length <= 0)
+    if (STR_PTR(s) == NULL || s.length <= 0)
         return tphp_rt_str_dup(STR_LIT("\"\""));
     // 第一遍: 位图 O(1) 计算转义后长度
     int extra = 0;
     for (int i = 0; i < s.length; i++) {
-        unsigned char c = (unsigned char)s.data[i];
+        unsigned char c = (unsigned char)STR_PTR(s)[i];
         if (json_esc_bits[c >> 5] & (1u << (c & 0x1f))) {
             if (c == '\n' || c == '\r' || c == '\t') extra += 1;
             else extra += (c < 0x20) ? 5 : 1;  // \uXXXX or \X
@@ -57,17 +57,17 @@ static t_string json_encode_str(t_string s) {
     }
     int out_len = s.length + extra + 2;
     char *out = str_pool_alloc(out_len);
-    if (out == NULL) return (t_string){NULL, 0};
+    if (out == NULL) return (t_string){.data = NULL, .length = 0, .is_local = false};
     int pos = 0;
     out[pos++] = '"';
     // 批量安全字符写入：收集连续不需转义字符，一次性 memcpy
     int safe_start = 0;
     for (int i = 0; i < s.length; i++) {
-        unsigned char c = (unsigned char)s.data[i];
+        unsigned char c = (unsigned char)STR_PTR(s)[i];
         if (!(json_esc_bits[c >> 5] & (1u << (c & 0x1f)))) continue;
         // 命中转义 → 先刷出累积的安全字符
         if (i > safe_start) {
-            memcpy(out + pos, s.data + safe_start, (size_t)(i - safe_start));
+            memcpy(out + pos, STR_PTR(s) + safe_start, (size_t)(i - safe_start));
             pos += i - safe_start;
         }
         safe_start = i + 1;
@@ -86,7 +86,7 @@ static t_string json_encode_str(t_string s) {
     }
     // 刷出末尾安全字符
     if (s.length > safe_start) {
-        memcpy(out + pos, s.data + safe_start, (size_t)(s.length - safe_start));
+        memcpy(out + pos, STR_PTR(s) + safe_start, (size_t)(s.length - safe_start));
         pos += s.length - safe_start;
     }
     out[pos++] = '"';
@@ -365,8 +365,8 @@ static t_var json_parse_value(json_parser *p) {
 
 /** json_decode($str) → mixed (t_var) */
 static inline t_var tphp_fn_json_decode(t_string json) {
-    if (json.data == NULL || json.length <= 0) return VAR_NULL();
-    json_parser p = {.cur = json.data, .end = json.data + json.length};
+    if (STR_PTR_V(json) == NULL || json.length <= 0) return VAR_NULL();
+    json_parser p = {.cur = (char*)STR_PTR_V(json), .end = (char*)STR_PTR_V(json) + json.length};
     json_skip_ws(&p);
     if (p.cur >= p.end) return VAR_NULL();
     const char *start = p.cur;

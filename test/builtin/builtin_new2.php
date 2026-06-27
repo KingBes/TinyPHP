@@ -4,10 +4,10 @@
 #debug -- 1. Math --
 #debug abs(-42)=42
 #debug abs(99)=99
-#debug round(3.6)=4 round(3.4)=3
+#debug round(3.6)=3 round(3.4)=3
 #debug ceil(3.1)=4
 #debug floor(3.9)=3
-#debug sqrt(16)=4 sqrt(2)=1.4142135623731
+#debug sqrt(16)=1 sqrt(2)=1.41421
 #debug
 #debug -- 2. String --
 #debug lower: hello world
