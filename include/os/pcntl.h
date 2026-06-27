@@ -12,10 +12,10 @@ void tphp_fn_error(t_string msg, const char *php_file, int php_line);
     tphp_fn_error((t_string){"pcntl_" name "(): not available on Windows", 38}, "<php>", 0)
 
 static inline t_int pcntl_fork(void)            { PCNTL_WIN_ERR("fork"); return -1; }
-static inline t_int pcntl_waitpid(t_int pid, t_int *status, t_int options) { PCNTL_WIN_ERR("waitpid"); return -1; }
-static inline t_int pcntl_wait(t_int *status)   { PCNTL_WIN_ERR("wait"); return -1; }
-static inline void  pcntl_exec(t_string path)   { PCNTL_WIN_ERR("exec"); }
-static inline t_int pcntl_alarm(t_int sec)      { return 0; }  // alarm() silently fails on Win
+static inline t_int pcntl_waitpid(t_int pid, t_int *st, t_int opt) { (void)pid;(void)st;(void)opt; PCNTL_WIN_ERR("waitpid"); return -1; }
+static inline t_int pcntl_wait(t_int *st)       { (void)st; PCNTL_WIN_ERR("wait"); return -1; }
+static inline void  pcntl_exec(t_string path)   { (void)path; PCNTL_WIN_ERR("exec"); }
+static inline t_int pcntl_alarm(t_int sec)      { (void)sec; PCNTL_WIN_ERR("alarm"); return 0; }
 static inline t_int pcntl_get_last_error(void)  { return 0; }
 static inline t_string pcntl_strerror(t_int no) {
     static char _buf[64]; int n = snprintf(_buf, 64, "errno=%lld", (long long)no);
