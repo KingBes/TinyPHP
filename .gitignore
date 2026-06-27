@@ -3,6 +3,7 @@
 *.pdb
 *.lib
 *.o
+*.obj
 *.a
 *.so
 *.dylib
