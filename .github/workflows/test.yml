@@ -71,10 +71,10 @@ jobs:
         if: matrix.compiler != 'tcc'
         shell: msys2 {0}
         run: |
-          export PATH="/c/msys64/mingw64/bin:$PATH"
+          export PATH="/c/msys64/mingw64/bin:$PWD:$PATH"
           set +e
           ccFlag="-cc ${{ matrix.compiler }}"
-          testFiles=$(find test -name '*.php' -exec grep -l '#debug' {} \; | grep -v '@skip')
+          testFiles=$(find test -name '*.php' -exec grep -l '#debug' {} \; | while read f; do grep -q '@skip' "$f" && continue; echo "$f"; done)
           failed=""
           total=0; passed=0
           for f in $testFiles; do
@@ -112,7 +112,7 @@ jobs:
         run: |
           sudo apt update
           sudo apt install -y gcc make libc6-dev git
-          [ "${{ matrix.compiler }}" = "clang" ] && sudo apt install -y clang
+          if [ "${{ matrix.compiler }}" = "clang" ]; then sudo apt install -y clang; fi
 
       - name: Build TCC
         run: bash build.sh
@@ -127,8 +127,8 @@ jobs:
         run: |
           set +e
           ccFlag=""
-          [ "${{ matrix.compiler }}" != "tcc" ] && ccFlag="-cc ${{ matrix.compiler }}"
-          testFiles=$(find test -name '*.php' -exec grep -l '#debug' {} \; | grep -v '@skip')
+          if [ "${{ matrix.compiler }}" != "tcc" ]; then ccFlag="-cc ${{ matrix.compiler }}"; fi
+          testFiles=$(find test -name '*.php' -exec grep -l '#debug' {} \; | while read f; do grep -q '@skip' "$f" && continue; echo "$f"; done)
           failed=""
           total=0; passed=0
           for f in $testFiles; do
@@ -166,7 +166,7 @@ jobs:
         run: |
           sudo apt update
           sudo apt install -y gcc make libc6-dev git
-          [ "${{ matrix.compiler }}" = "clang" ] && sudo apt install -y clang
+          if [ "${{ matrix.compiler }}" = "clang" ]; then sudo apt install -y clang; fi
 
       - name: Build TCC
         run: bash build.sh
@@ -181,7 +181,7 @@ jobs:
         run: |
           set +e
           ccFlag=""
-          [ "${{ matrix.compiler }}" != "tcc" ] && ccFlag="-cc ${{ matrix.compiler }}"
+          if [ "${{ matrix.compiler }}" != "tcc" ]; then ccFlag="-cc ${{ matrix.compiler }}"; fi
           testFiles=$(find test -name '*.php' -exec grep -l '#debug' {} \; | grep -v '@skip')
           failed=""
           total=0; passed=0
@@ -212,7 +212,7 @@ jobs:
       PHP_URL: https://github.com/KingBes/TinyPHP/releases/download/PHP/php-cli-8.4-macos-aarch64.zip
     strategy:
       matrix:
-        compiler: [tcc, clang]
+        compiler: [tcc, gcc, clang]
     steps:
       - uses: actions/checkout@v4
 
@@ -225,7 +225,7 @@ jobs:
           for i in 1 2 3; do
             echo "[*] Clone attempt $i..."
             git clone --depth 1 --branch mob https://repo.or.cz/tinycc.git tinycc-src 2>/dev/null && break
-            [ "$i" -lt 3 ] && sleep 10
+            if [ "$i" -lt 3 ]; then sleep 10; fi
           done
           test -d tinycc-src || { echo "TCC clone failed"; exit 1; }
           cd tinycc-src
@@ -264,7 +264,7 @@ jobs:
         run: |
           set +e
           ccFlag=""
-          [ "${{ matrix.compiler }}" != "tcc" ] && ccFlag="-cc ${{ matrix.compiler }}"
+          if [ "${{ matrix.compiler }}" != "tcc" ]; then ccFlag="-cc ${{ matrix.compiler }}"; fi
           testFiles=$(find test -name '*.php' -exec grep -l '#debug' {} \; | grep -v '@skip')
           failed=""
           total=0; passed=0
