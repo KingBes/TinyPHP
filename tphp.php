@@ -180,10 +180,13 @@ echo "[1/2] Transpiling {$allFilesStr} => C...\n";
     // 用 for 而非 foreach：扩展文件可能有自己的 #import，需递归扫描
     $extRoot = $inPhar ? ($extRootPhar ?? __DIR__ . DIRECTORY_SEPARATOR . 'ext') : (__DIR__ . DIRECTORY_SEPARATOR . 'ext');
     $importCFiles = [];
+    $importedExts = [];  // 已处理的扩展名，避免重复
     for ($fi = 0; $fi < count($files); $fi++) {
         $src = file_get_contents($files[$fi]);
         if (preg_match_all('/^#import\s+(\w[\w\/\-\.]*)/m', (string)$src, $m)) {
             foreach ($m[1] as $extName) {
+                if (isset($importedExts[$extName])) continue;  // 已导入，跳过
+                $importedExts[$extName] = true;
                 $extSrc = $extRoot . DIRECTORY_SEPARATOR . $extName . DIRECTORY_SEPARATOR . 'src';
                 if (!is_dir($extSrc)) die("Error: #import {$extName} — ext/{$extName}/src/ not found\n");
                 $extPhp = glob($extSrc . DIRECTORY_SEPARATOR . '*.php');
