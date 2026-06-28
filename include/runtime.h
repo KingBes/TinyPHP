@@ -92,9 +92,10 @@ static inline t_string tphp_rt_str_from_int(t_int v) {
 }
 
 static inline t_string tphp_rt_str_from_float(t_float v) {
-    static char _buf[64];
-    int len = snprintf(_buf, sizeof(_buf), "%g", v);
-    return (t_string){_buf, len > 0 ? len : 0};
+    char* buf = str_pool_alloc(64);
+    if (!buf) return (t_string){.data = NULL, .length = 0, .is_local = false};
+    int len = snprintf(buf, 64, "%g", v);
+    return (t_string){.data = buf, .length = len > 0 ? len : 0, .is_local = false};
 }
 
 static inline t_string tphp_rt_str_from_bool(t_bool v) {
@@ -256,6 +257,7 @@ static inline t_string tphp_rt_str_concat_multi(int count, const t_string parts[
         int len = (parts[i].length > 0 && pd != NULL) ? parts[i].length : 0;
         if (len < 0) len = 0;
         if (len > 0x7FFFFF) return (t_string){.data = NULL, .length = 0, .is_local = false};
+        if (unlikely(total > 0x7FFFFF - len)) return (t_string){.data = NULL, .length = 0, .is_local = false}; // 防累加上溢
         total += len;
     }
     if (total <= 0) return (t_string){.data = NULL, .length = 0, .is_local = false};

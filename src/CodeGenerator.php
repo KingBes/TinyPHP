@@ -805,14 +805,15 @@ class CodeGenerator implements ASTVisitor
                 $code = "{$declType} {$var} = {$expr};";
             }
         } else {
-            // 自动释放：对象/t_string 重赋值时先释放旧值
-            $release = '';
+            // 自动释放：对象/t_string 重赋值时先求值再释放（防止 $var=$var->method() 的 use-after-free）
             if (str_starts_with($prevType, 'tphp_class_') || str_starts_with($prevType, 'tphp_enum_')) {
-                $release = "tp_obj_release((void*){$var}); ";
+                $tmp = '_tmp_' . mt_rand(10000, 99999);
+                $code = "{$prevType} {$tmp} = {$expr}; tp_obj_release((void*){$var}); {$var} = {$tmp};";
             } elseif ($prevType === 't_string') {
-                $release = "tphp_rt_str_free(&{$var}); ";
+                $code = "tphp_rt_str_free(&{$var}); {$var} = {$expr};";
+            } else {
+                $code = "{$var} = {$expr};";
             }
-            $code = $release . "{$var} = {$expr};";
         }
 
         // 数组赋值 → 推导元素类型（支持对象/回调/嵌套数组）
@@ -2231,7 +2232,7 @@ class CodeGenerator implements ASTVisitor
                 $code = $arg->accept($this);
                 $type = $this->inferType($arg);
                 $lines[] = match ($type) {
-                    't_string'   => "{$code} = (t_string){NULL, 0};",
+                    't_string'   => "tphp_rt_str_free(&{$code}); {$code} = (t_string){.data = NULL, .length = 0, .is_local = false};",
                     't_array*'   => "tphp_rt_unregister((void*){$code}); if ({$code} != NULL) { tphp_fn_arr_free({$code}); {$code} = NULL; }",
                     't_callback' => "if (({$code}).env != NULL) { tphp_rt_unregister(({$code}).env); free(({$code}).env); ({$code}).env = NULL; } ({$code}).func = NULL;",
                     'null'       => "{$code} = NULL;",
@@ -3194,6 +3195,7 @@ class CodeGenerator implements ASTVisitor
         }
         $lines[] = "for (int {$idx} = 0; {$idx} < tphp_fn_arr_count({$arr}); {$idx}++) {";
         if ($keyVar) {
+            $lines[] = $this->ind("if ({$arr} == NULL) break;");
             $lines[] = $this->ind("const t_arr_entry* _ent = &{$arr}->entries[{$idx}];");
             $lines[] = $this->ind("const t_var* _ekey = &_ent->key;");
             if ($keyType === 't_string') {
