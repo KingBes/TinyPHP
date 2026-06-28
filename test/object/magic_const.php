@@ -1,4 +1,8 @@
 <?php
+#debug ~ LINE=12
+#debug ~ FILE=C:\project\php\TinyPHP\test\object\magic_const.php
+#debug ~ DIR=C:\project\php\TinyPHP\test\object
+#debug ~ SEP=[\]
 
 class Main {
     public function main(): void {

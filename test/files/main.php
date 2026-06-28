@@ -1,4 +1,10 @@
 <?php // @multi @with demo.php,other/demo.php,all/aa.php,other/other.php
+#debug Hello, main!
+#debug Hello, Class Demo!
+#debug Hello, Function Demo!
+#debug Hello, Function Demo2!
+#debug Hello, Class Myaa!
+#debug Hello, Function!
 
 /* use Demo\Demo; // 导入命名空间的 Demo 类
 use function Demo\myDemoFn; // 导入命名空间的 myDemoFn 函数

@@ -1,4 +1,43 @@
 <?php
+#debug ===== 1. nested int =====
+#debug int(1)
+#debug int(2)
+#debug int(4)
+#debug int(9)
+#debug 1
+#debug 6
+#debug ===== 2. sub-array var =====
+#debug int(10)
+#debug int(20)
+#debug int(30)
+#debug int(40)
+#debug int(100)
+#debug ===== 3. nested string =====
+#debug string(5) "hello"
+#debug string(5) "world"
+#debug string(3) "foo"
+#debug hello world
+#debug foo-bar
+#debug ===== 4. nested float =====
+#debug float(1.1)
+#debug float(2.2)
+#debug float(3.3)
+#debug ===== 5. nested bool =====
+#debug bool(true)
+#debug bool(false)
+#debug bool(true)
+#debug flags[0][0] is true
+#debug ===== 6. type propagation =====
+#debug int(100)
+#debug int(200)
+#debug int(300)
+#debug int(400)
+#debug int(1000)
+#debug alpha/beta
+#debug ===== 7. foreach nested =====
+#debug int(210)
+#debug
+#debug === all nested array tests done ===
 
 class Main
 {

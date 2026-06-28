@@ -1,4 +1,22 @@
 <?php
+#debug -- 1. Hashing --
+#debug md5 len=32
+#debug sha1 len=40
+#debug ~ crc32=907060870
+#debug -- 2. parse_url --
+#debug url keys=5
+#debug -- 3. parse_str --
+#debug ps cnt=2
+#debug -- 4. strtr --
+#debug tr=string(3) "12c"
+#debug -- 5. ksort/krsort --
+#debug ks cnt=3
+#debug krs cnt=2
+#debug -- 6. asort/arsort --
+#debug as cnt=3
+#debug ars cnt=3
+#debug
+#debug === Tier3 OK ===
 
 class Main {
     public function main(): void {

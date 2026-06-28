@@ -1,4 +1,16 @@
 <?php // @multi @with const_global.php,const_lib.php
+#debug ===== Global Constants =====
+#debug string(12) "global hello"
+#debug int(42)
+#debug float(3.14159)
+#debug bool(true)
+#debug
+#debug ===== Namespace & Class Constants =====
+#debug int(100)
+#debug   Config constants defined OK
+#debug   App constants defined OK
+#debug
+#debug === ALL const tests done ===
 
 use Lib\Config;
 use Lib\App;

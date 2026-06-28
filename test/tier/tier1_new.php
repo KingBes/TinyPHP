@@ -1,4 +1,51 @@
 <?php
+#debug -- 1. Math --
+#debug pi=float(3.14159)
+#debug deg2rad=float(3.14159)
+#debug rad2deg=float(180)
+#debug intdiv=int(3)
+#debug pow=int(8)
+#debug -- 2. Ord/Chr --
+#debug ord(A)=int(65)
+#debug chr(65)=string(1) "A"
+#debug -- 3. String checks --
+#debug start=bool(true)
+#debug end=bool(true)
+#debug -- 4. is_numeric --
+#debug num(42)=bool(true)
+#debug num(hi)=bool(false)
+#debug -- 5. gettype --
+#debug t(42)=string(3) "int"
+#debug -- 6. Base --
+#debug bindec(1010)=int(10)
+#debug octdec(17)=int(15)
+#debug hexdec(ff)=int(255)
+#debug decbin(10)=string(4) "1010"
+#debug decoct(15)=string(2) "17"
+#debug dechex(255)=string(2) "ff"
+#debug -- 7. number_format --
+#debug fmt(1234567)=string(9) "1,234,567"
+#debug fmt(1234.5678,2)=string(8) "1,234.57"
+#debug -- 8. Array pointer --
+#debug cur=int(10)
+#debug key=int(0)
+#debug next=int(20)
+#debug prev=int(10)
+#debug end=int(50)
+#debug reset=int(10)
+#debug -- 9. Array keys --
+#debug kf=0 kl=4
+#debug list=bool(true)
+#debug rand>=bool(true)
+#debug -- 10. getenv/putenv --
+#debug ~ getenv PATH len=690
+#debug putenv ok
+#debug -- 11. Time --
+#debug ~ mktime=1782561600
+#debug ~ strtotime=1704067200
+#debug uniqid len=13
+#debug
+#debug === Tier1 OK ===
 
 class Main {
     public function main(): void {

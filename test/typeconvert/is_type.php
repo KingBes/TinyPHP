@@ -41,7 +41,6 @@
 #debug bool(false)
 #debug bool(false)
 #debug bool(false)
-#debug bool(false)
 #debug
 #debug === all is_object tests done ===
 

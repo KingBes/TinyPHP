@@ -1,4 +1,12 @@
 <?php
+#debug 1. 200 OK
+#debug 1. no server error
+#debug 1. admin login OK
+#debug 2. 250 discounted=200
+#debug 2. 10+30=40
+#debug 3. calc?->compute=30
+#debug 4. never not called
+#debug 5. all done
 
 class Calculator {
     public int $val;

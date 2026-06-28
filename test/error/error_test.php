@@ -1,4 +1,17 @@
 <?php // @exit 1 — tests error() which triggers exit(1)
+#debug === test 1: 简单 error ===
+#debug 这条应该看不到
+#debug 这条也不应该看到
+#debug
+#debug === test 2: error 时对象清理 ===
+#debug Demo('obj2') destroyed
+#debug Demo('obj2') destroyed
+#debug Demo('obj1') destroyed
+#debug Demo('obj1') destroyed
+#debug
+#debug ~ Fatal error: 对象 + 数组合并清理
+#debug ~   in C:/project/php/TinyPHP/test/error/error_test.php on line 70
+#debug
 
 class Demo
 {

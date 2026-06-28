@@ -1,4 +1,21 @@
 <?php // @multi @with models.php,services.php
+#debug === Auto-Destruct Test ===
+#debug
+#debug -- 1. Create --
+#debug p1=Alpha p2=Beta
+#debug
+#debug -- 2. Use --
+#debug p1 total=$50
+#debug p1 -10%=$9
+#debug
+#debug -- 3. Unset p2 --
+#debug   ~Product#2
+#debug
+#debug -- 4. p1 still alive --
+#debug SKU-A
+#debug
+#debug -- main() ends, p1 auto-destroy follows --
+#debug   ~Product#1
 
 class Main
 {

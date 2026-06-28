@@ -1,6 +1,12 @@
+<p align="center">
+  <img src="favicon.svg" width="300" height="300" alt="TinyPHP logo">
+</p>
+
 # TinyPHP
 
-> PHP → C 转译编译器，将 PHP 子集转为原生二进制。
+> **PHP → C AOT 编译器** — 用 PHP 语法写原生二进制，零运行时依赖，性能飙 300-500 倍。
+
+TinyPHP **不是** PHP 解释器或运行时替代品。它把 PHP 代码（强类型子集）编译成安全的 C，再由 GCC/Clang/TCC 编译为原生可执行文件。没有 Zend VM、没有 OPCache、不需要 PHP 环境。
 
 ## 快速开始
 
@@ -26,19 +32,47 @@ php tphp.php main.php -os linux -arch aarch64  # ARM64 Linux
 php tphp.php main.php -os windows          # Windows .exe
 ```
 
-## 入口文件
+### CLI 选项
+
+| 选项 | 说明 |
+|---|---|
+| `-o <output>` | 输出文件路径 |
+| `-cc <compiler>` | 指定 C 编译器（默认内置 TCC） |
+| `-os <target>` | 跨编译目标：`windows`、`linux`、`macos` |
+| `-arch <arch>` | 目标架构：`x86_64`、`aarch64`（Windows/Linux 默认 x86_64，macOS 默认 aarch64） |
+| `-h, --help` | 显示帮助 |
+
+## 入口逻辑
+
+TinyPHP 要求入口文件必须有一个**全局命名空间**（无 `namespace` 声明）的 `class Main`：
 
 ```php
-<?php 
+<?php
 
-class Main{
+class Main
+{
+    // 构造函数 — 接收命令行参数（可选，默认可省略）
+    public function __construct(int $argc, array $argv)
+    {
+        // $argc — 参数个数，$argv — 参数数组
+    }
 
+    // 入口函数 — 必须为 public function main(): void
     public function main(): void
     {
         echo "hello world\n";
     }
+
+    // 析构函数 — 程序退出前自动调用（可选）
+    public function __destruct() {}
 }
 ```
+
+| 方法 | 签名 | 必须 | 说明 |
+|------|------|------|------|
+| `__construct` | `(int $argc, array $argv)` | 否 | 接收命令行参数；可省略 |
+| `main` | `(): void` | **是** | 程序入口，必须强类型声明 |
+| `__destruct` | `()` | 否 | 退出前自动调用，可省略 |
 
 ### 独立 PHAR（推荐）
 
@@ -48,135 +82,98 @@ class Main{
 tphp main.php    # include/ + tcc/ 自动解压到同级目录
 ```
 
-## 性能
+### 多文件编译
 
-2026-06-27 实测，PHP 8.5.1 vs TinyPHP × 3 编译器：
+TinyPHP 支持 `@multi` 注解声明多文件入口（辅助文件用 `@skip` 标记无 Main 类）：
 
-### 数组操作 (bench_tphp, 100K loops)
+```php
+// main.php
+<?php // @multi @with models.php,services.php
+use MyApp\Models\User;
+// ...
+```
 
-| 场景 | PHP 8.5 | TCC | GCC -O2 | Clang -O2 |
-|---|---|---|---|---|
-| foreach 1K ×100K | 1,560 ms | 515 ms (**3.0x**) | 59 ms ⚡ **26.6x** | 59 ms ⚡ **26.5x** |
-| count+for ×100K | 170 ms | 31 ms (**5.4x**) | 5.0 ms ⚡ **34.0x** | 4.6 ms ⚡ **36.8x** |
-| 嵌套数组读 ×100K | 2.8 ms | 0.52 ms (**5.3x**) | 0.12 ms ⚡ **22.9x** | 0.14 ms ⚡ **20.1x** |
-| int key 读取 ×100K | 2.0 ms | 0.31 ms (**6.5x**) | 0.11 ms ⚡ **18.2x** | 0.17 ms ⚡ **11.9x** |
-| array_pop ×100K | 3.2 ms | 2.9 ms (1.1x) | 0.56 ms ⚡ **5.7x** | 0.43 ms ⚡ **7.3x** |
-| in_array ×100K | 48.8 ms | 103 ms (0.5x) | 29 ms ⚡ **1.7x** | 30 ms ⚡ **1.6x** |
-| explode+implode ×10K | 2.0 ms | 10.2 ms (0.2x) | 5.0 ms (0.4x) | 4.1 ms (0.5x) |
+## PHP 兼容度
 
-### OOP 操作 (bench_oop, 500K loops)
+基于 PHP 8.5 强类型语法，兼容度约 **80%**。核心约束：**AOT 编译不兼容动态特性**。
 
-| 场景 | PHP 8.5 | TCC | GCC -O2 |
-|---|---|---|---|
-| prop write ×500K | 16.6 ms | 22.9 ms (0.7x) | **6.5 ms** ⚡ **2.6x** 🏆 |
-| new+unset Dog() ×500K | 37.2 ms | 38.1 ms (1.0x) | **17.4 ms** ⚡ **2.1x** 🏆 |
-| construct+unset ×500K | 32.4 ms | 44.2 ms (0.7x) | **23.1 ms** ⚡ **1.4x** 🏆 |
-| method call ×500K | 16.6 ms | 1.3 ms ⚡13x | ~0 🔥 |
-| prop read ×500K | 8.8 ms | 0.45 ms ⚡20x | ~0 🔥 |
+### ✅ 完全支持
 
-> 🏆 GCC -O2 下 prop write 反超 2.6x，new+unset 反超 2.1x，construct 反超 1.4x  
-> 🔥 方法调用/属性读取近乎 0ns（编译器完全优化消除）  
-> 用法: `tphp main.php -cc gcc` 或 `tphp main.php -cc clang`
-
-### 核心优化
-
-| 优化 | 效果 |
+| 类别 | 特性 |
 |------|------|
-| **SSO 小字符串** | prop write: **77%↑** (GCC), 53%↑ (TCC) |
-| **Arena Allocator** | explode+implode: 25-53%↑ |
-| **对象复用池** | new+unset: 36-52%↑ |
-| **ROPE 多片段拼接** | concat-4: 14x慢→6.1x快 |
-| **implode O(N²)→O(N)** | explode+implode 2-3x↑ |
-| **CodeGen 自动释放 + `$a[]=`** | 消除手动 unset + 零函数调用 |
+| 控制流 | `if/elseif/else`、`while`、`do-while`、`for`、`foreach`、`switch`、`match`、`break/continue/goto` |
+| OOP | `class`、`extends`、`abstract`、`interface`、`implements`、`trait+use`、`enum`、`__construct(public $x)`、`__destruct`、`static/final/readonly`、`instanceof`、`self::`、`$this`、链式调用、`?->` 空安全 |
+| 闭包 | `function() use($x) {}`、`fn($x) => expr`、多捕获、嵌套闭包 |
+| 异常 | `try/catch(Exception $e)/finally`、`throw new Exception()`、`never` 返回类型 |
+| 类型 | `int` `float` `string` `bool` `array` `callable` `void` `mixed` `self` 类类型 |
+| 运算符 | 完整 15 级优先级：算术/比较/逻辑/位/三元 `?:`/空合并 `??`/太空船 `<=>`/自增自减/类型转换 |
+| 命名空间 | `namespace A\B`、`use A\{B,C}` 分组导入、`use function` |
+| 语法糖 | `list()/$a[] =` 解构、`$a[] = ` push、字符串插值、heredoc、魔术常量 (`__LINE__` `__FILE__` `__DIR__`) |
 
-详见 [BENCHMARK_RESULTS.md](BENCHMARK_RESULTS.md) 和 [ROADMAP.md](ROADMAP.md)。
+### ❌ 不支持（AOT 物理不可行）
 
-## 编译流水线
+| 特性 | 原因 |
+|------|------|
+| `eval()` | 没有运行时解释器 |
+| `$$var` 可变变量 | 编译时不知道变量名 |
+| `include/require` | 没有运行时文件加载 |
+| `__call` `__get` `__set` | 没有运行时分发 |
+| `$obj->{$method}()` | 编译时不知道方法名 |
+| `yield` / Generator | 需要协程运行时（不做） |
 
-```
-PHP → Lexer → Token[] → Parser → AST → CodeGenerator → .c → 编译器 → 二进制
-                                    include/  (C 运行时头文件)
-```
+### ⬜ 不做（权衡决定）
 
-- **Lexer**: 逐字符扫描，~75 种 Token，支持字符串插值/heredoc
-- **Parser**: 递归下降，运算符优先级完整
-- **CodeGenerator**: 访问者模式，生成类型安全的 C 代码
-- **C 运行时**: COS 风格对象系统（16B 头 + struct 嵌套继承），setjmp/longjmp 异常，ROPE 多片段字符串拼接，256 位 JSON 转义位图，128 槽数组复用池+启动预热，128 槽对象复用池，64KB 字符串池，`compat.h` TCC/GCC/Clang 三编译器兼容层
-- **编译器**: 内置 TCC (mob 分支)，支持 GCC/Clang
+| 特性 | 原因 |
+|------|------|
+| `?int` `int\|string` | 会破坏"类型固定 = 零运行时开销"的核心优势 |
+| `...$args` 可变参数 | 需要动态栈构造 |
 
-## 支持特性
+### 🔢 内置函数
 
-### 类型系统
+已实现 **178 个**（约 PHP 标准库的 70%），覆盖数组/字符串/数学/时间/JSON/哈希/进程控制等。详见 [FUNCTIONS.md](FUNCTIONS.md)。
 
-| PHP | C |
-|---|---|
-| `int` | `int64_t` |
-| `float` | `double` |
-| `string` | `struct { char *data; int length; }` |
-| `bool` | `bool` |
-| `array` | `t_array*`（有序映射，int/string 键） |
-| `callable` | `t_callback` |
-| `Exception` | 内置类（`include/object/exception.h`） |
-| `mixed` / `int\|string` | `t_var`（类型标签 union） |
+## 独有特性
 
-### OOP（COS 风格对象系统）
+### AOT 类型固定
 
-对象头 16 字节（`cls` 指针 + `refcount`），继承用 struct 嵌套。对象离开作用域自动析构（`tp_obj_release`）：
+变量类型在首次赋值时确定，之后不可变。`===` 和 `==` 等价——编译期已知类型，**零运行时类型检查**。
 
-```php
-class Dog extends Animal { ... }     // extends ✅
-abstract class Entity { ... }        // abstract ✅
-interface Named { ... }              // interface ✅
-class User implements Named { ... }  // implements ✅
-trait Loggable { ... use... }        // trait + use ✅
-__destruct() { ... }                 // 自动析构 ✅
-```
+### COS 风格对象系统
 
-### 异常处理（COS setjmp/longjmp）
+对象头仅 16 字节（比 PHP 的 ~80B 精简 5 倍），struct 嵌套继承无开销，VTable 直接函数指针调用。作用域结束时自动调用 `__destruct` + 释放。
 
-```php
-try { $this->validate(-1); }
-catch (Exception $e) { echo $e; }
-finally { cleanup(); }
-throw new Exception('error');
-```
+### 多层内存优化
 
-### 运算符
+| 层 | 机制 | 效果 |
+|----|------|------|
+| SSO 小字符串 | 24B 内联缓冲区 | ≤23 字节零堆分配 |
+| 128KB 字符串池 | bump allocator + Arena 溢出块 | O(1) 分配，批量释放 |
+| 128 槽数组复用池 | LIFO + 1.5× 增长 | 热路径零 malloc |
+| 128 槽对象复用池 | LIFO | new+unset 提速 36-52% |
+| ROPE 多片段拼接 | 编译期展平为单次分配 | concat-4 提速 6 倍 |
 
-`+` `-` `*` `/` `%` `**` `.` `=` `+=` `-=` `*=` `/=` `.=`
-`==` `!=` `===` `!==` `<` `>` `<=` `>=` `<=>` `&&` `||` `!`
-`&` `|` `^` `~` `<<` `>>` `++` `--` `?:` `??` `?->` `(int)` `(float)` `(string)` `(bool)`
+### 三编译器 + 四平台
 
-### 语法
+| | TCC | GCC | Clang |
+|---|---|---|---|
+| **Windows x86_64** | ✅ 默认内置 | ✅ | ✅ |
+| **Linux x86_64** | ✅ | ✅ | ✅ |
+| **Linux aarch64** | ✅ | ✅ | ✅ |
+| **macOS aarch64** | ✅ | ✅ | ✅ |
 
-`if/elseif/else` · `while` · `do-while` · `for` · `foreach` · `switch/case/default` · `match`（多条件 `1,2=>...`）· `break/continue/goto` · `class/method/property` · `new` · `namespace/use`（含分组 `use A\{B,C}`）· `enum` · `function` · `closure/use` · `fn($x) => expr` · `const`（全局/命名空间/类）· `list()`/`[]` 解构（含键名 `"key"=>$v`）· `self::CONST`/`Class::CONST` · `?->` nullsafe · `never` 返回类型 · `__construct(public $x)` 属性提升 · `static`/`final`/`readonly` 修饰符 · `__LINE__`/`__FILE__`/`__DIR__`/`DIRECTORY_SEPARATOR` · `extends` · `interface` · `implements` · `abstract class`/`abstract method` · `trait` + `use TraitName` · `try`/`catch`/`finally` · `throw new Exception("msg")` · `__destruct` 自动析构
-
-### 内置函数
-
-| 类别 | 函数 |
-|---|---|
-| 输出 | `echo`, `var_dump` |
-| 数组 | `count`, `array_push`, `array_pop`, `array_shift`, `array_unshift`, `in_array`, `array_key_exists`, `array_keys`, `array_values`, `array_merge`, `array_unique`, `array_reverse`, `array_slice`, `array_sum`, `array_product`, `array_fill`, `array_search`, `sort`, `rsort`, `shuffle`, `array_key_first`, `array_key_last`, `array_rand`, `array_is_list`, `current`, `key`, `next`, `prev`, `end`, `reset`, `array_chunk`, `array_combine`, `array_flip`, `array_column`, `ksort`, `krsort`, `asort`, `arsort` |
-| 字符串 | `implode`, `explode`, `strlen`, `trim/ltrim/rtrim`, `substr`, `strpos`, `str_contains`, `str_replace`, `strtolower`, `strtoupper`, `sprintf`, `ord`, `chr`, `str_starts_with`, `str_ends_with`, `is_numeric`, `ucfirst`, `lcfirst`, `strrev`, `str_repeat`, `str_split`, `str_pad`, `substr_count`, `str_shuffle`, `addslashes`, `stripslashes`, `bin2hex`, `hex2bin`, `urlencode`, `urldecode`, `strtr`, `parse_url`, `parse_str` |
-| 类型 | `is_int/float/string/bool/array/null/object/callable`, `isset`, `empty`, `unset`, `gettype` |
-| 转换 | `intval`, `floatval`, `strval`, `boolval` |
-| 数学 | `abs`, `round`, `ceil`, `floor`, `sqrt`, `pow`, `pi`, `deg2rad`, `rad2deg`, `intdiv` |
-| 进制 | `bindec`, `hexdec`, `octdec`, `decbin`, `decoct`, `dechex`, `number_format` |
-| 哈希 | `md5`, `sha1`, `crc32` |
-| 通用 | `max`, `min`, `range`, `rand`, `mt_rand`, `exit/die`, `error` |
-| 时间 | `time`, `date`, `sleep`, `usleep`, `hrtime`, `microtime`, `strtotime`, `mktime`, `uniqid` |
-| JSON | `json_encode`, `json_decode` |
-| 环境 | `getenv`, `putenv` |
-| 进程 | `pcntl_fork/waitpid/wait/exec/alarm/get_last_error/strerror`（POSIX 专属） |
-| POSIX | `posix_getpid/ppid/uid/gid/getcwd/isatty/kill/strerror/get_last_error/ttyname/uname/times`（POSIX 专属） |
-
-> 详见 [FUNCTIONS.md](FUNCTIONS.md) — 每个函数与 PHP 的差异对照。
+TCC 亚秒编译，GCC/Clang -O2 带来 3-10 倍额外提速。`compat.h` 统一处理三编译器差异。
 
 ### C 互操作（PHPC）
 
+完整的 PHP ↔ C 双向互操作：`C->function(args)` 直接调用 C 函数，`c_int/c_str` 类型桥接，数组/对象/回调互操作。详见下方 PHPC 章节。
+
+---
+
+## C 互操作（PHPC）
+
 > 完整实现：`include/phpc.h`（~180 行），通过 `#include`/`#flag`/`C->call`/`c_*`/`php_*`/`phpc_*` 实现 PHP ↔ C 双向互操作。所有 phpc 函数为**全局函数**，不受命名空间 mangle。测试：`test/phpc/`。
 
-#### 编译控制
+### 编译控制
 
 ```php
 #include "include/demo.h"       // 项目头文件 → #include "include/demo.h"
@@ -194,7 +191,7 @@ throw new Exception('error');
 
 `#flag` 过滤规则：不写 = 全平台+全编译器。`MacOS` 映射到 `Darwin`。
 
-#### 基础类型桥接
+### 基础类型桥接
 
 ```
 PHP → C:                  C → PHP:
@@ -205,7 +202,7 @@ c_str($s)   → const char*  php_str(s)  → t_string (深拷贝)
 
 直接 C 调用：`C->function(args)` → 生成原生 `function(args)`，无 `tphp_fn_` 前缀。
 
-#### 数组互操作
+### 数组互操作
 
 **严格 C 风格**：`phpc_arr_int($arr)` 要求所有元素为 `TYPE_INT`，否则 `error()` 退出。`phpc_arr_dbl` 接受 `int` 或 `float`。
 
@@ -232,7 +229,7 @@ function sum_array(array $arr): int {
 | `phpc_new_arr_str(src, len)` | `char*[]` → `t_array*` |
 | `phpc_new_arr()` | 空数组 |
 
-#### 对象互操作
+### 对象互操作
 
 TinyPHP 对象 = `t_object` 头部 + 字段，`phpc_obj` 提取底层 C 结构体指针：
 
@@ -250,7 +247,7 @@ function obj_read_x(MyPoint $p): float {
 | `phpc_obj($obj)` | PHP→C | 提取底层 C 结构体指针（`void*`） |
 | `phpc_new_obj(ptr, vtable)` | C→PHP | 包裹 C 指针为 PHP 对象（vtable 管理析构） |
 
-#### 回调互操作
+### 回调互操作
 
 **有 env 回调** — `phpc_fn_i32` + `phpc_env`：
 
@@ -285,7 +282,7 @@ C->fold_dbl($data, $len, phpc_thunk('fold_cb', $fn));  // 按签名生成 thunk
 | `phpc_new_fn(func)` → `t_callback` | C 函数指针 → t_callback |
 | `phpc_new_fn_env(func, env)` | 带环境版本 |
 
-#### 内存安全
+### 内存安全
 
 | 函数 | 说明 |
 |------|------|
@@ -294,77 +291,29 @@ C->fold_dbl($data, $len, phpc_thunk('fold_cb', $fn));  // 按签名生成 thunk
 
 **关键规则**：`phpc_arr_*` 返回的指针必须通过 `phpc_free` 释放。`phpc_new_arr_*` 返回的 `t_array*` 由 TinyPHP 引用计数自动管理。
 
-### 内存安全
+## 性能
 
-- `error()` 退出前遍历资源链表释放所有对象/数组/字符串
-- 数组 128 槽 LIFO 复用池 + 启动预热 + 1.5× 增长因子
-- 64KB 小字符串池 bump allocator
-- ROPE 多片段拼接：单次分配代替 N 次 pair-wise 分配
-- 引用计数 + `__destruct` 自动释放
-- JSON 无效输入 → `error()` 报错退出
+PHP 8.5.1 vs TinyPHP（GCC -O2），详见 [BENCHMARK_RESULTS.md](BENCHMARK_RESULTS.md)：
 
-## 独特机制
+- **数组遍历/读取**: 18-36x PHP，方法调用近乎 0ns
+- **OOP 创建/写入**: SSO + 对象池使 new+unset 反超 2.1x，prop write 反超 2.6x
+- **字符串拼接**: ROPE 多片段展平，concat-4 快 6 倍
+- **编译器差距**: GCC/Clang -O2 比 TCC 再快 3-10x，`tphp -cc gcc` 即可获得
 
-### COS 风格对象系统
+已落地优化：SSO 小字符串、Arena Allocator、对象复用池、ROPE 拼接、implode O(N²)→O(N)、CodeGen 自动释放。
 
-| 特性 | 说明 |
-|---|---|
-| 对象头 | 16 字节（`cls` + `refcount`），比 PHP 的 zend_object（~80B）精简 5× |
-| 继承 | struct 嵌套 `_parent`，父子强转零开销 |
-| 析构 | `tp_obj_release` — 作用域结束时自动调用 `__destruct` + `free` |
-| 拓扑排序 | 编译器自动保证父类 struct 先于子类生成 |
+## 编译流水线
 
-### 编译期 AOT
+```
+PHP → Lexer → Token[] → Parser → AST → CodeGenerator → .c → 编译器 → 二进制
+                                    include/  (C 运行时头文件)
+```
 
-| 特性 | 说明 |
-|---|---|
-| 类型固定 | 变量类型在赋值时确定，后续不变 — 零运行时类型检查 |
-| VTable 直接调用 | 无哈希表分发开销，方法调 = 间接函数指针 |
-| 闭包 | 编译为 static C 函数 + env 参数 |
-| 魔术常量 | `__LINE__`/`__FILE__`/`__DIR__`/`__CLASS__`/`__METHOD__` — 编译期替换 |
-
-### 异常系统
-
-| 特性 | 说明 |
-|---|---|
-| 实现 | `setjmp/longjmp`（COS 风格），零外部依赖 |
-| 内存安全 | `tp_throw` 先 `tphp_rt_free_all()` 再跳转 |
-| 消息缓冲 | 256 字节栈帧内缓冲，不依赖堆分配 |
-
-### C 运行时
-
-| 特性 | 说明 |
-|---|---|
-| 字符串池 | 64KB bump allocator，≤512B 零 `malloc` |
-| 数组池 | 128 槽 LIFO 复用池 + 1.5× 增长因子 |
-| 资源追踪 | 全局链表，`error()` 退出时遍历释放 |
-| 分支预测 | `likely`/`unlikely` 标注热路径 |
-| 异常安全 | 无效 JSON → `error()`，`tp_throw` → `tphp_rt_free_all()` |
-
-### 多编译器 + 跨平台
-
-| 编译器 | 状态 |
-|---|---|
-| TCC (mob) | ✅ 默认内置 |
-| GCC | ✅ |
-| Clang | ✅ |
-
-| 平台 | 状态 |
-|---|---|
-| Windows x86_64 | ✅ |
-| Linux x86_64 | ✅ |
-| Linux aarch64 | ✅ |
-| macOS aarch64 | ✅ |
-
-## CLI 选项
-
-| 选项 | 说明 |
-|---|---|
-| `-o <output>` | 输出文件路径 |
-| `-cc <compiler>` | 指定 C 编译器（默认内置 TCC） |
-| `-os <target>` | 跨编译目标：`windows`、`linux`、`macos` |
-| `-arch <arch>` | 目标架构：`x86_64`、`aarch64`（Windows/Linux 默认 x86_64，macOS 默认 aarch64） |
-| `-h, --help` | 显示帮助 |
+- **Lexer**: 逐字符扫描，~75 种 Token，支持字符串插值/heredoc
+- **Parser**: 递归下降，运算符优先级完整
+- **CodeGenerator**: 访问者模式，生成类型安全的 C 代码
+- **C 运行时**: COS 风格对象系统（16B 头 + struct 嵌套继承），setjmp/longjmp 异常，ROPE 多片段字符串拼接，256 位 JSON 转义位图，128 槽数组/对象复用池，64KB 字符串池，`compat.h` TCC/GCC/Clang 三编译器兼容层
+- **编译器**: 内置 TCC (mob 分支)，支持 GCC/Clang
 
 ## 文档
 
@@ -373,7 +322,6 @@ C->fold_dbl($data, $len, phpc_thunk('fold_cb', $fn));  // 按签名生成 thunk
 | [FUNCTIONS.md](FUNCTIONS.md) | 每个函数的实现细节与 PHP 差异 |
 | [GRAMMAR.md](GRAMMAR.md) | 完整语法参考（基于 PHP 8.5 parser，标注支持程度） |
 | [CONTRIBUTING.md](CONTRIBUTING.md) | 架构、扩展指南、安全规范 |
-| [ROADMAP.md](ROADMAP.md) | 性能优化路线图 |
 
 ## 许可证
 

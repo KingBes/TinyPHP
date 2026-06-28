@@ -1,6 +1,19 @@
 <?php
-
-// @skip — POSIX only, Windows will crash (expected)
+#debug -- 1. pid/uid --
+#debug ~ pid=0
+#debug ~ ppid=0
+#debug ~ uid=0
+#debug ~ gid=0
+#debug -- 2. getcwd/uname --
+#debug ~ cwd=string(13) "/?"
+#debug ~ sysname=Linux
+#debug -- 3. strerror --
+#debug err=string(11) "Success"
+#debug last=0
+#debug -- 4. isatty --
+#debug tty(1)=1
+#debug
+#debug === posix OK ===
 
 class Main {
     public function main(): void {

@@ -1,4 +1,148 @@
 <?php
+#debug ===== 1. array_push =====
+#debug array(3) {
+#debug   [0]=>
+#debug   int(1)
+#debug   [1]=>
+#debug   int(2)
+#debug   [2]=>
+#debug   int(3)
+#debug }
+#debug int(3)
+#debug array(5) {
+#debug   [0]=>
+#debug   int(1)
+#debug   [1]=>
+#debug   int(2)
+#debug   [2]=>
+#debug   int(3)
+#debug   [3]=>
+#debug   int(4)
+#debug   [4]=>
+#debug   int(5)
+#debug }
+#debug int(5)
+#debug
+#debug ===== 2. array_pop =====
+#debug int(30)
+#debug array(2) {
+#debug   [0]=>
+#debug   int(10)
+#debug   [1]=>
+#debug   int(20)
+#debug }
+#debug int(2)
+#debug int(20)
+#debug int(10)
+#debug array(0) {
+#debug }
+#debug int(0)
+#debug
+#debug ===== 3. in_array =====
+#debug bool(true)
+#debug bool(false)
+#debug bool(true)
+#debug 30 found
+#debug 99 not found
+#debug
+#debug ===== 4. array_key_exists =====
+#debug bool(true)
+#debug bool(true)
+#debug bool(false)
+#debug bool(false)
+#debug key 2 exists
+#debug
+#debug ===== 5. array_keys =====
+#debug array(3) {
+#debug   [0]=>
+#debug   int(0)
+#debug   [1]=>
+#debug   int(1)
+#debug   [2]=>
+#debug   int(2)
+#debug }
+#debug int(3)
+#debug
+#debug ===== 6. array_values =====
+#debug array(4) {
+#debug   [0]=>
+#debug   int(11)
+#debug   [1]=>
+#debug   int(22)
+#debug   [2]=>
+#debug   int(33)
+#debug   [3]=>
+#debug   int(44)
+#debug }
+#debug int(4)
+#debug
+#debug ===== 7. array_merge =====
+#debug array(5) {
+#debug   [0]=>
+#debug   int(1)
+#debug   [1]=>
+#debug   int(2)
+#debug   [2]=>
+#debug   int(3)
+#debug   [3]=>
+#debug   int(4)
+#debug   [4]=>
+#debug   int(5)
+#debug }
+#debug int(5)
+#debug array(3) {
+#debug   [0]=>
+#debug   int(1)
+#debug   [1]=>
+#debug   int(2)
+#debug   [2]=>
+#debug   int(3)
+#debug }
+#debug array(2) {
+#debug   [0]=>
+#debug   int(4)
+#debug   [1]=>
+#debug   int(5)
+#debug }
+#debug
+#debug ===== 8. implode =====
+#debug 1,2,3
+#debug 10-20
+#debug
+#debug ===== 9. explode =====
+#debug array(3) {
+#debug   [0]=>
+#debug   string(1) "a"
+#debug   [1]=>
+#debug   string(1) "b"
+#debug   [2]=>
+#debug   string(1) "c"
+#debug }
+#debug int(3)
+#debug array(2) {
+#debug   [0]=>
+#debug   string(5) "hello"
+#debug   [1]=>
+#debug   string(5) "world"
+#debug }
+#debug
+#debug ===== 10. combined =====
+#debug int(3)
+#debug int(3)
+#debug int(2)
+#debug array(4) {
+#debug   [0]=>
+#debug   int(1)
+#debug   [1]=>
+#debug   int(2)
+#debug   [2]=>
+#debug   int(3)
+#debug   [3]=>
+#debug   int(4)
+#debug }
+#debug x|y|z
+#debug
+#debug === all array tests done ===
 
 class Main
 {

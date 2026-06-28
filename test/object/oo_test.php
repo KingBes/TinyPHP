@@ -1,4 +1,10 @@
 <?php
+#debug === OOP Test ===
+#debug
+#debug 1. id=1
+#debug 2. name=Alice
+#debug
+#debug === OK ===
 
 interface Named { public function getName(): string; }
 interface Identifiable { public function getId(): int; }

@@ -1,6 +1,14 @@
 <?php
 
-// @exit 1 — POSIX only, Windows will crash (expected)
+#debug -- 1. fork --
+#debug ~ parent pid=0
+#debug child ok
+#debug child reaped
+#debug -- 2. error/alarm --
+#debug errno=0
+#debug alarm=0
+#debug
+#debug === pcntl OK ===
 
 class Main {
     public function main(): void {

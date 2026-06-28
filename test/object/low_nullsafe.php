@@ -1,4 +1,6 @@
 <?php
+#debug 1. nullsafe val=42
+#debug 2. nullsafe str=ok
 
 class Demo {
     public function getVal(): int {

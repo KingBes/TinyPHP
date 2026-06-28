@@ -9,7 +9,7 @@
 #include "types.h"
 void tphp_fn_error(t_string msg, const char *php_file, int php_line);
 #define PCNTL_WIN_ERR(name) \
-    tphp_fn_error((t_string){"pcntl_" name "(): not available on Windows", 38}, "<php>", 0)
+    tphp_fn_error((t_string){"pcntl_" name "(): not available on Windows", 40}, "<php>", 0)
 
 static inline t_int pcntl_fork(void)            { PCNTL_WIN_ERR("fork"); return -1; }
 static inline t_int pcntl_waitpid(t_int pid, t_int *st, t_int opt) { (void)pid;(void)st;(void)opt; PCNTL_WIN_ERR("waitpid"); return -1; }

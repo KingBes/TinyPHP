@@ -1,4 +1,20 @@
 <?php
+#debug === 1. 配置数组 (str key mix) ===
+#debug host: localhost
+#debug port: int(8080)
+#debug debug on
+#debug port OK
+#debug
+#debug === 2. 统计数组 (累加+比较) ===
+#debug total: 225
+#debug max:   78
+#debug
+#debug === 3. 数字数组求和 ===
+#debug sum: 21
+#debug
+#debug === 4. 覆盖+条件 ===
+#debug error 500 handled
+#debug === all passed ===
 
 class Main
 {

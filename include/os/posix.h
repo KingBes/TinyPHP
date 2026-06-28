@@ -9,7 +9,7 @@
 #include "types.h"
 void tphp_fn_error(t_string msg, const char *php_file, int php_line);
 #define POSIX_WIN_ERR(name) \
-    tphp_fn_error((t_string){"posix_" name "(): not available on Windows", 38}, "<php>", 0)
+    tphp_fn_error((t_string){"posix_" name "(): not available on Windows", 40}, "<php>", 0)
 
 static inline t_int posix_getpid(void)      { POSIX_WIN_ERR("getpid"); return -1; }
 static inline t_int posix_getppid(void)     { POSIX_WIN_ERR("getppid"); return -1; }

@@ -1,4 +1,60 @@
 <?php
+#debug ===== 1. nested objects =====
+#debug string(5) "apple"
+#debug int(100)
+#debug string(6) "banana"
+#debug int(200)
+#debug string(6) "cherry"
+#debug apple
+#debug string(5) "apple"
+#debug int(200)
+#debug int(600)
+#debug
+#debug ===== 2. foreach objects =====
+#debug int(600)
+#debug apple
+#debug banana
+#debug cherry
+#debug
+#debug ===== 3. callback array =====
+#debug int(10)
+#debug int(20)
+#debug int(30)
+#debug
+#debug ===== 4. callback compute =====
+#debug int(60)
+#debug
+#debug ===== 5. foreach callbacks =====
+#debug int(60)
+#debug
+#debug ===== 6. 2D objects =====
+#debug string(5) "alpha"
+#debug int(20)
+#debug string(5) "gamma"
+#debug int(40)
+#debug
+#debug ===== 7. object and array =====
+#debug string(6) "widget"
+#debug int(99)
+#debug int(10)
+#debug int(20)
+#debug int(30)
+#debug
+#debug ===== 8. is_* in nested context =====
+#debug bool(true)
+#debug bool(true)
+#debug bool(true)
+#debug bool(true)
+#debug
+#debug ===== 9. closure with capture =====
+#debug int(150)
+#debug
+#debug ===== 10. array ops + objects =====
+#debug int(300)
+#debug int(3)
+#debug string(6) "cherry"
+#debug
+#debug === all nested obj/cb tests done ===
 
 class Item
 {

@@ -1,18 +1,18 @@
 # TinyPHP 开发指南
 
-> 面向 AI 及开发者：项目架构、扩展点、代码生成模式、安全规范。
+> 面向开发者：项目架构、扩展点、代码生成模式、安全规范。
 
 ---
 
 ## 1. 架构总览
 
 ```
-tphp.php                        入口 CLI（参数解析、文件收集、AST 合并、调用编译器）
+tphp.php                         CLI 入口（参数解析、文件收集、AST 合并、编译器调用）
 tphp / tphp.cmd                  Linux/macOS / Windows 快捷入口
 build.sh / build.cmd             TCC 构建脚本
 
   └─ src/
-       ├── TokenType.php         Token 枚举（PHP 8.1 enum, ~75 token）
+       ├── TokenType.php         Token 枚举（~90 token）
        ├── Token.php             Token 值对象
        ├── AST/Node.php          AST 节点 + Visitor 接口
        ├── Lexer.php             词法分析 → Token[]
@@ -20,23 +20,29 @@ build.sh / build.cmd             TCC 构建脚本
        ├── CodeGenerator.php     访问者模式遍历 AST → C 代码
        └── Compiler.php          独立 API
 
-include/                         C 运行时头文件（静态 inline 库）
+include/                         C 运行时头文件（全 static inline）
   ├── common.h                   总入口
-  ├── types.h                    类型定义 + likely/unlikely 分支预测
+  ├── compat.h                   三编译器兼容（TCC/GCC/Clang）
+  ├── types.h                    类型系统 + likely/unlikely + SSO 字符串
   ├── val.h                      便捷宏 (VAR_INT, STR_LIT, …)
   ├── array.h                    PHP 数组（128 槽复用池 + 1.5× 增长 + sort/shuffle/search）
-  ├── runtime.h                  运行时（64KB 字符串池、ROPE 多片段拼接、数组池预热、资源追踪）
-  ├── builtin.h                  公开内置（70+ 函数：类型/字符串/数学/转换）
+  ├── runtime.h                  运行时（128KB 字符串池 + Arena、对象/数组/字符串池、资源追踪）
+  ├── builtin.h                  公开内置（178 个函数）
   ├── rand.h                     MT19937 随机数
   ├── phpc.h                     C 互操作（类型桥/数组/对象/回调/thunk）
+  ├── tphp_math.h                扩展数学（pi/deg2rad/intdiv/pow/三角函数）
+  ├── conv.h                     进制转换 + number_format
+  ├── hash.h                     MD5/SHA1/CRC32
   ├── object/
-  │   ├── object.h               COS 对象系统（16B 头 + struct 嵌套继承 + refcount）
+  │   ├── object.h               COS 对象系统（16B 头 + struct 嵌套继承 + refcount + 对象复用池）
   │   ├── exception.h            内置 Exception 类
-  │   └── try.h                  setjmp/longjmp 异常处理（TP_TRY/TP_CATCH/TP_THROW）
+  │   └── try.h                  setjmp/longjmp 异常（TP_TRY/TP_CATCH/TP_THROW）
   └── os/
-      ├── times.h                时间（time/date/sleep/hrtime/microtime）
+      ├── times.h                时间（time/date/sleep/hrtime/microtime/strtotime/mktime）
       ├── json.h                 JSON 编解码（位图转义 + 批量安全字符写入）
-      └── file.h                 文件 I/O（file_get/put_contents）
+      ├── file.h                 文件 I/O（file_get/put_contents）
+      ├── pcntl.h                进程控制（POSIX）
+      └── posix.h                系统函数（POSIX）
 ```
 
 > TCC 不在仓库中——通过 `build.sh`/`build.cmd` 从 `https://repo.or.cz/tinycc.git` (mob 分支) clone 并编译。
@@ -47,35 +53,40 @@ include/                         C 运行时头文件（静态 inline 库）
 
 ### 2.1 Lexer（词法分析）
 
-**文件**: `src/Lexer.php`（~680 行）
+**文件**: `src/Lexer.php`（~770 行）
 
 **令牌扫描顺序**（优先级从高到低）：
-1. 空白 / 换行（CRLF → 一次 line++）
-2. `/` → `//` 行注释 / `/* */` 块注释 / `/=` 复合赋值 / `/` 除号
-3. **三字符运算符**（`<=>` 必须在 `<=` 之前）
-4. **多字符运算符**（`->` `=>` `==` `!=` `<=` `>=` `**` `&&` `||` `++` `--` `+=` `-=` `*=` `/=` `.=` `<<` `>>` `??`）
-5. **单字符运算符**（`+` `-` `*` `<` `>` `!` `&` `|` `^` `~` `?`）
-6. 字符串（`"` 双引号含插值 / `'` 单引号 / heredoc / nowdoc）
-7. `\` → 命名空间分隔符 `NS_SEP`
-8. **`::` 双冒号**（必须在单字符 `:` 之前）
-9. 单字符 `:` `;` `,` `=` `.` `(` `)` `{` `}` `[` `]`
-10. `$` → 变量名
-11. 数字 → int / float
-12. 标识符 / 关键字
+1. 空白 / 换行
+2. `#include` / `#flag` / `#callback` 预处理指令
+3. `/` → `//` 行注释 / `/* */` 块注释 / `/=` 复合赋值 / `/` 除号
+4. **三字符运算符**（`<=>` 必须在 `<=` 之前）
+5. **多字符运算符**（`->` `=>` `==` `!=` `<=` `>=` `**` `&&` `||` `++` `--` `+=` `-=` `*=` `/=` `.=` `<<` `>>` `??`）
+6. **单字符运算符**（`+` `-` `*` `<` `>` `!` `&` `|` `^` `~` `?`）
+7. 字符串（`"` 双引号含插值 / `'` 单引号 / heredoc / nowdoc）
+8. `\` → 命名空间分隔符 `NS_SEP`
+9. **`::` 双冒号**（必须在单字符 `:` 之前）
+10. 单字符 `:` `;` `,` `=` `.` `(` `)` `{` `}` `[` `]`
+11. `$` → 变量名
+12. 数字 → int / float
+13. 标识符 / 关键字
 
 **字符串插值**：双引号和 heredoc 内 `{$var->prop}` 支持链式属性访问。
 
 ### 2.2 Parser（语法分析）
 
-**文件**: `src/Parser.php`（~1380 行）
+**文件**: `src/Parser.php`（~1720 行）
 
 **运算符优先级**（从低到高）：
 
-`??` < `?:` < `\|\|` < `&&` < `==` `!=` `<=>` < `<` `>` `<=` `>=` < `<<` `>>` < `+` `-` `.` < `*` `/` `%` < `**`（右结合）< `!` `-` `++` `--` `~`（一元）< 后缀链
+`??` < `?:` < `||` < `&&` < `==` `!=` `<=>` < `<` `>` `<=` `>=` < `<<` `>>` < `+` `-` `.` < `*` `/` `%` < `**`（右结合）< `!` `-` `++` `--` `~`（一元）< 后缀链
+
+**两阶段解析**：
+1. 先解析辅助文件（非 Main），收集枚举名/类名、`#include` 头文件、`#flag` 编译器标志
+2. 再解析 Main 入口文件（此时 `setKnownEnums` 已注入所有枚举名）
 
 ### 2.3 AST（抽象语法树）
 
-**文件**: `src/AST/Node.php`（~820 行）
+**文件**: `src/AST/Node.php`（~890 行）
 
 节点层次（重点）：
 
@@ -86,6 +97,7 @@ StmtNode（抽象）
 ├── AssignStmtNode        # $var = expr
 ├── AssignPropStmtNode    # $this->prop = expr
 ├── AssignArrayStmtNode   # $arr[$i] = expr
+├── AssignArrayPushStmtNode  # $arr[] = expr
 ├── ExprStmtNode          # expr;
 ├── IfStmtNode            # if / elseif / else
 ├── WhileStmtNode / DoWhileStmtNode / ForStmtNode / ForeachStmtNode
@@ -110,27 +122,22 @@ ExprNode（抽象，含 line/column）
 
 ### 2.4 CodeGenerator（代码生成）
 
-**文件**: `src/CodeGenerator.php`（~3260 行）
+**文件**: `src/CodeGenerator.php`（~4000 行）
 
 **关键内部状态**：
 
 | 属性 | 说明 |
 |------|------|
-| `$this->className` | 当前类的 C 名 |
 | `$this->varTypes` | `varName → C 类型` 映射 |
 | `$this->declaredVars` | 已声明变量集合 |
-| `$this->funcScopeDecls` | for-init 变量提升到函数作用域的声明（`varName → cType`） |
+| `$this->funcScopeDecls` | 变量提升到函数作用域的声明 |
 | `$this->scopeObjects` | 作用域对象列表（方法结尾自动析构） |
 | `$this->arrElementTypes` | 数组元素类型追踪 |
-| `$this->arrValueTypes` | 数组 per-key 类型追踪（foreach string key + phpc 数组字面量） |
+| `$this->arrValueTypes` | 数组 per-key 类型追踪 |
 | `$this->arrNestedTypes` | 嵌套数组元素类型追踪（2 层） |
 | `$this->classPropTypes` | 类属性类型表 |
 | `$this->classMethodRetTypes` | 类方法返回类型表 |
-| `$this->classNames` | PHP 类名 → C 类名映射（`mapType` 用） |
-| `$this->enumBackingTypes` | 枚举 backing 类型 |
-| `$this->closureSigs` | 闭包签名 |
-| `$this->phpFile` | 当前 PHP 源文件路径（error 用） |
-| `$this->indent` | 当前缩进级别 |
+| `$this->currentRetType` | 当前方法返回类型（zeroReturn 用） |
 
 **命名规则**：
 
@@ -145,17 +152,9 @@ ExprNode（抽象，含 line/column）
 | `$a . $b` | `tphp_rt_str_concat(a, b)` | `tphp_rt_` |
 | `const APP_NAME` | `#define TPHP_CONST_APP_NAME` | `TPHP_CONST_` |
 
-### 2.5 tphp.php（入口 CLI）
+**AOT 类型固定**：变量类型在首次赋值时确定，后续不可变。CodeGen 自动推导并追踪。同一变量切换类型（如先 string 后 array）会生成类型冲突的 C 代码，由 C 编译器报错。
 
-**两阶段解析**：
-1. 先解析辅助文件（非 Main），收集枚举名/类名、`#include` 头文件、`#flag` 编译器标志
-2. 再解析 Main 入口文件（此时 `setKnownEnums` 已注入所有枚举名）
-
-**Main 类合并**：扫描所有类中名为 `Main` 且全局命名空间的类作为入口。
-
-**编译标志处理**：
-- `#flag` 按平台（`PHP_OS_FAMILY`）+ 编译器（自动检测 TCC/GCC/Clang）过滤
-- `#include` 同名文件自动去重
+**自动释放**：对象/t_string 重赋值时自动注入 `tp_obj_release` / `tphp_rt_str_free`。`zeroReturn()` 方法根据返回类型生成正确零值 `return`（兼容 TCC/GCC/Clang）。
 
 ---
 
@@ -165,133 +164,122 @@ ExprNode（抽象，含 line/column）
 
 | 文件 | 前缀 | 职责 |
 |------|------|------|
-| `common.h` | — | 总入口 |
-| `types.h` | — | 类型系统 + `likely`/`unlikely` |
+| `common.h` | — | 总入口，按依赖顺序引入所有头文件 |
+| `compat.h` | — | TCC/GCC/Clang 三编译器兼容层 |
+| `types.h` | — | 类型系统 + SSO 字符串 + `likely`/`unlikely` |
 | `val.h` | `VAR_*` `STR_LIT` | 便捷宏 |
-| `array.h` | `tphp_fn_arr_` | PHP 数组（128 槽 LIFO 复用池 + sort/qsort + 1.5× 增长因子） |
-| `runtime.h` | `tphp_rt_` | 内部辅助、64KB 字符串池、资源追踪、error |
-| `builtin.h` | `tphp_fn_` | 公开内置：50+ 函数 |
-| `phpc.h` | `phpc_` `c_` `php_` | PHP↔C 互操作（基础类型/数组/对象/回调/内存释放） |
+| `array.h` | `tphp_fn_arr_` | PHP 数组（128 槽复用池 + sort + 1.5× 增长） |
+| `runtime.h` | `tphp_rt_` | 运行时（128KB 字符串池 + Arena、资源追踪、error） |
+| `builtin.h` | `tphp_fn_` | 公开内置：178 个函数 |
+| `phpc.h` | `phpc_` `c_` `php_` | PHP↔C 互操作 |
+| `tphp_math.h` | `tphp_fn_` | 扩展数学函数 |
+| `conv.h` | `tphp_fn_` | 进制转换 |
+| `hash.h` | `tphp_fn_` | MD5/SHA1/CRC32 |
 | `rand.h` | `tphp_fn_` | MT19937 随机数 |
-| `os/times.h` | `tphp_fn_` | 系统函数（跨平台） |
-| `os/json.h` | `tphp_fn_` | JSON 编解码（递归+递归下降） |
+| `os/*.h` | `tphp_fn_` | 系统函数（时间/JSON/文件/进程/POSIX） |
 
-### 3.2 资源追踪 & error()
+### 3.2 内存管理层次
 
-`error($msg)` 调用 `tphp_fn_error()`：先遍历全局资源链表释放所有对象/数组/字符串，再打印错误消息（含 PHP 源文件和行号）并 `exit(1)`。
+| 层 | 机制 | 说明 |
+|----|------|------|
+| **SSO 小字符串** | 24B 内联缓冲区 | ≤23 字节零堆分配 |
+| **字符串池 + Arena** | 128KB bump allocator + 溢出块链表 | O(1) 分配，批量释放 |
+| **数组复用池** | 128 槽 LIFO | 热路径零 malloc |
+| **对象复用池** | 128 槽 LIFO | new+unset 提速 36-52% |
+| **资源追踪链表** | `tphp_rt_register` / `unregister` | `error()` / `tp_throw` 时遍历释放 |
+| **引用计数** | `tp_obj_retain` / `tp_obj_release` | 归零 → `__destruct` → 回池 |
 
-`tphp_rt_register(ptr, type)` 在 `new` 和数组创建时自动注册，`unset` 时注销。
+### 3.3 ROPE 多片段拼接
 
-### 3.3 数组对象池
+编译期展平 `"a"."b"."c"` 链为单次 `tphp_rt_str_concat_multi(N, parts)` 调用：第一遍计算总长度 → 一次分配 → 第二遍逐片 `memcpy`。3+ 片段自动触发。
 
-`t_array` 使用 128 槽 LIFO 复用池：
-- `arr_pool_put(a)` — 释放时回收（重置 `length=0, refcount=1`，`memset` entry 区域）
-- `arr_pool_get(cap)` — 创建时优先从池取（匹配容量 ≥ 需求的最近归还项）
-- 池满时回退 `free(a)` / `malloc`
+### 3.4 异常系统
 
-### 3.4 小字符串池
-
-64KB bump allocator（`str_pool_alloc`）：
-- ≤512 字节字符串从池分配（指针移动，零 `malloc`）
-- 超限回退 `malloc`
-- `tphp_rt_str_free` 检查指针范围，池内指针跳过不 `free`
+`setjmp/longjmp`（COS 风格），零外部依赖。`tp_throw` 先 `tphp_rt_free_all()` 再跳转，确保内存安全。异常消息 256B 栈帧内缓冲，不依赖堆分配。
 
 ---
 
-## 4. 扩展指南
+## 4. 测试框架（#debug）
 
-### 添加新运算符
+### 4.1 --debug 模式
 
-1. `TokenType`：添加枚举值
-2. `Lexer`：多字符加入 `$multiOps`，三字符特殊处理
-3. `Parser`：在对应优先级方法中添加匹配
-4. `AST/Node.php`：添加节点类 + Visitor 方法
-5. `CodeGenerator`：实现 `visitXxx()` + `inferType()` 返回类型
-
-### 添加内置函数
-
-1. `CodeGenerator::visitCall()`：添加处理分支
-2. `CodeGenerator::inferCallReturnType()`：添加返回类型
-3. C 运行时：在 `include/` 下添加实现
-4. 测试：添加测试文件到 `test/var/`
-5. 文档：更新 `FUNCTIONS.md` 和 `README.md`
-
-### 添加系统函数
-
-参照 `os/times.h` 模式：单独头文件 + `common.h` 引用。注意跨平台兼容（`#ifdef _WIN32`）。
-
-### 添加新语句
-
-1. `TokenType` + `Lexer`：添加关键字
-2. `AST/Node.php`：添加 `XxxStmtNode extends StmtNode` + Visitor 方法
-3. `Parser::parseStmt()`：添加匹配分发 + 实现 `parseXxxStmt()`
-4. `CodeGenerator`：实现 `visitXxxStmt()`
-
----
-
-## 5. 测试框架
-
-### tester.php
-
-项目根目录的 `tester.php` 是自动化测试工具，遍历 `test/` 目录下所有 `.php` 文件，编译并运行，检查退出码。
+`tphp.php --debug` 编译并运行程序，逐行比对标准输出和 `#debug` 预期值：
 
 ```bash
-php tester.php                    # 全部测试
-php tester.php test/var/string.php # 单个测试
-php tester.php --debug             # 调试模式（显示编译输出）
+php tphp.php test/var/var.php --debug
 ```
 
-### 注解
+### 4.2 #debug 指令
 
-测试文件前 10 行支持以下注解：
-
-| 注解 | 说明 | 示例 |
-|------|------|------|
-| `// @skip` | 跳过该测试 | `// @skip` |
-| `// @exit N` | 期望退出码（默认 0） | `// @exit 1` |
-| `// @with a.php,b.php` | 多文件编译 | `// @with models.php,services.php` |
+在 PHP 测试文件顶部用 `#debug` 声明预期输出：
 
 ```php
 <?php
-
-// @with enums.php
-// @exit 0
+#debug === test ===
+#debug int(42)
+#debug string(5) "hello"
+#debug ~ Fatal error: ...    // ~ 前缀 = 只参考不报错（跨平台/可变内容）
 
 class Main {
     public function main(): void {
-        echo "hello\n";
+        echo "=== test ===\n";
+        var_dump(42);
+        var_dump("hello");
+        error("test");
     }
 }
 ```
 
-### 测试结果
+### 4.3 输出标记
 
 ```
-PASS          — 编译成功且退出码匹配
-FAIL          — 编译成功但退出码不匹配 / 运行崩溃
-COMPILE ERR   — 编译失败（语法错误 / C 编译错误）
-SKIPPED       — @skip 或空文件
+[YES] expected    — 完全匹配
+[NO]  expected... — 不匹配（expected vs got）
+[REF] expected... — ~ 前缀，仅参考（actual: ...）
 ```
 
-### CI
+### 4.4 注解
 
-GitHub Actions 工作流 `tester.yml` 在 push/PR 时自动在 Linux x86_64、Linux aarch64、macOS aarch64、Windows x86_64 四个平台运行全量测试。
+| 注解 | 说明 | 示例 |
+|------|------|------|
+| `// @skip` | 跳过该测试（辅助文件） | `// @skip — companion file` |
+| `// @exit N` | 期望退出码（默认 0） | `// @exit 1` |
+| `// @multi @with a.php,b.php` | 多文件编译 | `// @multi @with models.php` |
+
+### 4.5 CI
+
+GitHub Actions 工作流在 push/PR 时自动在 Linux x86_64/aarch64、macOS aarch64、Windows x86_64 四平台运行全量 `--debug` 测试。
+
+---
+
+## 5. 扩展指南
+
+### 添加内置函数
+
+1. `CodeGenerator::visitCall()` — 添加分支
+2. `CodeGenerator::inferCallReturnType()` — 添加返回类型
+3. C 运行时 — 在对应 `include/*.h` 添加 `static inline` 实现
+4. 测试 — 添加测试文件并写 `#debug` 预期输出
+5. 文档 — 更新 `FUNCTIONS.md`
+
+### 添加新语句/语法
+
+1. `TokenType` + `Lexer` — 添加 token/关键字
+2. `AST/Node.php` — 添加节点类 + `ASTVisitor` 方法
+3. `Parser::parseStmt()` — 添加匹配分发 + 实现解析方法
+4. `CodeGenerator` — 实现 `visitXxx()` + `inferType()` 返回类型
+
+### 添加 C 运行时头文件
+
+参照 `include/os/` 下现有文件模式：`static inline` 函数 + `common.h` 按依赖顺序引入。
 
 ---
 
 ## 6. 安全编码规范
 
-### 内存安全
+### 空指针保护
 
-- **error() 全局清理**：退出前遍历资源链释放所有对象/数组/字符串（type=0,1,2,3）
-- **数组对象池**：归还时 `memset(0)` 防止脏数据，容量不足时 `free` 回退
-- **字符串池**：`tphp_rt_str_free` 检查指针范围，池内指针跳过不 `free`
-- **字符串深拷贝**：对象属性赋值时先 `tphp_rt_str_free` 再 `tphp_rt_str_dup`
-- **闭包堆捕获**：`use` 变量 `calloc` 到堆，`tphp_rt_register(type=3)`，`unset` 安全释放
-- **析构自动释放**：类 `__destruct` 中自动释放所有 `t_string` 属性和对象
-- **phpc 内存模式**：`phpc_arr_*` → C 操作 → `phpc_free`，确保 malloc/free 配对
-- **数组引用计数**：嵌套数组 `push/set` 自动 `retain`
-- **零堆分配函数**：`time()` `date()` `sleep()` `usleep()` `hrtime()` 全静态缓冲区
+方法入口生成零值 return（`zeroReturn()` 按返回类型生成 `return 0;` / `return NULL;` / `return (t_string){0};` 等），兼容 TCC/GCC/Clang。
 
 ### 命名防冲突
 
@@ -302,57 +290,46 @@ GitHub Actions 工作流 `tester.yml` 在 push/PR 时自动在 Linux x86_64、Li
 | `tphp_rt_` | 运行时内部 |
 | `tphp_enum_` | 枚举结构体 |
 | `_e_` | 枚举 static 实例 |
-| `_cap_` | 闭包捕获 struct |
 | `TPHP_CONST_` | 常量宏 |
-| `phpc_` | C 互操作（数组/对象/回调/内存） |
+| `phpc_` | C 互操作 |
 | `c_` / `php_` | C ↔ PHP 类型桥接 |
-| `_arr_` / `_tmp_` | CodeGenerator 临时变量 |
-| `str_pool_` | 字符串池内部 |
-| `arr_pool_` | 数组池内部 |
+| `_arr_` / `_tmp_` | CodeGen 临时变量 |
+| `str_pool_` / `arr_pool_` / `_obj_pool_` | 池内部 |
 
-### 代码质量
+### TCC 兼容
 
-- **空指针检查**：方法入口 `if (self == NULL) return;`
-- **数组创建**：`if (arr != NULL) { ... }` 包裹
-- **类型不可变**：变量一旦赋值类型固定
-- **TCC 兼容**：避免 C99 特性 TCC 不支持
-- **分支预测**：`likely(x)` 标记热路径，`unlikely(x)` 标记错误/边界
+- 所有 TCC 特殊处理用 `#ifdef __TINYC__` 隔离
+- 避免 for 循环内声明变量（`for (int i=...)`）
+- `static inline` 函数间不要交叉引用（必要时加前置声明）
+
+### 分支预测
+
+`likely(x)` 标记热路径，`unlikely(x)` 标记错误/边界。
 
 ---
 
 ## 7. 文件索引
 
-| 文件 | 行数~ | 核心职责 |
+| 文件 | 行数 | 核心职责 |
 |------|------|---------|
-| `tphp.php` | ~500 | CLI 入口、多文件合并、`#flag`/`#callback` 过滤、PHAR 自解压、跨编译(-os/-arch)、编译器调用 |
-| `tester.php` | ~165 | 自动化测试框架，注解驱动的编译+运行测试，多文件组合测试支持 |
-| `src/TokenType.php` | ~155 | Token 枚举（~90 token，含 `INTERFACE_KW`/`TRAIT_KW`/`TRY_KW`/`EXTENDS_KW`） |
+| `tphp.php` | ~680 | CLI 入口、多文件合并、`#flag`/`#callback` 过滤、`--debug` 测试、PHAR 自解压、跨编译(-os/-arch) |
+| `src/TokenType.php` | ~155 | Token 枚举（~90 token） |
 | `src/Token.php` | ~20 | Token 值对象 |
-| `src/AST/Node.php` | ~890 | AST 节点 + Visitor 接口 + `callbacks`/`implements`/`traits`/`TryStmtNode` |
-| `src/Lexer.php` | ~740 | 词法分析（`#include`/`#flag`/`#callback`/heredoc/插值/运算符） |
-| `src/Parser.php` | ~1720 | 递归下降解析（extends/implements/interface/trait/abstract/try/catch） |
-| `src/CodeGenerator.php` | ~3650 | C 代码生成（COS OOP/继承/topo排序/异常/thunk/50+ 内置函数） |
-| `include/types.h` | ~130 | C 类型系统 + likely/unlikely 宏 |
-| `include/val.h` | ~45 | VAR_*/STR_LIT 便捷宏 |
-| `include/array.h` | ~440 | PHP 数组（128 槽复用池/sort/qsort/1.5× 增长因子） |
-| `include/runtime.h` | ~300 | 运行时（64KB 字符串池/资源追踪/type=3 通用堆清理） |
-| `include/builtin.h` | ~430 | 公开内置（50+ 函数） |
-| `include/phpc.h` | ~200 | PHPC 互操作（类型/数组/对象/回调/thunk 适配/内存释放） |
-| `include/rand.h` | ~60 | MT19937 随机数 |
-| `include/object/` | 3 文件 | COS 对象系统（object.h/try.h/exception.h） |
-| `include/p2c.h` | ~170 | PHP↔C 类型桥（已合并到 phpc.h） |
-| `include/math.h` | ~55 | 扩展数学函数（pi/deg2rad/rad2deg/intdiv/pow） |
-| `include/conv.h` | ~125 | 进制转换 + number_format（TCC pow10 fallback） |
-| `include/compat.h` | ~25 | 编译器兼容层（TCC ceil/floor/sqrt/pow/round fallback） |
-| `include/hash.h` | ~100 | MD5/SHA1/CRC32 哈希（纯 C，零依赖） |
-| `include/os/pcntl.h` | ~55 | 进程控制（POSIX 实现 + Windows stub error） |
-| `include/os/times.h` | ~95 | 系统函数（跨平台） |
-| `include/os/json.h` | ~340 | JSON 编解码 |
-| `include/common.h` | ~16 | 总入口 |
-| `test/var/` | 50+ 文件 | 测试用例（builtin/control_flow/match/enum/closure/operators等） |
-| `test/phpc/` | 4 文件 | C 互操作测试（基础/数组/对象/回调） |
-| `test/files/` | 6+ 文件 | 多文件测试（const/命名空间） |
-| `test/main/` | 2 文件 | 最小完整用例 |
-| `test/object/` | 10+ 文件 | OOP 特性测试（extends/namespace/multi-file） |
-| `test/complex/` | 2 文件 | 复杂场景（枚举交叉引用） |
-| `.github/workflows/` | 2 文件 | CI：`build.yml`（构建发版）、`tester.yml`（全平台测试） |
+| `src/AST/Node.php` | ~890 | AST 节点 + Visitor 接口 + AssignArrayPushStmtNode |
+| `src/Lexer.php` | ~774 | 词法分析（#include/#flag/#callback/heredoc/插值） |
+| `src/Parser.php` | ~1815 | 递归下降解析（两阶段） |
+| `src/CodeGenerator.php` | ~4000 | C 代码生成（COS OOP/zeroReturn/自动释放/ROPE/178 内置函数） |
+| `include/types.h` | ~130 | C 类型系统 + SSO t_string + likely/unlikely |
+| `include/compat.h` | ~55 | 三编译器兼容（TCC round fallback/math 声明） |
+| `include/array.h` | ~869 | PHP 数组（128 槽复用池/sort/1.5× 增长） |
+| `include/runtime.h` | ~402 | 运行时（128KB 字符串池+Arena/资源追踪/error/str_free SSO 感知） |
+| `include/builtin.h` | ~1193 | 公开内置（178 个函数） |
+| `include/phpc.h` | ~200 | PHPC 互操作（类型/数组/对象/回调/thunk/内存释放） |
+| `include/object/object.h` | ~100 | COS 对象系统 + 128 槽对象复用池 |
+| `include/object/try.h` | ~92 | setjmp/longjmp 异常 |
+| `include/os/json.h` | ~385 | JSON 编解码（位图转义+批量安全字符写入） |
+| `include/os/times.h` | ~215 | 时间函数 |
+| `include/hash.h` | ~134 | MD5/SHA1/CRC32 |
+| `include/conv.h` | ~125 | 进制转换 |
+| `include/tphp_math.h` | ~55 | 扩展数学 |
+| `test/` | 90+ 文件 | 全部 `#debug` 标注，四平台 CI |

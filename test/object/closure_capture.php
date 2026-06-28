@@ -1,4 +1,40 @@
 <?php
+#debug === Closure Capture Type Tests ===
+#debug
+#debug [1] int capture:
+#debug int(15)
+#debug [2] float capture:
+#debug float(6)
+#debug [3] string capture:
+#debug string(11) "Hello World"
+#debug [4] bool capture:
+#debug int(14)
+#debug [5] array capture:
+#debug int(60)
+#debug [6] null capture:
+#debug int(999)
+#debug [7] multiple captures:
+#debug string(3) "yes"
+#debug [8] captured value copy isolation:
+#debug int(100)
+#debug int(101)
+#debug [9] closure reused:
+#debug int(10)
+#debug int(20)
+#debug int(50)
+#debug [10] multiple closures, same capture:
+#debug int(15)
+#debug int(50)
+#debug [11] capture with conditional:
+#debug int(20)
+#debug [12] closure without capture:
+#debug int(10)
+#debug [13] unset closure with capture:
+#debug int(50)
+#debug   unset ok
+#debug int(42)
+#debug
+#debug === All capture tests passed! ===
 
 class Main {
     public function main(): void {

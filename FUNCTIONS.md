@@ -375,27 +375,78 @@ POSIX 专属（Windows 调用触发 `tphp_fn_error()` 退出）。`include/os/po
 
 ---
 
-三轮梯队已全部实现（83 个函数）。
+## AOT 不可行的函数
 
-## 暂缓
+以下 PHP 内置函数/特性依赖运行时解释器、动态符号表或 VM 机制，TinyPHP AOT 模式**永久不支持**：
 
-### 🔵 暂缓（低频 / AOT 不可行）
+### 动态代码执行
 
 | 函数 | 原因 |
 |------|------|
-| `pcntl_signal/signal_dispatch/async_signals` | 依赖 PHP 回调/VM tick，AOT 不可行 |
-| `pcntl_rfork/forkx/unshare/setns/getcpu*` | 单平台专属（BSD/Solaris/Linux） |
-| `Date* OO API` (30+) | 需完整 DateTime 类 |
-| `serialize` / `unserialize` | PHP 序列化格式完整解析器 |
-| `array_intersect*` / `array_diff*` (14 个) | 使用频率极低 |
-| `array_multisort` / `natsort` / `natcasesort` | 专用场景 |
-| `usort` / `uasort` / `uksort` | 需闭包回调 |
-| `array_filter` / `array_map` / `array_reduce` | 需闭包回调 |
-| `sin/cos/tan` 等三角函数 | 直接 libc 调用，低优先级 |
-| `posix_*` (42 个) | 全 POSIX 专属，Windows 不可用 |
+| `eval($code)` | 没有运行时解释器 |
+| `assert($assertion)` | 字符串断言模式需要 eval |
+| `create_function($args, $code)` | 内部调用 eval |
+
+### 动态函数/方法调用
+
+| 函数 | 原因 |
+|------|------|
+| `call_user_func($fn, ...)` | 编译时不知道函数名 |
+| `call_user_func_array($fn, $args)` | 同上 |
+| `forward_static_call($fn, ...)` | 动态静态调用 |
+| `forward_static_call_array($fn, $args)` | 同上 |
+| `$fn()` 可变函数调用 | 编译时不知道函数名 |
+| `$obj->$method()` 可变方法调用 | 同上 |
+
+### 运行时回调注册
+
+| 函数 | 原因 |
+|------|------|
+| `register_shutdown_function($cb)` | 运行时动态注册 |
+| `register_tick_function($cb)` | 依赖 VM tick 机制 |
+| `set_error_handler($cb)` | 运行时动态回调 |
+| `set_exception_handler($cb)` | 同上 |
+| `restore_error_handler()` / `restore_exception_handler()` | 同上 |
+| `pcntl_signal($sig, $cb)` | 依赖 PHP 回调 + VM tick |
+| `pcntl_signal_dispatch()` / `pcntl_async_signals()` | 同上 |
+| `ob_start($cb)` 输出缓冲 | 运行时状态机 |
+
+### 变量变量 / 符号表内省
+
+| 函数 | 原因 |
+|------|------|
+| `$$var` / `${expr}` | 编译时不知道变量名 |
+| `compact($varname, ...)` | 依赖运行时符号表 |
+| `extract($arr)` | 运行时创建变量 |
+| `get_defined_vars()` | 运行时符号表遍历 |
+| `get_object_vars($obj)` | 运行时内省 |
+| `define($name, $value)` | 运行时常量定义 |
+
+### 调用栈 / 反射
+
+| 函数 | 原因 |
+|------|------|
+| `debug_backtrace()` | 运行时调用栈内省 |
+| `debug_print_backtrace()` | 同上 |
+| `func_get_args()` / `func_get_arg($n)` / `func_num_args()` | 编译时参数量固定 |
+| `ReflectionClass` / `ReflectionMethod` 等 | 全系列运行时内省 |
+| `method_exists($obj, $method)` | 运行时方法查找 |
+| `property_exists($obj, $prop)` | 运行时属性查找 |
+| `get_class_methods($class)` | 运行时内省 |
+| `get_class_vars($class)` | 同上 |
 
 ---
 
-三轮梯队已全部实现（共 63 个函数）。
+## 暂缓（低频 / 可做但低优先级）
 
-暂缓：pcntl_signal等回调依赖、Date OO API、serialize、array_intersect/diff、posix等。`yield` 不做。
+| 函数 | 原因 |
+|------|------|
+| `serialize` / `unserialize` | PHP 序列化格式完整解析器 |
+| `Date* OO API` (30+) | 需完整 DateTime 类 |
+| `array_intersect*` / `array_diff*` (14 个) | 使用频率极低 |
+| `array_multisort` / `natsort` / `natcasesort` | 专用场景 |
+| `usort` / `uasort` / `uksort` | 需闭包回调节省 |
+| `array_filter` / `array_map` / `array_reduce` | 需闭包回调节省 |
+| `sin/cos/tan` 等三角函数 | 直接 libc 调用，低优先级 |
+| `posix_*` (42 个) | 全 POSIX 专属，Windows 不可用 |
+| `pcntl_rfork/forkx/unshare/setns` | 单平台专属（BSD/Solaris/Linux） |

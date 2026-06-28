@@ -1,4 +1,6 @@
 <?php
+#debug 1. fn double=42
+#debug 2. fn add=30
 
 class Main {
     public function main(): void {

@@ -1,15 +1,12 @@
 <?php
+#debug === class const test ===
+#debug Hello, Class Demo!
+#debug
+#debug === done ===
 
-class Demo
+class ConstDemo
 {
-    const string AAA = "hello";
-    public const string BBB = "world";
-    private const array CCC = [1, 2];
-
-    public function hello(): void
-    {
-        echo "Hello, Class Demo!\n";
-    }
+    public const string GREETING = 'Hello, Class Demo!';
 }
 
 class Main
@@ -17,10 +14,7 @@ class Main
     public function main(): void
     {
         echo "===== class const test =====\n";
-
-        $d = new Demo();
-        $d->hello();
-
+        echo ConstDemo::GREETING . "\n";
         echo "\n=== done ===\n";
     }
 }

@@ -1,5 +1,31 @@
 <?php // @multi @with myapp_models.php,myapp_services.php
 // myapp_main.php — 命名空间 OOP 入口
+#debug === Namespace OOP Test ===
+#debug
+#debug -- 1. Create --
+#debug u1=Alice <alice@tphp.dev>
+#debug u2=Bob <bob@tphp.dev> active=0
+#debug
+#debug -- 2. Process --
+#debug r1=OK: Order#100 $150 [approved] by Alice <alice@tphp.dev>
+#debug r2=FAIL: user inactive
+#debug r3=OK: Order#101 $250 [approved] by Alice <alice@tphp.dev>
+#debug
+#debug -- 3. States --
+#debug o1=approved
+#debug o3=pending
+#debug
+#debug -- 4. Report --
+#debug ok=2 fail=1 total=$400
+#debug
+#debug -- 5. Nullsafe --
+#debug   (OK)
+#debug
+#debug -- 6. Strict --
+#debug o1===100:1
+#debug u1===true:1
+#debug
+#debug === OK ===
 
 use MyApp\Models\User;
 use MyApp\Models\Order;

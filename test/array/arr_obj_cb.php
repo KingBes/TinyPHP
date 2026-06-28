@@ -1,4 +1,11 @@
 <?php
+#debug === 1. 对象数组 ===
+#debug u[0]: Alice age=25
+#debug u[1]: Bob age=30
+#debug
+#debug === 2. 对象覆盖 ===
+#debug overwritten: Eve age=22
+#debug === done ===
 
 class User
 {

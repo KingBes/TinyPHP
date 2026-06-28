@@ -1,4 +1,5 @@
 <?php
+#debug never test ok
 
 class Main {
     public function main(): void {

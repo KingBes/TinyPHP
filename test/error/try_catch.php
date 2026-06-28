@@ -2,26 +2,13 @@
 #debug === Try/Catch with Exception ===
 #debug
 #debug 1. age=25 OK
-#debug 2. caught: Exception: age cannot be negative in C:\project\php\TinyPHP\test\error\try_catch.php:8
-#debug Stack trace:
-#debug #0 C:\project\php\TinyPHP\test\error\try_catch.php:39 Main->validate(-1)
-#debug #1 C:\project\php\TinyPHP\test\error\try_catch.php:98 Main->main()
-#debug 3. caught: Exception: age too large in C:\project\php\TinyPHP\test\error\try_catch.php:11
-#debug Stack trace:
-#debug #0 C:\project\php\TinyPHP\test\error\try_catch.php:48 Main->validate(200)
-#debug #1 C:\project\php\TinyPHP\test\error\try_catch.php:98 Main->main()
+#debug 2. caught: age cannot be negative
+#debug 3. caught: age too large
 #debug 4. OK, finally ran
-#debug 5. caught=Exception: age cannot be negative in C:\project\php\TinyPHP\test\error\try_catch.php:8
-#debug Stack trace:
-#debug #0 C:\project\php\TinyPHP\test\error\try_catch.php:68 Main->validate(-5)
-#debug #1 C:\project\php\TinyPHP\test\error\try_catch.php:98 Main->main()
-#debug , finally
+#debug 5. caught=age cannot be negative, finally
 #debug 6. try, finally
 #debug 7. div=5
-#debug 8. div0=Exception: division by zero in C:\project\php\TinyPHP\test\error\try_catch.php:18
-#debug Stack trace:
-#debug #0 C:\project\php\TinyPHP\test\error\try_catch.php:92 Main->safeDivide(5, 0)
-#debug #1 C:\project\php\TinyPHP\test\error\try_catch.php:98 Main->main()
+#debug 8. div0=division by zero
 #debug 9. still alive
 #debug
 #debug === All Try/Catch tests passed ===

@@ -371,18 +371,14 @@ static inline t_var tphp_fn_json_decode(t_string json) {
     if (p.cur >= p.end) return VAR_NULL();
     const char *start = p.cur;
     t_var result = json_parse_value(&p);
-    // Check: at least one token was consumed
+    // Check: at least one token was consumed — invalid JSON, return NULL
     if (p.cur <= start) {
-        tphp_rt_free_all();
-        fputs("\nFatal error: json_decode(): invalid JSON\n\n", stderr);
-        exit(1);
+        return VAR_NULL();
     }
-    // Check: no trailing garbage data
+    // Check: no trailing garbage data — return NULL
     json_skip_ws(&p);
     if (p.cur < p.end) {
-        tphp_rt_free_all();
-        fputs("\nFatal error: json_decode(): trailing data after JSON value\n\n", stderr);
-        exit(1);
+        return VAR_NULL();
     }
     return result;
 }

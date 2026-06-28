@@ -1,7 +1,71 @@
 # TinyPHP 语法参考
 
-> 基于 PHP 8.5.7 `zend_language_parser.y`，标注 TinyPHP 当前支持程度。
-> ✅ 已支持 | ⬜ 待实现 | ❌ AOT 不可行
+> 基于 PHP 8.5 `zend_language_parser.y`，标注 TinyPHP 当前支持程度。
+> ✅ 已支持 | ⬜ 待实现 | ❌ AOT 不可行 | 🔧 TinyPHP 独有扩展
+
+---
+
+## 0. AOT 编译要求（必读）
+
+TinyPHP 是 PHP→C AOT 编译器，不是解释器。以下规则**必须遵守**，否则编译失败。
+
+### 入口文件
+
+```php
+<?php
+// 1. 必须有全局命名空间（无 namespace）的 class Main
+// 2. 必须有 public function main(): void 作为入口
+// 3. 不支持任何游离代码（所有语句必须在类/函数内）
+
+class Main
+{
+    // 构造函数 — 接收命令行参数（可选）
+    public function __construct(int $argc, array $argv) {}
+
+    // 入口函数 — 必须强类型声明
+    public function main(): void
+    {
+        echo "hello world\n";
+    }
+
+    // 析构函数 — 退出前自动调用（可选）
+    public function __destruct() {}
+}
+```
+
+### 类型系统
+
+**类型固定**：变量在首次赋值时确定类型，后续不可变。尝试切换类型（如 `$x` 先 `int` 后 `string`）会在 C 编译阶段报错。
+
+| PHP 类型 | C 类型 | 说明 |
+|----------|--------|------|
+| `int` | `int64_t` | 64 位有符号整数 |
+| `float` | `double` | IEEE 754 双精度 |
+| `string` | `t_string` | SSO ≤23 字节内联，超限走池 |
+| `bool` | `bool` | true/false |
+| `array` | `t_array*` | 有序映射，int/string 键 |
+| `callable` | `t_callback` | 闭包/C 函数指针 |
+| `void` | `void` | 仅返回类型 |
+| `never` | `void` | 永不返回（exit/throw） |
+| `mixed` | `t_var` | 标签联合体，有运行时开销 |
+| 类类型 | `tphp_class_X*` | COS 对象指针 |
+
+> ⚠️ **`===` 和 `==` 等价**：类型固定意味着编译期已知类型，"同时类型不同"的情况不存在。
+
+### AOT 限制
+
+以下 PHP 特性依赖运行时解释器/动态符号表，**永久不支持**：
+
+| 类别 | 不支持 | 原因 |
+|------|--------|------|
+| 动态代码 | `eval()` `assert()` `create_function()` | 无解释器 |
+| 动态调用 | `$fn()` `$obj->$m()` `call_user_func()` | 编译时不知名 |
+| 变量变量 | `$$var` `compact()` `extract()` | 无运行时符号表 |
+| 运行时内省 | `Reflection*` `debug_backtrace()` `get_defined_vars()` | 无 |
+| 动态引入 | `include` `require` | 无运行时文件加载 |
+| 魔术方法 | `__call` `__get` `__set` `__callStatic` | 无动态分发 |
+| 生成器 | `yield` | 不做 |
+| 可空/联合 | `?int` `int\|string` | 破坏类型固定优势 |
 
 ---
 
@@ -196,6 +260,7 @@ statement:
   | try_stmt                   ✅ (COS setjmp/longjmp)
   | throw_stmt                 ✅ (Exception 类)
   | assign_stmt                ✅
+  | array_push_stmt            🔧 ($a[] = expr — TinyPHP 内联语法糖)
   | compound_assign            ✅ (+= -= *= /= .=)
   | list_destructure           ✅ (含键名 "key"=>$var)
   | unset_stmt                 ✅
@@ -475,33 +540,58 @@ phpc_memory:
 
 ## 13. 与 PHP 8.5 的差异汇总
 
-| 语法 | PHP 8.5 | TinyPHP | 备注 |
-|---|---|---|---|
-| `class` | ✅ | ✅ | — |
-| `extends` | ✅ | ✅ | COS struct 嵌套 |
-| `implements` | ✅ | ✅ | 编译期契约（interface） |
-| `interface` | ✅ | ✅ | 纯抽象类，编译期检查 |
-| `trait` | ✅ | ✅ | 编译期扁平化（use TraitName;） |
-| `abstract class` | ✅ | ✅ | 禁止 new，抽象方法无体 |
-| `final class` | ✅ | ✅ | — |
-| `readonly class` | ✅ | ✅ | — |
-| `enum` | ✅ | ✅ | — |
-| `try/catch/finally` | ✅ | ✅ | COS 风格 setjmp/longjmp |
-| `throw` | ✅ | ✅ | — |
-| `yield` | ✅ | ❌ | 不做 |
-| `instanceof` | ✅ | ✅ | 遍历类链 |
-| `fn =>` | ✅ | ✅ | — |
-| `match` 多条件 | ✅ | ✅ | — |
-| `?->` nullsafe | ✅ | ✅ | — |
-| 命名参数 | ✅ | ❌ | 影响性能 |
-| `...$args` 可变参数 | ✅ | ❌ | 影响性能 |
-| nullable `?type` | ✅ | ❌ | 不做 |
-| union `A\|B` | ✅ | ❌ | 不做 |
-| `__construct` 属性提升 | ✅ | ✅ | — |
-| 默认参数值 | ✅ | ⬌ | 部分支持 |
-| `declare(strict_types)` | ✅ | ⬜ | 当前跳过 |
-| attributes `#[...]` | ✅ | ❌ | — |
-| `include`/`require` | ✅ | ❌ | AOT 不可行 |
-| `eval()` | ✅ | ❌ | AOT 不可行 |
-| `$$var` | ✅ | ❌ | AOT 不可行 |
-| `__call/__get/__set` | ✅ | ❌ | AOT 不可行 |
+### ✅ 完全兼容
+
+| 语法 | 备注 |
+|------|------|
+| `if/elseif/else` `while` `do-while` `for` `foreach` `switch` `match` | 全部控制流 |
+| `break/continue/goto` 标签 | — |
+| `class` `extends` `interface` `implements` `trait+use` `abstract` `final` `readonly` | COS struct 嵌套继承 |
+| `enum` `enum case` | int/string backing |
+| `try/catch(Exception $e)/finally` `throw` | COS setjmp/longjmp |
+| `function` `closure` `fn =>` `use($x)` | 全部闭包形态 |
+| 完整 15 级运算符优先级 | 含 `<=>` `??` `?:` `?->` `**` `&|^~` `<<>>` |
+| `(int)` `(float)` `(string)` `(bool)` 类型转换 | — |
+| `namespace A\B` `use A\{B,C}` `use function` | 分组导入 |
+| `list()/$a[] =` 解构 | 含键名 `"key"=>$v` |
+| `self::CONST` `Class::CONST` `self::method()` | — |
+| `__construct(public $x)` 属性提升 | — |
+| `__destruct` | 作用域结束自动调用 |
+| `__LINE__` `__FILE__` `__DIR__` `__CLASS__` `__METHOD__` `DIRECTORY_SEPARATOR` | 编译期替换 |
+| `instanceof` | 遍历类链 |
+
+### 🔧 TinyPHP 独有
+
+| 语法 | 说明 |
+|------|------|
+| `#include "file.h"` | 嵌入 C 头文件 |
+| `#include <sys.h>` | 系统头文件 |
+| `#flag [CC] [OS] flags` | 编译器/平台过滤链接标志 |
+| `#callback type name(params)` | 声明 C 回调签名 |
+| `#debug expected` | 测试预期输出（`--debug` 模式） |
+| `C->func(args)` | 直接 C 函数调用 |
+| `c_int/c_float/c_str` | PHP → C 类型桥接 |
+| `php_int/php_float/php_str` | C → PHP 类型桥接 |
+| `phpc_arr_*` `phpc_obj` `phpc_fn_*` `phpc_thunk` | 数组/对象/回调互操作 |
+| `phpc_free` `phpc_free_str_arr` | C 内存释放 |
+
+### ❌ 不支持（AOT 物理不可行）
+
+| 语法 | 原因 |
+|------|------|
+| `eval()` `assert($str)` `create_function()` | 无运行时解释器 |
+| `$$var` `${expr}` | 编译时不知变量名 |
+| `$fn()` `$obj->$m()` `call_user_func()` | 编译时不知函数名 |
+| `include` `require` | 无运行时文件加载 |
+| `__call` `__get` `__set` `__callStatic` | 无动态分发 |
+| `Reflection*` 全系列 | 运行时内省 |
+| `debug_backtrace()` `get_defined_vars()` | 运行时符号表 |
+
+### ❌ 不做（权衡）
+
+| 语法 | 原因 |
+|------|------|
+| `yield` / Generator | 成本高收益低 |
+| `?int` `int\|string` | 破坏类型固定优势 |
+| `...$args` 可变参数 | 需动态栈构造 |
+| 命名参数 | AOT 无意义 |

@@ -1,4 +1,27 @@
 <?php
+#debug === test 1: 基础 str key ===
+#debug name: TinyPHP
+#debug vers: int(2)
+#debug
+#debug === test 2: 多键读写 ===
+#debug Alice is 30 from SZ
+#debug
+#debug === test 3: 覆盖 ===
+#debug int(1)
+#debug int(99)
+#debug
+#debug === test 4: 变量 key ===
+#debug pal[color]: blue
+#debug
+#debug === test 5: 条件中读取 ===
+#debug debug on, level=3
+#debug
+#debug === test 6: 混合 int/str key ===
+#debug mix[0]: zero
+#debug mix[one]: 1
+#debug mix[2]: two
+#debug
+#debug === done ===
 
 class Main
 {

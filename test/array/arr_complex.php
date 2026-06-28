@@ -1,4 +1,39 @@
 <?php
+#debug === 1. 3层嵌套 ===
+#debug l0[0]=0 l0[1]=0
+#debug sub[0]=10 sub[1]=20 sub[2][0]=0
+#debug
+#debug === 2. 累加+条件 ===
+#debug sum=50 cnt=4 flag=1
+#debug
+#debug === 3. 混合key数组 ===
+#debug mix[0]=first mix[key]=second mix[2]=third
+#debug
+#debug === 4. 嵌套字典 ===
+#debug Alice: age=25 city=NY
+#debug Bob:   age=30 city=LA
+#debug
+#debug === 5. 条件分支 ===
+#debug mode=2 name=test
+#debug
+#debug === 6. 数据表遍历 ===
+#debug   id=1 val=100
+#debug   id=2 val=200
+#debug   id=3 val=300
+#debug
+#debug === 7. while+数组 ===
+#debug   q[0]=100
+#debug   q[1]=200
+#debug   q[2]=300
+#debug
+#debug === 8. count判断 ===
+#debug empty OK
+#debug nonempty OK
+#debug
+#debug === 9. 数组值比较 ===
+#debug x.a == 100 OK
+#debug x.b == 200 OK
+#debug === all passed ===
 
 class Main
 {

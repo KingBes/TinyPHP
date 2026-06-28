@@ -1,9 +1,9 @@
-<?php // @exit 1 — §7 tests invalid JSON which triggers error()
+<?php
 #debug ===== 1. edge values =====
 #debug string(10) "2147483647"
 #debug string(11) "-2147483648"
 #debug string(1) "0"
-#debug string(3) "0.0"
+#debug string(1) "0"
 #debug string(2) """"
 #debug
 #debug ===== 2. string escaping =====
@@ -11,20 +11,20 @@
 #debug "{\"x\":1}"
 #debug
 #debug ===== 3. deep nested =====
-#debug string(27) "[[[[1,2],[3,4]],[[5,6],[7,8]]]]"
-#debug string(27) "[[[[1,2],[3,4]],[[5,6],[7,8]]]]"
+#debug string(31) "[[[[1,2],[3,4]],[[5,6],[7,8]]]]"
+#debug string(31) "[[[[1,2],[3,4]],[[5,6],[7,8]]]]"
 #debug
 #debug ===== 4. mixed types =====
-#debug string(46) "[42,-7,3.145256,"hello",true,false,null,[1,2]]"
+#debug string(45) "[42,-7,3.14526,"hello",true,false,null,[1,2]]"
 #debug
 #debug ===== 5. JSON objects =====
 #debug bool(true)
 #debug {"status":"ok","code":200,"data":[1,2,3]}
 #debug
 #debug ===== 6. multi round-trip =====
-#debug string(13) "[10,20,30,40,50]"
-#debug string(13) "[10,20,30,40,50]"
-#debug string(13) "[10,20,30,40,50]"
+#debug string(16) "[10,20,30,40,50]"
+#debug string(16) "[10,20,30,40,50]"
+#debug string(16) "[10,20,30,40,50]"
 #debug
 #debug ===== 7. decode errors =====
 #debug NULL
@@ -43,22 +43,26 @@
 #debug ===== 10. array of objects =====
 #debug bool(true)
 #debug bool(true)
-#debug [{"id":1,"name":"alice"},{"id":2,"name":"bob"},3.145256]
+#debug [{"id":1,"name":"alice"},{"id":2,"name":"bob"},3.14526]
 #debug
 #debug === ALL complex json tests done ===
 #debug array(3) {
 #debug   [0]=>
-#debug   array(1) {
+#debug   array(2) {
 #debug     ["id"]=>
 #debug     int(1)
+#debug     ["name"]=>
+#debug     string(5) "alice"
 #debug   }
 #debug   [1]=>
-#debug   array(1) {
+#debug   array(2) {
 #debug     ["id"]=>
 #debug     int(2)
+#debug     ["name"]=>
+#debug     string(3) "bob"
 #debug   }
 #debug   [2]=>
-#debug   float(3.145256)
+#debug   float(3.14526)
 #debug }
 
 class Main

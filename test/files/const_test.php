@@ -1,4 +1,22 @@
 <?php // @multi @with const_data.php
+#debug ===== 1. global scope =====
+#debug string(6) "global"
+#debug int(999)
+#debug bool(true)
+#debug
+#debug ===== 2. Class::CONST external =====
+#debug float(3.14)
+#debug float(314)
+#debug
+#debug ===== 3. self:: internal =====
+#debug   [LOG]: started
+#debug   [WARN]: disk low
+#debug
+#debug ===== 4. Main self:: =====
+#debug TITLE   = Const Access Test
+#debug int(5)
+#debug
+#debug === ALL scope tests done ===
 
 use Calculator;
 use Logger;

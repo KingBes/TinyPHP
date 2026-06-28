@@ -1,6 +1,13 @@
 <?php
+#debug === Extends Test ===
+#debug
+#debug 1. speak=Rex barks!
+#debug 2. name=Rex
+#debug 3. breed=Husky
+#debug 4. age=3
+#debug
+#debug === OK ===
 
-// Parent class
 class Animal
 {
     public string $name;
@@ -23,7 +30,6 @@ class Animal
     }
 }
 
-// Child class — extends Animal
 class Dog extends Animal
 {
     public string $breed;
@@ -54,16 +60,9 @@ class Main
 
         $d = new Dog('Rex', 3, 'Husky');
 
-        // Child method (override)
         echo '1. speak=' . $d->speak() . "\n";
-
-        // Inherited property
         echo '2. name=' . $d->name . "\n";
-
-        // Child property
         echo '3. breed=' . $d->getBreed() . "\n";
-
-        // Inherited method
         echo '4. age=' . $d->getAge() . "\n";
 
         echo "\n=== OK ===\n";

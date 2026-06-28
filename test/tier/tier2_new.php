@@ -1,4 +1,36 @@
 <?php
+#debug -- 1. ucfirst/lcfirst --
+#debug ucfirst=string(5) "Hello"
+#debug lcfirst=string(5) "hello"
+#debug -- 2. strrev/repeat --
+#debug rev=string(3) "cba"
+#debug repeat=string(6) "ababab"
+#debug -- 3. str_split --
+#debug split[0]=int(0)
+#debug cnt=3
+#debug -- 4. str_pad --
+#debug padR=string(5) "ab---"
+#debug padL=string(5) "---ab"
+#debug -- 5. sub count/shuffle --
+#debug cnt(ab)=3
+#debug shuf len=3
+#debug -- 6. slashes --
+#debug add=string(3) "abc"
+#debug strip=string(3) "abc"
+#debug -- 7. hex --
+#debug b2h=string(4) "4142"
+#debug h2b=string(2) "AB"
+#debug -- 8. url encode/decode --
+#debug enc=string(13) "hello%20world"
+#debug dec=string(11) "hello world"
+#debug -- 9. array_chunk --
+#debug chunks=3
+#debug -- 10. array combine/flip/column --
+#debug comb cnt=2
+#debug flip cnt=2
+#debug col cnt=2
+#debug
+#debug === Tier2 OK ===
 
 class Main {
     public function main(): void {

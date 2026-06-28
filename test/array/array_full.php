@@ -1,4 +1,156 @@
 <?php
+#debug ===== 1. array_push =====
+#debug array(1) {
+#debug   [0]=>
+#debug   int(99)
+#debug }
+#debug int(1)
+#debug array(3) {
+#debug   [0]=>
+#debug   int(1)
+#debug   [1]=>
+#debug   int(2)
+#debug   [2]=>
+#debug   int(3)
+#debug }
+#debug int(3)
+#debug int(5)
+#debug int(4)
+#debug int(5)
+#debug int(10)
+#debug int(1)
+#debug int(10)
+#debug int(30)
+#debug
+#debug ===== 2. array_pop =====
+#debug int(30)
+#debug int(20)
+#debug int(1)
+#debug int(10)
+#debug int(10)
+#debug int(0)
+#debug int(42)
+#debug int(0)
+#debug int(4)
+#debug int(3)
+#debug int(99)
+#debug int(4)
+#debug
+#debug ===== 3. in_array =====
+#debug bool(true)
+#debug bool(false)
+#debug bool(true)
+#debug bool(true)
+#debug bool(true)
+#debug bool(false)
+#debug int(3)
+#debug
+#debug ===== 4. array_key_exists =====
+#debug bool(true)
+#debug bool(true)
+#debug bool(true)
+#debug bool(false)
+#debug bool(false)
+#debug key 2 ok
+#debug key 5 missing
+#debug
+#debug ===== 5. array_keys & array_values =====
+#debug int(3)
+#debug int(0)
+#debug int(2)
+#debug int(3)
+#debug int(100)
+#debug int(200)
+#debug bool(true)
+#debug bool(true)
+#debug
+#debug ===== 6. array_merge =====
+#debug int(5)
+#debug int(1)
+#debug int(4)
+#debug int(5)
+#debug int(1)
+#debug int(4)
+#debug int(15)
+#debug
+#debug ===== 7. implode =====
+#debug 1,2,3
+#debug 10-20
+#debug 1|2|3
+#debug
+#debug ===== 8. explode =====
+#debug int(3)
+#debug string(1) "a"
+#debug string(1) "c"
+#debug int(2)
+#debug string(5) "hello"
+#debug string(5) "world"
+#debug x:y:z
+#debug
+#debug ===== 9. count =====
+#debug int(0)
+#debug int(1)
+#debug int(3)
+#debug int(2)
+#debug int(3)
+#debug
+#debug ===== 10. combined =====
+#debug int(3)
+#debug int(3)
+#debug int(2)
+#debug int(99)
+#debug int(2)
+#debug int(4)
+#debug int(150)
+#debug
+#debug ===== 11. nested int =====
+#debug int(1)
+#debug int(2)
+#debug int(4)
+#debug int(9)
+#debug int(7)
+#debug 6
+#debug
+#debug ===== 12. nested string =====
+#debug string(5) "hello"
+#debug string(5) "world"
+#debug string(3) "bar"
+#debug hello world
+#debug
+#debug ===== 13. nested float =====
+#debug float(1.5)
+#debug float(2.5)
+#debug float(3.5)
+#debug
+#debug ===== 14. nested bool =====
+#debug bool(true)
+#debug bool(false)
+#debug bool(true)
+#debug flags[0][0]=true
+#debug flags[1][0]=false
+#debug
+#debug ===== 15. type propagation =====
+#debug int(10)
+#debug int(20)
+#debug int(30)
+#debug int(40)
+#debug int(100)
+#debug alpha/beta
+#debug
+#debug ===== 16. foreach nested =====
+#debug int(21)
+#debug
+#debug ===== 17. is_array checks =====
+#debug bool(true)
+#debug bool(false)
+#debug bool(false)
+#debug arr17 is array
+#debug int17 is not array
+#debug
+#debug ===== 18. while + array =====
+#debug int(60)
+#debug
+#debug === ALL array tests done ===
 
 class Main
 {

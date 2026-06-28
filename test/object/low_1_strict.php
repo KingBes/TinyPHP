@@ -1,4 +1,20 @@
 <?php
+#debug 1a. int 10===10: 1
+#debug 1b. int 10===20: 0
+#debug 1c. int 10!==20: 1
+#debug 1d. int 10!==10: 0
+#debug 2a. str hello===hello: 1
+#debug 2b. str hello===world: 0
+#debug 2c. str hello!==world: 1
+#debug 3a. float 3.14===3.14: 1
+#debug 3b. float 3.14===2.71: 0
+#debug 3c. float 3.14!==2.71: 1
+#debug 4a. bool true===true: 1
+#debug 4b. bool true===false: 0
+#debug 4c. bool true!==false: 1
+#debug 5a. int 10==10: 1 vs ===: 1
+#debug 6. if === 42: pass
+#debug 7. if !== 0: pass
 
 class Main {
     public function main(): void {

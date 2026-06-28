@@ -1,4 +1,5 @@
 <?php
+#debug User name=Bob age=25
 
 class User {
     public function __construct(

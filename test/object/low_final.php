@@ -1,4 +1,6 @@
 <?php
+#debug 1. 10===10: 1 5!==5: 0
+#debug OK-static-called OK-normal 2. all done
 
 class Main {
     public static int $counter = 0;
