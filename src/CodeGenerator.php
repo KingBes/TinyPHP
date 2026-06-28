@@ -58,7 +58,7 @@ class CodeGenerator implements ASTVisitor
     private static array $typeMap = [
         'int' => 't_int', 'float' => 't_float', 'string' => 't_string',
         'bool' => 't_bool', 'void' => 'void', 'never' => 'void', 'array' => 't_array*',
-        'null' => 'void*',
+        'mixed' => 't_var', 'null' => 'void*',
     ];
 
     /** 临时变量计数器，用于数组字面量的复合表达式 */
@@ -2306,6 +2306,12 @@ class CodeGenerator implements ASTVisitor
             // 非标准 C 名
             if ($n === 'is_numeric')   return "tphp_fn_is_numeric_str({$c})";
             if ($n === 'array_is_list') return "tphp_fn_array_is_list_int({$c})";
+            if ($n === 'crc32')        return "tphp_fn_crc32_str({$c})";
+            if ($n === 'array_column') return "tphp_fn_array_column_str({$a[0]}, {$a[1]})";
+            if ($n === 'strtr') {
+                if (count($a) >= 3) return "tphp_fn_strtr2({$a[0]}, {$a[1]}, {$a[2]})";
+                return $c;
+            }
 
             // 通用回退：tphp_fn_函数名(参数) — C 编译器兜底
             $fnName = 'tphp_fn_' . $n;
@@ -2333,19 +2339,7 @@ class CodeGenerator implements ASTVisitor
             return "{$fnName}(" . implode(', ', $callArgs) . ")";
         }
 
-        // ── 第二/三梯队：默认参数 / 非标准 C 名 ─────────────
-        if ($node->callee === null) {
-            $n2 = $node->name;
-            $a2 = array_map(fn($a) => $a->accept($this), $node->args);
-            $c2 = count($a2) > 0 ? $a2[0] : '';
-            // 非标准 C 名
-            if ($n2 === 'crc32')           return "tphp_fn_crc32_str({$c2})";
-            if ($n2 === 'array_column')     return "tphp_fn_array_column_str({$a2[0]}, {$a2[1]})";
-            if ($n2 === 'strtr') {
-                if (count($a2) >= 3) return "tphp_fn_strtr2({$a2[0]}, {$a2[1]}, {$a2[2]})";
-                return $c2;
-            }
-        }
+        // ── 第二/三梯队（已全部移入第一块，此处保留空壳以防后续扩展）──
 
         // 闭包调用: $h() → ((t_int(*)(...))h.func)(args)
         if ($node->callee !== null && $node->name === '__invoke') {
@@ -3856,15 +3850,21 @@ class CodeGenerator implements ASTVisitor
     }
     public static function varName(string $v): string { return $v === '$this' ? 'self' : ltrim($v, '$'); }
 
+    /** 解析类型到 C 类型（处理联合类型 | → t_var） */
+    private static function resolveType(string $type): string {
+        if (str_contains($type, '|')) return 't_var';
+        return self::$typeMap[$type] ?? ('tphp_class_' . $type . '*');
+    }
+
     /** 生成参数声明的 C 类型 + 变量名（byRef → 加一级指针：int→int*, t_array*→t_array**） */
     public static function paramDecl(ParamNode $p): string {
-        $ct = self::$typeMap[$p->type] ?? ('tphp_class_' . $p->type . '*');
+        $ct = self::resolveType($p->type);
         return $p->byRef ? "{$ct} *" . self::varName($p->name) : "{$ct} " . self::varName($p->name);
     }
 
     /** 参数在 varTypes 中的 C 类型（byRef → 加一级指针：int→int*, t_array*→t_array**） */
     public static function paramCType(ParamNode $p): string {
-        $ct = self::$typeMap[$p->type] ?? ('tphp_class_' . $p->type . '*');
+        $ct = self::resolveType($p->type);
         return $p->byRef ? "{$ct}*" : $ct;
     }
 
