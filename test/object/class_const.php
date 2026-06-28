@@ -1,5 +1,5 @@
 <?php
-#debug === class const test ===
+#debug ===== class const test =====
 #debug Hello, Class Demo!
 #debug
 #debug === done ===

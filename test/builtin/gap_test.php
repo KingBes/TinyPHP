@@ -24,7 +24,7 @@
 #debug slice len=2 s[0]=20
 #debug
 #debug -- 7. str contains/replace --
-#debug contains: 1
+#debug contains: 1 0
 #debug replace: XbcXbc
 #debug
 #debug -- 8. str case --

@@ -2293,6 +2293,16 @@ class CodeGenerator implements ASTVisitor
                 return "tphp_fn_pow({$ta}, {$tb})";
             }
             if ($n === 'mktime')   return "tphp_fn_mktime({$a[0]},{$a[1]},{$a[2]},{$a[3]},{$a[4]},{$a[5]})";
+            // 默认参数
+            if ($n === 'str_split') {
+                $ck = count($a) >= 2 ? $a[1] : '1';
+                return "tphp_fn_str_split({$c}, {$ck})";
+            }
+            if ($n === 'str_pad') {
+                $pad = count($a) >= 3 ? $a[2] : '(t_string){NULL,0}';
+                $ty  = count($a) >= 4 ? $a[3] : '0';
+                return "tphp_fn_str_pad({$c}, {$a[1]}, {$pad}, {$ty})";
+            }
             // 非标准 C 名
             if ($n === 'is_numeric')   return "tphp_fn_is_numeric_str({$c})";
             if ($n === 'array_is_list') return "tphp_fn_array_is_list_int({$c})";
@@ -2328,16 +2338,6 @@ class CodeGenerator implements ASTVisitor
             $n2 = $node->name;
             $a2 = array_map(fn($a) => $a->accept($this), $node->args);
             $c2 = count($a2) > 0 ? $a2[0] : '';
-            // 默认参数
-            if ($n2 === 'str_split') {
-                $ck = count($a2) >= 2 ? $a2[1] : '1';
-                return "tphp_fn_str_split({$c2}, {$ck})";
-            }
-            if ($n2 === 'str_pad') {
-                $pad = count($a2) >= 3 ? $a2[2] : '(t_string){NULL,0}';
-                $ty  = count($a2) >= 4 ? $a2[3] : '0';
-                return "tphp_fn_str_pad({$c2}, {$a2[1]}, {$pad}, {$ty})";
-            }
             // 非标准 C 名
             if ($n2 === 'crc32')           return "tphp_fn_crc32_str({$c2})";
             if ($n2 === 'array_column')     return "tphp_fn_array_column_str({$a2[0]}, {$a2[1]})";

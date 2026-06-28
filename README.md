@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="favicon.svg" width="300" height="300" alt="TinyPHP logo">
+  <img src="./favicon.svg" width="300" height="300" alt="TinyPHP logo">
 </p>
 
 # TinyPHP
