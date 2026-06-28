@@ -115,7 +115,15 @@ if ($inPhar) {
         extractPharDir($pharTccDir, $destTccDir);
     }
 
+    // Extract ext/ (first run only)
+    $pharExtDir = $pharRoot . '/ext';
+    $destExtDir = $pharDir . DIRECTORY_SEPARATOR . 'ext';
+    if (!is_dir($destExtDir) && is_dir($pharExtDir)) {
+        extractPharDir($pharExtDir, $destExtDir);
+    }
+
     $includeDir = $destIncludeDir;
+    $extRootPhar = $destExtDir;  // #import 使用解压后的 ext/
 }
 
 // Compiler selection: -cc for external compiler, otherwise built-in TCC
@@ -170,7 +178,7 @@ echo "[1/2] Transpiling {$allFilesStr} => C...\n";
     $otherFiles = [];
     // ── #import 预扫描：引入 ext/name/src/*.php → $files、*.c → $importCFiles ────
     // 用 for 而非 foreach：扩展文件可能有自己的 #import，需递归扫描
-    $extRoot = __DIR__ . DIRECTORY_SEPARATOR . 'ext';
+    $extRoot = $inPhar ? ($extRootPhar ?? __DIR__ . DIRECTORY_SEPARATOR . 'ext') : (__DIR__ . DIRECTORY_SEPARATOR . 'ext');
     $importCFiles = [];
     for ($fi = 0; $fi < count($files); $fi++) {
         $src = file_get_contents($files[$fi]);
