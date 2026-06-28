@@ -137,12 +137,13 @@ class MethodNode extends ASTNode
     }
 }
 
-// 参数: type $name
+// 参数: [&] type $name
 class ParamNode extends ASTNode
 {
     public function __construct(
         public readonly string $type,
         public readonly string $name,
+        public readonly bool $byRef = false,
     ) {}
 
     public function accept(ASTVisitor $visitor): string

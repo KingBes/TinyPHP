@@ -158,7 +158,7 @@ echo "[1/2] Transpiling {$allFilesStr} => C...\n";
     $functions = [];
     $constants = [];
     $enums = [];
-    $allIncludes = [];
+    $allIncludes  = [];
     $allFlags     = [];
     $allCallbacks = [];
     $allDebugs    = [];
@@ -168,6 +168,24 @@ echo "[1/2] Transpiling {$allFilesStr} => C...\n";
     // Ensures cross-file enums are known when parsing Main.
     $mainFile  = null;
     $otherFiles = [];
+    // ── #import 预扫描：引入 ext/name/src/*.php → $files、*.c → $importCFiles ────
+    // 用 for 而非 foreach：扩展文件可能有自己的 #import，需递归扫描
+    $extRoot = __DIR__ . DIRECTORY_SEPARATOR . 'ext';
+    $importCFiles = [];
+    for ($fi = 0; $fi < count($files); $fi++) {
+        $src = file_get_contents($files[$fi]);
+        if (preg_match_all('/^#import\s+(\w[\w\/\-\.]*)/m', (string)$src, $m)) {
+            foreach ($m[1] as $extName) {
+                $extSrc = $extRoot . DIRECTORY_SEPARATOR . $extName . DIRECTORY_SEPARATOR . 'src';
+                if (!is_dir($extSrc)) die("Error: #import {$extName} — ext/{$extName}/src/ not found\n");
+                $extPhp = glob($extSrc . DIRECTORY_SEPARATOR . '*.php');
+                $extC   = glob($extSrc . DIRECTORY_SEPARATOR . '*.c');
+                foreach ($extPhp as $f) { if (!in_array($f, $files)) $files[] = $f; }
+                foreach ($extC   as $f) { if (!in_array($f, $importCFiles)) $importCFiles[] = $f; }
+                echo "       #import {$extName} → " . count($extPhp) . " php + " . count($extC) . " c\n";
+            }
+        }
+    }
     foreach ($files as $file) {
         // Quick check: does file contain class Main (global namespace)?
         $src = file_get_contents($file);
@@ -500,7 +518,7 @@ if (PHP_OS_FAMILY === 'Darwin' && $isTCC) {
     $bFlag .= ' -I"' . $tccRoot . DIRECTORY_SEPARATOR . 'include' . '"';
 }
 
-$allCFiles = array_unique(array_merge($userCFiles, $extraCFiles));
+$allCFiles = array_unique(array_merge($userCFiles, $extraCFiles, $importCFiles));
 $extraSrcs = !empty($allCFiles) ? ' "' . implode('" "', $allCFiles) . '"' : '';
 // Linux needs -lm for math functions (round, ceil, floor, sqrt, pow, etc.)
 $linkFlags = '';
@@ -542,6 +560,7 @@ if ($debugMode) {
         exec('"' . $outExe . '" 2>&1', $actualOutput, $runRet);
         echo "\n";
         $count = max(count($debugLines), count($actualOutput));
+        $failed = false;
         for ($i = 0; $i < $count; $i++) {
             $expect = $debugLines[$i] ?? '';
             $actual = $actualOutput[$i] ?? '';
@@ -551,10 +570,18 @@ if ($debugMode) {
             } elseif ($expect === $actual) {
                 echo "[YES] {$expect}\n";
             } else {
-                echo "[NO] expected: {$expect}\n";
-                echo "     got     : {$actual}\n";
+                echo "\n[FAIL] --debug mismatch at line " . ($i + 1) . "\n";
+                echo "  expected: {$expect}\n";
+                echo "  got     : {$actual}\n\n";
+                $failed = true;
+                break;
             }
         }
+        if ($failed) {
+            echo "Test FAILED. Run without --debug to see full output.\n";
+            exit(1);
+        }
+        echo "\n[PASS] All assertions matched.\n";
     }
 }
 

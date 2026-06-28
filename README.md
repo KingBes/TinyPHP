@@ -108,7 +108,7 @@ use MyApp\Models\User;
 | 类型 | `int` `float` `string` `bool` `array` `callable` `void` `mixed` `self` 类类型 |
 | 运算符 | 完整 15 级优先级：算术/比较/逻辑/位/三元 `?:`/空合并 `??`/太空船 `<=>`/自增自减/类型转换 |
 | 命名空间 | `namespace A\B`、`use A\{B,C}` 分组导入、`use function` |
-| 语法糖 | `list()/$a[] =` 解构、`$a[] = ` push、字符串插值、heredoc、魔术常量 (`__LINE__` `__FILE__` `__DIR__`) |
+| 语法糖 | `list()/$a[] =` 解构、`$a[] = ` push、`int &$x` 引用传参（全类型）、字符串插值、heredoc、魔术常量 (`__LINE__` `__FILE__` `__DIR__`) |
 
 ### ❌ 不支持（AOT 物理不可行）
 
@@ -166,6 +166,21 @@ TCC 亚秒编译，GCC/Clang -O2 带来 3-10 倍额外提速。`compat.h` 统一
 ### C 互操作（PHPC）
 
 完整的 PHP ↔ C 双向互操作：`C->function(args)` 直接调用 C 函数，`c_int/c_str` 类型桥接，数组/对象/回调互操作。详见下方 PHPC 章节。
+
+### 扩展系统
+
+对标 PHP extension，`#import` 按需引入。已内置 `pcntl`、`posix` 扩展：
+
+```php
+<?php
+#import pcntl            // 引入进程控制扩展
+
+class Main {
+    public function main(): void {
+        $pid = pcntl_fork();
+    }
+}
+```
 
 ---
 

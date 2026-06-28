@@ -174,10 +174,11 @@ class CodeGenerator implements ASTVisitor
             $p[] = $this->emitClassForward($class, $isMain);
         }
 
-        // 独立函数前置声明 + 注册返回类型
+        // 独立函数前置声明 + 注册返回类型 + 参数类型（byRef 检测用）
         foreach ($node->functions as $fn) {
             $ret = self::mapType($fn->returnType);
             $this->funcRetTypes[self::funcCName($fn)] = $ret;
+            $this->funcParamTypes[self::funcCName($fn)] = array_map(fn($p) => self::paramCType($p), $fn->params);
             $params = array_map(fn($p) => $this->visitParam($p), $fn->params);
             $p[] = 'static ' . $ret . ' ' . self::funcCName($fn) . '(' . implode(', ', $params) . ');';
         }
@@ -547,6 +548,8 @@ class CodeGenerator implements ASTVisitor
 
     /** 独立函数返回类型追踪：funcCName → C 类型 */
     private array $funcRetTypes = [];
+    /** 独立函数参数类型追踪：funcCName → [C类型, ...] */
+    private array $funcParamTypes = [];
 
     public function visitFunction(FunctionNode $node): string
     {
@@ -558,11 +561,11 @@ class CodeGenerator implements ASTVisitor
         $this->currentRetType = $ret;
         // 注册返回类型，供 inferCallReturnType 使用
         $this->funcRetTypes[self::funcCName($node)] = $ret;
-        $params = array_map(fn($p) => $this->visitParam($p), $node->params);
+        $params = array_map(fn($p) => self::paramDecl($p), $node->params);
         foreach ($node->params as $p) {
             $vn = self::varName($p->name);
             $this->declaredVars[$vn] = true;
-            $this->varTypes[$vn] = self::mapType($p->type);
+            $this->varTypes[$vn] = self::paramCType($p);
         }
         $header = [];
         $header[] = 'static ' . $ret . ' ' . self::funcCName($node) . '(' . implode(', ', $params) . ') {';
@@ -614,7 +617,7 @@ class CodeGenerator implements ASTVisitor
         foreach ($node->params as $p) {
             $vn = self::varName($p->name);
             $this->declaredVars[$vn] = true;
-            $this->varTypes[$vn] = self::mapType($p->type);
+            $this->varTypes[$vn] = self::paramCType($p);
         }
         // Phase 1: header
         $header = [];
@@ -651,7 +654,8 @@ class CodeGenerator implements ASTVisitor
 
     public function visitParam(ParamNode $node): string
     {
-        return self::mapType($node->type) . ' ' . self::varName($node->name);
+        $ct = self::mapType($node->type);
+        return $node->byRef ? "{$ct} *" . self::varName($node->name) : "{$ct} " . self::varName($node->name);
     }
 
     // ============================================================
@@ -797,22 +801,23 @@ class CodeGenerator implements ASTVisitor
             $cType = $this->inferType($node->expr);
             $this->varTypes[$var] = $cType;
             $declType = ($cType === 'null') ? 'void*' : $cType;
-            // 在嵌套作用域内（for/while/if body）→ 提升声明到函数作用域
+            $w = $this->varWrite($var, $cType);
             if ($this->scopeDepth > 0) {
                 $this->funcScopeDecls[$var] = $declType;
-                $code = "{$var} = {$expr};";
+                $code = "{$w} = {$expr};";
             } else {
                 $code = "{$declType} {$var} = {$expr};";
             }
         } else {
             // 自动释放：对象/t_string 重赋值时先求值再释放（防止 $var=$var->method() 的 use-after-free）
+            $w = $this->varWrite($var, $prevType);
             if (str_starts_with($prevType, 'tphp_class_') || str_starts_with($prevType, 'tphp_enum_')) {
-                $tmp = '_tmp_' . mt_rand(10000, 99999);
+                $tmp = '_tmp_' . (++$this->tmpVarCounter);
                 $code = "{$prevType} {$tmp} = {$expr}; tp_obj_release((void*){$var}); {$var} = {$tmp};";
             } elseif ($prevType === 't_string') {
-                $code = "tphp_rt_str_free(&{$var}); {$var} = {$expr};";
+                $code = "tphp_rt_str_free(&{$var}); {$w} = {$expr};";
             } else {
-                $code = "{$var} = {$expr};";
+                $code = "{$w} = {$expr};";
             }
         }
 
@@ -924,7 +929,10 @@ class CodeGenerator implements ASTVisitor
         }
         if ($expr instanceof VariableExpr) {
             $vn = self::varName($expr->name);
-            return $this->varTypes[$vn] ?? 't_int';
+            $t = $this->varTypes[$vn] ?? 't_int';
+            // byRef 变量：推导类型去掉一级指针（t_int*→t_int, t_array**→t_array*）
+            if ($this->isByRefType($t)) return substr($t, 0, -1);
+            return $t;
         }
         if ($expr instanceof EnumAccessExpr) {
             return $this->enumCTypes[$expr->enumName] ?? 't_int';
@@ -1136,20 +1144,6 @@ class CodeGenerator implements ASTVisitor
             if ($expr->name === 'parse_url' || $expr->name === 'parse_str') return 't_array*';
             if ($expr->name === 'strtr')          return 't_string';
             if ($expr->name === 'asort' || $expr->name === 'arsort' || $expr->name === 'ksort' || $expr->name === 'krsort') return 'void';
-            // ── pcntl ──
-            if ($expr->name === 'pcntl_fork')     return 't_int';
-            if ($expr->name === 'pcntl_waitpid')  return 't_int';
-            if ($expr->name === 'pcntl_wait')     return 't_int';
-            if ($expr->name === 'pcntl_exec')     return 'void';
-            if ($expr->name === 'pcntl_alarm')    return 't_int';
-            if ($expr->name === 'pcntl_get_last_error') return 't_int';
-            if ($expr->name === 'pcntl_strerror') return 't_string';
-            // ── posix ──
-            if (str_starts_with($expr->name, 'posix_')) {
-                if ($expr->name === 'posix_uname' || $expr->name === 'posix_times') return 't_array*';
-                if ($expr->name === 'posix_getcwd' || $expr->name === 'posix_strerror' || $expr->name === 'posix_ttyname') return 't_string';
-                return 't_int';
-            }
         }
         // 闭包调用 → 查 closureSigs
         if ($expr->name === '__invoke' && $expr->callee instanceof VariableExpr) {
@@ -1217,11 +1211,14 @@ class CodeGenerator implements ASTVisitor
 
     public function visitAssignArrayPushStmt(AssignArrayPushStmtNode $node): string
     {
-        $var  = self::varName($node->varName);
-        $arr  = $this->wrapVar(new VariableExpr($node->varName));
-        $vCode = $node->value->accept($this);
-        $val   = $this->wrapArrayElement($node->value, $vCode);
-        return 'tphp_fn_array_push(&' . $arr . ', ' . $val . ');';
+        $var    = self::varName($node->varName);
+        $varT   = $this->varTypes[$var] ?? '';
+        $isByRef = $this->isByRefType($varT);
+        // byRef 数组：变量已是 t_array**，直接传；非 byRef：取地址
+        $arrCode = $isByRef ? $var : ('&' . $var);
+        $vCode   = $node->value->accept($this);
+        $val     = $this->wrapArrayElement($node->value, $vCode);
+        return 'tphp_fn_array_push(' . $arrCode . ', ' . $val . ');';
     }
 
     public function visitAssignArrayStmt(AssignArrayStmtNode $node): string
@@ -1687,6 +1684,10 @@ class CodeGenerator implements ASTVisitor
         }
         $n = self::varName($node->name);
         if ($n === '$this') return 'self';
+        // byRef 参数：统一解引用一次（int*→(*x), t_array**→(*arr), tphp_class_X**→(*obj)）
+        if ($this->isByRefType($this->varTypes[$n] ?? '')) {
+            return "(*{$n})";
+        }
         return $n;
     }
 
@@ -2297,8 +2298,29 @@ class CodeGenerator implements ASTVisitor
             if ($n === 'array_is_list') return "tphp_fn_array_is_list_int({$c})";
 
             // 通用回退：tphp_fn_函数名(参数) — C 编译器兜底
-            if (empty($a)) return "tphp_fn_{$n}()";
-            return "tphp_fn_{$n}(" . implode(', ', $a) . ")";
+            $fnName = 'tphp_fn_' . $n;
+            if (empty($a)) return "{$fnName}()";
+            // byRef 参数：形参是指针时要正确传参
+            $pTypes = $this->funcParamTypes[$fnName] ?? [];
+            $callArgs = [];
+            foreach ($node->args as $i => $arg) {
+                $ct = $pTypes[$i] ?? '';
+                $isParamByRef = $this->isByRefType($ct);
+                if ($isParamByRef && $arg instanceof VariableExpr) {
+                    $avn = self::varName($arg->name);
+                    if ($this->isByRefType($this->varTypes[$avn] ?? '')) {
+                        // byRef 实参 → byRef 形参：直接传指针（visitVariable 已解引用，必须用原始名）
+                        $callArgs[] = $avn;
+                    } else {
+                        // 普通实参 → byRef 形参：取地址
+                        $callArgs[] = '&' . self::varName($arg->name);
+                    }
+                } else {
+                    $aCode = $arg->accept($this);
+                    $callArgs[] = $isParamByRef ? '&' . $aCode : $aCode;
+                }
+            }
+            return "{$fnName}(" . implode(', ', $callArgs) . ")";
         }
 
         // ── 第二/三梯队：默认参数 / 非标准 C 名 ─────────────
@@ -2323,16 +2345,6 @@ class CodeGenerator implements ASTVisitor
                 if (count($a2) >= 3) return "tphp_fn_strtr2({$a2[0]}, {$a2[1]}, {$a2[2]})";
                 return $c2;
             }
-        }
-
-        // ── pcntl: 仅 &$status 引用参数需要特殊处理 ─────────
-        if ($node->callee === null && str_starts_with($node->name, 'pcntl_')) {
-            $a4 = array_map(fn($a) => $a->accept($this), $node->args);
-            if ($node->name === 'pcntl_waitpid')
-                return "tphp_fn_pcntl_waitpid({$a4[0]}, &{$a4[1]}, " . ($a4[2] ?? '0') . ")";
-            if ($node->name === 'pcntl_wait')
-                return "tphp_fn_pcntl_wait(&{$a4[0]})";
-            // 其余 pcntl_* 走通用回退
         }
 
         // 闭包调用: $h() → ((t_int(*)(...))h.func)(args)
@@ -2602,6 +2614,11 @@ class CodeGenerator implements ASTVisitor
             }
             $vn = self::varName($expr->name);
             $vt = $this->varTypes[$vn] ?? 't_int';
+            // byRef 变量：解引用到值类型
+            if ($this->isByRefType($vt)) {
+                $vn = '(*' . $vn . ')';
+                $vt = substr($vt, 0, -1);
+            }
             return match (true) {
                 $vt === 't_int'      => "VAR_INT({$vn})",
                 $vt === 't_float'    => "VAR_FLOAT({$vn})",
@@ -3838,6 +3855,36 @@ class CodeGenerator implements ASTVisitor
         return self::$typeMap[$t] ?? "{$t}*";
     }
     public static function varName(string $v): string { return $v === '$this' ? 'self' : ltrim($v, '$'); }
+
+    /** 生成参数声明的 C 类型 + 变量名（byRef → 加一级指针：int→int*, t_array*→t_array**） */
+    public static function paramDecl(ParamNode $p): string {
+        $ct = self::$typeMap[$p->type] ?? ('tphp_class_' . $p->type . '*');
+        return $p->byRef ? "{$ct} *" . self::varName($p->name) : "{$ct} " . self::varName($p->name);
+    }
+
+    /** 参数在 varTypes 中的 C 类型（byRef → 加一级指针：int→int*, t_array*→t_array**） */
+    public static function paramCType(ParamNode $p): string {
+        $ct = self::$typeMap[$p->type] ?? ('tphp_class_' . $p->type . '*');
+        return $p->byRef ? "{$ct}*" : $ct;
+    }
+
+    /** 如果变量是 byRef 类型，生成写目标（*var） */
+    private function varWrite(string $var, string $type): string {
+        if ($this->isByRefType($type)) return "(*{$var})";
+        return $var;
+    }
+
+    // 是否 byRef 指针类型（int* / t_string* / t_array** / tphp_class_X** 等）
+    private function isByRefType(string $type): bool {
+        if ($type === 'void*') return false;
+        // 值类型的指针：t_int*, t_float*, t_string*, t_bool* → byRef
+        // 指针类型的双指针：t_array**, tphp_class_X**, tphp_enum_X** → byRef
+        if (str_ends_with($type, '**')) return true;
+        if (str_starts_with($type, 't_array') && str_ends_with($type, '*')) return false;
+        if (str_starts_with($type, 'tphp_class_') && str_ends_with($type, '*')) return false;
+        if (str_starts_with($type, 'tphp_enum_') && str_ends_with($type, '*')) return false;
+        return str_ends_with($type, '*');
+    }
 
     /** 预扫描递归收集闭包的 capDefs（不生成代码，只注册类型） */
     private function collectCapDefs(StmtNode $stmt): void

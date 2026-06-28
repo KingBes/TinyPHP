@@ -248,7 +248,31 @@ class Main {
 
 ### 4.5 CI
 
-GitHub Actions 工作流在 push/PR 时自动在 Linux x86_64/aarch64、macOS aarch64、Windows x86_64 四平台运行全量 `--debug` 测试。
+GitHub Actions 工作流在 push/PR 时自动在 Linux x86_64/aarch64、macOS aarch64、Windows x86_64 四平台运行全量 `--debug` 测试。本地可用 `for` 循环分批测试：
+
+```bash
+# Windows (cmd)
+for %f in (test\array\*.php) do php tphp.php "%f" --debug
+```
+
+### 4.6 测试原则
+
+**禁止修改 `#debug` 来"修复"测试失败。** 出现 `[NO]` 时，必须先分析是 bug 还是 `#debug` 写错：
+
+| 情况 | 做法 |
+|------|------|
+| 程序输出正确 → `#debug` 写错 | 修正 `#debug` |
+| 程序输出错误 → 是 bug | 修复源码，不改 `#debug` |
+| 不确定 | 先运行 `tphp test.php`（不带 `--debug`）看原始输出再判断 |
+
+**典型错误**：看到 `[NO]` 直接改 `#debug` 让测试通过，盖住了真实 bug。尤其是内存安全相关输出（字符串长度、类型标记），必须确认与预期一致。
+
+**封装 PHP 内置功能时，错误机制不得省略。** 例子：
+- `pcntl_fork()` 在 Windows 上不可用 → 必须 `exit(1)` 报 fatal error，而不是 `return -1` 静默通过
+- `json_decode()` 输入非法 JSON → 必须返回 `NULL`，而不是 `exit(1)` 崩溃
+- 平台不支持的函数 → 模拟 PHP 原生报错（`Fatal error: Call to undefined function ...`）
+
+禁止为了测试通过而写"空实现"或吞掉错误。
 
 ---
 
@@ -296,6 +320,92 @@ if ($n === 'asort') return "tphp_fn_asort({$c})";  // ❌ 同上
 
 参照 `include/os/` 下现有文件模式：`static inline` 函数 + `common.h` 按依赖顺序引入。
 
+### 扩展开发（ext/）
+
+TinyPHP 支持**按需引入扩展**，设计理念对标 PHP 的 extension。不再将平台相关函数（pcntl/posix）硬编入核心，而是通过 `#import` 指令按需加载。
+
+**`#import` 做的事情**：只自动引入 `ext/{name}/src/*.php` + `ext/{name}/src/*.c`。头文件（`.h`）不会被自动包含——需要用 `#include` / `#flag -I` 手动引入。
+
+**目录结构：**
+
+```
+ext/
+├── demo/               ← PHPC 示例（.php + .c 混写）
+│   ├── demo.h
+│   └── src/
+│       ├── demo.c
+│       └── demo.php
+├── pcntl/              ← C 直接模式（仅 .c，推荐）
+│   ├── pcntl.h
+│   └── src/
+│       └── pcntl.c
+└── posix/              ← C 直接模式
+    ├── posix.h
+    └── src/
+        └── posix.c
+```
+
+**两种实现方式，可混用：**
+
+| 方式 | 做法 | 适用场景 |
+|------|------|---------|
+| **C 直接**（推荐） | `.c` 中写 `tphp_fn_xxx()`，CodeGen 通用回退自动匹配 | 简单类型转换，函数签名与 PHP 一致 |
+| **PHPC 包装** | `.php` 中写 PHP wrapper + `.c` 中写原始 C 实现 | 复杂类型桥接、需要 `c->` 直接调用 |
+
+**C 直接方式（pcntl 为例）：**
+
+```c
+// ext/pcntl/pcntl.h
+#include <types.h>
+t_int tphp_fn_pcntl_fork(void);
+t_string tphp_fn_pcntl_strerror(t_int no);
+```
+
+```c
+// ext/pcntl/src/pcntl.c
+#include "../pcntl.h"
+#include <runtime.h>
+
+t_int tphp_fn_pcntl_fork(void) {
+#ifdef _WIN32
+    fputs("\nFatal error: ... (pcntl extension not available on Windows)\n", stderr);
+    exit(1);
+#else
+    return (t_int)fork();
+#endif
+}
+```
+
+使用方直接调用，CodeGen 生成 `tphp_fn_pcntl_fork()` → 命中 C 符号：
+
+```php
+<?php
+#import pcntl
+
+class Main {
+    public function main(): void {
+        $pid = pcntl_fork();  // → C: tphp_fn_pcntl_fork()
+    }
+}
+```
+
+**PHPC 混写方式（demo 为例）：** `.php` 中写 PHP wrapper 桥接 `.c` 中的原始 C 函数。适用于需要 `c->`、`c_int`/`php_int` 等复杂类型转换的场景。两种方式可在同一个扩展中共存。
+
+**创建新扩展步骤：**
+
+1. `ext/{name}/` 下创建 `src/` 子目录，`.h` 头文件可选
+2. **C 直接**：`src/{name}.c` 写 `tphp_fn_xxx()` 函数
+3. **PHPC 混写**：额外添加 `src/{name}.php` 做类型桥接
+4. 使用方 `#import {name}` → 自动加载 `src/*.php` + `src/*.c`
+
+**何时用 ext 而非 include/？**
+
+| 条件 | 放 `include/`（内置函数） | 放 `ext/`（PHP 外部扩展） |
+|------|---------------------------|----------------------------|
+| PHP 原生内置函数（`strlen`/`array_push`/`json_encode`） | ✅ 始终可用 | — |
+| PHP 外部扩展（`pcntl`/`posix`/`mysqli`/`curl`） | — | ✅ `#import` 按需引入 |
+| 需链接外部 C 库（`-lm`/`-lcurl`） | — | ✅ `#include` + `#flag -lxxx` |
+
 ### 函数命名规范
 
 **所有公开内置函数必须使用 `tphp_fn_` 前缀**，这是强制规则，CodeGenerator 据此生成 C 调用。
@@ -317,7 +427,7 @@ if ($n === 'asort') return "tphp_fn_asort({$c})";  // ❌ 同上
 | `pcntl_fork` | 缺少 `tphp_fn_` | `tphp_fn_pcntl_fork` |
 | `tphp_arr_item_int` | 缺少 `fn_` | `tphp_fn_arr_item_int` |
 
-**CodeGenerator 端**：PHP 调用 `posix_getpid()` 时，CodeGen 自动拼接 `tphp_fn_` 前缀生成 `tphp_fn_posix_getpid()`。手动写的函数调用（如 `pcntl_fork`）需在 CodeGen 的 `visitCall` 中显式写出完整 C 函数名。
+**CodeGenerator 端**：`visitCall()` 末尾有通用回退 `"tphp_fn_{$n}($args)" — C 编译器兜底`，大多数函数无需手写 if 分支。仅类型转换/默认参数/非标准 C 名三种情况需特殊处理。
 
 ---
 

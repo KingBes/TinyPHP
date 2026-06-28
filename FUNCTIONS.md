@@ -259,7 +259,7 @@
 
 ## 进程控制 (pcntl)
 
-POSIX 专属（Windows 调用触发 `tphp_fn_error()` 退出）。`include/os/pcntl.h`。
+POSIX 专属（Windows 调用触发 `tphp_fn_error()` 退出）。按需引入：`#import pcntl`。
 
 | 函数 | C 实现 | 说明 |
 |---|---|---|
@@ -275,7 +275,7 @@ POSIX 专属（Windows 调用触发 `tphp_fn_error()` 退出）。`include/os/pc
 
 ## POSIX 系统
 
-POSIX 专属（Windows 调用触发 `tphp_fn_error()` 退出）。`include/os/posix.h`。13 个常用函数。
+POSIX 专属（Windows 调用触发 `tphp_fn_error()` 退出）。按需引入：`#import posix`。13 个常用函数。
 
 | 函数 | C 实现 | 说明 |
 |---|---|---|
@@ -448,5 +448,4 @@ POSIX 专属（Windows 调用触发 `tphp_fn_error()` 退出）。`include/os/po
 | `usort` / `uasort` / `uksort` | 需闭包回调节省 |
 | `array_filter` / `array_map` / `array_reduce` | 需闭包回调节省 |
 | `sin/cos/tan` 等三角函数 | 直接 libc 调用，低优先级 |
-| `posix_*` (42 个) | 全 POSIX 专属，Windows 不可用 |
-| `pcntl_rfork/forkx/unshare/setns` | 单平台专属（BSD/Solaris/Linux） |
+| `sin/cos/tan` 等三角函数 | 直接 libc 调用，低优先级 |

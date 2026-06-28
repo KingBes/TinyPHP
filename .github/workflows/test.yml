@@ -1,0 +1,281 @@
+name: Test
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  # ============================================================
+  # Windows x86_64 — TCC / GCC / Clang
+  # ============================================================
+  windows-x86_64:
+    runs-on: windows-latest
+    env:
+      PHP_URL: https://github.com/KingBes/TinyPHP/releases/download/PHP/php-8.5.7-cli-win.zip
+    strategy:
+      matrix:
+        compiler: [tcc, gcc, clang]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup MSYS2
+        if: matrix.compiler != 'tcc'
+        uses: msys2/setup-msys2@v2
+        with:
+          msystem: MINGW64
+          update: true
+          install: >-
+            mingw-w64-x86_64-gcc
+            mingw-w64-x86_64-clang
+            mingw-w64-x86_64-make
+            git
+
+      - name: Build TCC
+        shell: pwsh
+        run: .\build.cmd
+
+      - name: Download PHP
+        shell: pwsh
+        run: |
+          Invoke-WebRequest -Uri $env:PHP_URL -OutFile php.zip
+          Expand-Archive -Path php.zip -DestinationPath .
+          if (!(Test-Path php.exe)) { throw "php.exe not found" }
+
+      - name: Test (TCC)
+        if: matrix.compiler == 'tcc'
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Continue'
+          $testFiles = @(Get-ChildItem -Recurse test -Filter *.php | Where-Object {
+            (Select-String -Path $_.FullName -Pattern '#debug' -Quiet) -and
+            -not (Select-String -Path $_.FullName -Pattern '@skip' -Quiet)
+          })
+          $failed = @()
+          foreach ($f in $testFiles) {
+            $name = $f.FullName -replace '\\', '/'
+            $out = "build/test_$($f.BaseName).exe"
+            $proc = Start-Process -FilePath php.exe -ArgumentList "tphp.php",$name,"--debug","-o",$out -NoNewWindow -PassThru -Wait
+            if ($proc.ExitCode -ne 0) { $failed += $name; Write-Host "  FAIL: $name" }
+          }
+          Write-Host ""
+          Write-Host "=== $($testFiles.Count - $failed.Count) passed, $($failed.Count) failed ==="
+          if ($failed.Count -gt 0) {
+            Write-Host "`nFailed tests:"; $failed | ForEach-Object { Write-Host "  $_" }
+            exit 1
+          }
+
+      - name: Test (GCC / Clang)
+        if: matrix.compiler != 'tcc'
+        shell: msys2 {0}
+        run: |
+          export PATH="/c/msys64/mingw64/bin:$PATH"
+          set +e
+          ccFlag="-cc ${{ matrix.compiler }}"
+          testFiles=$(find test -name '*.php' -exec grep -l '#debug' {} \; | grep -v '@skip')
+          failed=""
+          total=0; passed=0
+          for f in $testFiles; do
+            total=$((total+1))
+            out="build/test_$(basename ${f%.php}).exe"
+            if php tphp.php "$f" --debug $ccFlag -o "$out"; then
+              passed=$((passed+1))
+            else
+              failed="$failed  $f"$'\n'
+            fi
+          done
+          echo ""
+          echo "=== $passed passed, $((total - passed)) failed ==="
+          if [ -n "$failed" ]; then
+            echo ""
+            echo "Failed tests:"
+            echo "$failed"
+            exit 1
+          fi
+
+  # ============================================================
+  # Linux x86_64 — TCC / GCC / Clang
+  # ============================================================
+  linux-x86_64:
+    runs-on: ubuntu-latest
+    env:
+      PHP_URL: https://github.com/KingBes/TinyPHP/releases/download/PHP/php-cli-8.4-linux-x86_64-glibc.zip
+    strategy:
+      matrix:
+        compiler: [tcc, gcc, clang]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install deps
+        run: |
+          sudo apt update
+          sudo apt install -y gcc make libc6-dev git
+          [ "${{ matrix.compiler }}" = "clang" ] && sudo apt install -y clang
+
+      - name: Build TCC
+        run: bash build.sh
+
+      - name: Download PHP
+        run: |
+          curl -fsSL -o php.zip "$PHP_URL"
+          unzip -q php.zip
+          chmod +x php
+
+      - name: Test
+        run: |
+          set +e
+          ccFlag=""
+          [ "${{ matrix.compiler }}" != "tcc" ] && ccFlag="-cc ${{ matrix.compiler }}"
+          testFiles=$(find test -name '*.php' -exec grep -l '#debug' {} \; | grep -v '@skip')
+          failed=""
+          total=0; passed=0
+          for f in $testFiles; do
+            total=$((total+1))
+            out="build/test_$(basename ${f%.php})"
+            if ./php tphp.php "$f" --debug $ccFlag -o "$out"; then
+              passed=$((passed+1))
+            else
+              failed="$failed  $f"$'\n'
+            fi
+          done
+          echo ""
+          echo "=== $passed passed, $((total - passed)) failed ==="
+          if [ -n "$failed" ]; then
+            echo ""
+            echo "Failed tests:"
+            echo "$failed"
+            exit 1
+          fi
+
+  # ============================================================
+  # Linux aarch64 — TCC / GCC / Clang
+  # ============================================================
+  linux-aarch64:
+    runs-on: ubuntu-24.04-arm
+    env:
+      PHP_URL: https://github.com/KingBes/TinyPHP/releases/download/PHP/php-cli-8.4-linux-aarch64-glibc.zip
+    strategy:
+      matrix:
+        compiler: [tcc, gcc, clang]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install deps
+        run: |
+          sudo apt update
+          sudo apt install -y gcc make libc6-dev git
+          [ "${{ matrix.compiler }}" = "clang" ] && sudo apt install -y clang
+
+      - name: Build TCC
+        run: bash build.sh
+
+      - name: Download PHP
+        run: |
+          curl -fsSL -o php.zip "$PHP_URL"
+          unzip -q php.zip
+          chmod +x php
+
+      - name: Test
+        run: |
+          set +e
+          ccFlag=""
+          [ "${{ matrix.compiler }}" != "tcc" ] && ccFlag="-cc ${{ matrix.compiler }}"
+          testFiles=$(find test -name '*.php' -exec grep -l '#debug' {} \; | grep -v '@skip')
+          failed=""
+          total=0; passed=0
+          for f in $testFiles; do
+            total=$((total+1))
+            out="build/test_$(basename ${f%.php})"
+            if ./php tphp.php "$f" --debug $ccFlag -o "$out"; then
+              passed=$((passed+1))
+            else
+              failed="$failed  $f"$'\n'
+            fi
+          done
+          echo ""
+          echo "=== $passed passed, $((total - passed)) failed ==="
+          if [ -n "$failed" ]; then
+            echo ""
+            echo "Failed tests:"
+            echo "$failed"
+            exit 1
+          fi
+
+  # ============================================================
+  # macOS aarch64 — TCC / Clang
+  # ============================================================
+  macos-aarch64:
+    runs-on: macos-latest
+    env:
+      PHP_URL: https://github.com/KingBes/TinyPHP/releases/download/PHP/php-cli-8.4-macos-aarch64.zip
+    strategy:
+      matrix:
+        compiler: [tcc, clang]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build TCC
+        run: |
+          set -e
+          export LANG=C
+          SDK=$(xcrun --show-sdk-path)
+          git clone --depth 1 --branch mob https://repo.or.cz/tinycc.git tinycc-src
+          cd tinycc-src
+          for i in include/*.h; do test -f $i && ln -sf $i $(basename $i); done
+          ./configure \
+            --prefix=../tcc \
+            --bindir=../tcc \
+            --crtprefix="../tcc:/usr/lib" \
+            --libpaths="../tcc:/usr/local/lib:/usr/lib:/lib" \
+            --sysincludepaths="../tcc/include:/usr/local/include:$SDK/usr/include" \
+            --extra-cflags="-I$SDK/usr/include -O3" \
+            --cc=cc \
+            --config-new_macho=yes \
+            --config-codesign=yes \
+            --config-bcheck=yes \
+            --config-backtrace=yes \
+            --enable-static
+          make
+          make install
+          cd ..
+          find tcc -name libtcc1.a -exec cp {} tcc/libtcc1.a \; -quit
+          test -f tcc/libtcc1.a || { echo "ERROR: libtcc1.a not found"; exit 1; }
+          ln -sf /usr/lib/libSystem.B.dylib tcc/libc.dylib 2>/dev/null || true
+          echo 'int main(){return 0;}' > _test_tcc.c
+          ./tcc/tcc -o _test_tcc _test_tcc.c
+          rm -f _test_tcc.c _test_tcc
+          rm -f tcc/libc.dylib
+
+      - name: Download PHP
+        run: |
+          curl -fsSL -o php.zip "$PHP_URL"
+          unzip -q php.zip
+          chmod +x php
+
+      - name: Test
+        run: |
+          set +e
+          ccFlag=""
+          [ "${{ matrix.compiler }}" != "tcc" ] && ccFlag="-cc ${{ matrix.compiler }}"
+          testFiles=$(find test -name '*.php' -exec grep -l '#debug' {} \; | grep -v '@skip')
+          failed=""
+          total=0; passed=0
+          for f in $testFiles; do
+            total=$((total+1))
+            out="build/test_$(basename ${f%.php})"
+            if ./php tphp.php "$f" --debug $ccFlag -o "$out"; then
+              passed=$((passed+1))
+            else
+              failed="$failed  $f"$'\n'
+            fi
+          done
+          echo ""
+          echo "=== $passed passed, $((total - passed)) failed ==="
+          if [ -n "$failed" ]; then
+            echo ""
+            echo "Failed tests:"
+            echo "$failed"
+            exit 1
+          fi

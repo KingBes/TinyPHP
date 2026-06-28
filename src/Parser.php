@@ -98,9 +98,11 @@ class Parser
         $ccFlags = [];
         $callbacks = [];
         $debugs  = [];
-        while ($this->check(TokenType::HASH_INCLUDE) || $this->check(TokenType::CC_FLAG) || $this->check(TokenType::HASH_CALLBACK) || $this->check(TokenType::HASH_DEBUG)) {
+        while ($this->check(TokenType::HASH_INCLUDE) || $this->check(TokenType::HASH_IMPORT) || $this->check(TokenType::CC_FLAG) || $this->check(TokenType::HASH_CALLBACK) || $this->check(TokenType::HASH_DEBUG)) {
             if ($this->match(TokenType::HASH_INCLUDE)) {
                 $includes[] = $this->previous()->literal;
+            } elseif ($this->match(TokenType::HASH_IMPORT)) {
+                // #import 已在 tphp.php 预扫描阶段处理，此处仅消费 token
             } elseif ($this->match(TokenType::CC_FLAG)) {
                 $ccFlags[] = $this->previous()->literal;
             } elseif ($this->match(TokenType::HASH_CALLBACK)) {
@@ -164,6 +166,8 @@ class Parser
                 $this->error('#flag 指令必须放在文件最前面（namespace/use/class/function 声明之前）');
             } elseif ($this->check(TokenType::HASH_CALLBACK)) {
                 $this->error('#callback 指令必须放在文件最前面（namespace/use/class/function 声明之前）');
+            } elseif ($this->check(TokenType::HASH_IMPORT)) {
+                $this->error('#import 指令必须放在文件最前面（namespace/use/class/function 声明之前）');
             } elseif ($this->check(TokenType::HASH_DEBUG)) {
                 $this->error('#debug 指令必须放在文件最前面（namespace/use/class/function 声明之前）');
             } else {
@@ -685,10 +689,14 @@ class Parser
     private function parseParam(): ParamNode
     {
         $type = $this->parseType();
-        $this->consume(TokenType::IDENTIFIER, 'Expected parameter name'); // Lexer 已将 $name 作为 IDENTIFIER
-        // 获取上一个 token
-        $varName = $this->previous()->lexeme; // e.g. '$argc'
-        return new ParamNode($type, $varName);
+        // & — pass-by-reference (int &$x → C: int *x)
+        $byRef = false;
+        if ($this->match(TokenType::AMP)) {
+            $byRef = true;
+        }
+        $this->consume(TokenType::IDENTIFIER, 'Expected parameter name');
+        $varName = $this->previous()->lexeme;
+        return new ParamNode($type, $varName, $byRef);
     }
 
     private function parseStmt(): StmtNode

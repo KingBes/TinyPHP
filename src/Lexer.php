@@ -186,6 +186,12 @@ class Lexer
                 $this->advance(strlen($m[0]));
                 return;
             }
+            // #import name — 引入 ext/name/ 扩展（自动加载 ext/name/src/*.php + *.c）
+            if (preg_match('/^#import\s+(\w[\w\/\-\.]*)/', $rest, $m)) {
+                $this->addToken(TokenType::HASH_IMPORT, $m[1]);
+                $this->advance(strlen($m[0]));
+                return;
+            }
             // #flag [GCC|Clang|TCC] [Windows|Linux|MacOS] [-D...] [-l...]
             // 最多两个前缀：编译器 + 平台，顺序不限
             if (preg_match('/^#flag\s+(GCC|Clang|TCC|Windows|Linux|MacOS|Darwin)?\s*(GCC|Clang|TCC|Windows|Linux|MacOS|Darwin)?\s+(.+?)(?=\n|$)/', $rest, $m)) {

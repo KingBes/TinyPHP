@@ -86,6 +86,7 @@ statement_top:
   | #include 指令               ✅ TinyPHP 扩展
   | #flag 指令                  ✅ TinyPHP 扩展
   | #callback 指令              ✅ TinyPHP 扩展
+  | #import 指令                ✅ TinyPHP 扩展
   | interface_decl             ✅
   | trait_decl                 ✅
   | abstract_class_decl        ✅
@@ -232,6 +233,7 @@ params:
 
 param:
     type IDENTIFIER '=' expr  ⬌ (默认值仅部分类型支持)
+  | type '&' IDENTIFIER        ✅ (引用传参，支持所有类型)
   | type IDENTIFIER            ✅
   | IDENTIFIER                 ✅ (无类型，箭头函数)
   | 'public' type '$' IDENTIFIER   ✅ (构造器属性提升)
@@ -494,6 +496,7 @@ __TRAIT__             ❌
   | '#include' '<' file '>'   ✅ (系统头文件)
   | '#flag' compiler? platform? flags   ✅ (编译器/平台过滤标志)
   | '#callback' type IDENTIFIER '(' params ')'   ✅ (声明 C 回调签名)
+  | '#import' name   ✅ (按需引入 ext/name/src/*.php + *.c)
 ```
 
 ---
@@ -554,6 +557,7 @@ phpc_memory:
 | `(int)` `(float)` `(string)` `(bool)` 类型转换 | — |
 | `namespace A\B` `use A\{B,C}` `use function` | 分组导入 |
 | `list()/$a[] =` 解构 | 含键名 `"key"=>$v` |
+| `int &$x` 引用传参 | 全类型支持（int/float/bool/string/array/对象） |
 | `self::CONST` `Class::CONST` `self::method()` | — |
 | `__construct(public $x)` 属性提升 | — |
 | `__destruct` | 作用域结束自动调用 |
@@ -574,6 +578,8 @@ phpc_memory:
 | `php_int/php_float/php_str` | C → PHP 类型桥接 |
 | `phpc_arr_*` `phpc_obj` `phpc_fn_*` `phpc_thunk` | 数组/对象/回调互操作 |
 | `phpc_free` `phpc_free_str_arr` | C 内存释放 |
+| `#import pcntl` | 按需引入扩展（自动加载 ext/pcntl/src/） |
+| `int &$x` | 引用传参（int/float/bool/string/array/对象全类型支持） |
 
 ### ❌ 不支持（AOT 物理不可行）
 

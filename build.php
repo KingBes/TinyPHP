@@ -28,6 +28,20 @@ foreach ($iter as $file) {
     $phar->addFile($file->getPathname(), $local);
 }
 
+// 递归添加 ext/（扩展目录下所有文件：源码、头文件、库文件等）
+if (is_dir($base . '/ext')) {
+    $iter = new RecursiveIteratorIterator(
+        new RecursiveDirectoryIterator($base . '/ext', FilesystemIterator::SKIP_DOTS)
+    );
+    $count = 0;
+    foreach ($iter as $file) {
+        $local = str_replace('\\', '/', substr($file->getPathname(), strlen($base) + 1));
+        $phar->addFile($file->getPathname(), $local);
+        $count++;
+    }
+    echo "[*] 已打包 ext/（{$count} 个文件）\n";
+}
+
 // 递归添加 tcc/（TCC 编译器 + 头文件 + 库文件）
 if (is_dir($base . '/tcc')) {
     $iter = new RecursiveIteratorIterator(

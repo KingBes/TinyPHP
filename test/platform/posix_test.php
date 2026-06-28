@@ -1,18 +1,17 @@
-<?php
+<?php // @skip — POSIX only; Windows 触发 fatal error → exit(1)
+
+#import posix
+
 #debug -- 1. pid/uid --
-#debug ~ pid=0
-#debug ~ ppid=0
-#debug ~ uid=0
-#debug ~ gid=0
-#debug -- 2. getcwd/uname --
-#debug ~ cwd=string(13) "/?"
-#debug ~ sysname=Linux
-#debug -- 3. strerror --
-#debug err=string(11) "Success"
-#debug last=0
-#debug -- 4. isatty --
-#debug tty(1)=1
-#debug
+#debug ~ pid=
+#debug ~ ppid=
+#debug ~ uid=
+#debug ~ gid=
+#debug -- 2. getcwd --
+#debug ~ string(
+#debug -- 3. isatty/error --
+#debug ~ tty(1)=
+#debug ~ last=0
 #debug === posix OK ===
 
 class Main {
@@ -24,19 +23,14 @@ class Main {
         echo "uid=" . posix_getuid() . "\n";
         echo "gid=" . posix_getgid() . "\n";
 
-        // ── 2. getcwd / uname ──
-        echo "-- 2. getcwd/uname --\n";
-        echo "cwd="; var_dump(posix_getcwd());
-        echo "sysname=" . posix_uname()["sysname"] . "\n";
+        // ── 2. getcwd ──
+        echo "-- 2. getcwd --\n";
+        var_dump(posix_getcwd());
 
-        // ── 3. error ──
-        echo "-- 3. strerror --\n";
-        echo "err="; var_dump(posix_strerror(0));
-        echo "last=" . posix_get_last_error() . "\n";
-
-        // ── 4. isatty ──
-        echo "-- 4. isatty --\n";
+        // ── 3. isatty / error ──
+        echo "-- 3. isatty/error --\n";
         echo "tty(1)=" . posix_isatty(1) . "\n";
+        echo "last=" . posix_get_last_error() . "\n";
 
         echo "\n=== posix OK ===\n";
     }

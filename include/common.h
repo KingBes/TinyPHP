@@ -20,7 +20,5 @@
 #include "os/times.h"
 #include "os/json.h"
 #include "os/file.h"
-#include "os/pcntl.h"
-#include "os/posix.h"
 #include "rand.h"
 #include "phpc.h"
