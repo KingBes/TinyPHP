@@ -44,56 +44,13 @@ jobs:
           Expand-Archive -Path php.zip -DestinationPath .
           if (!(Test-Path php.exe)) { throw "php.exe not found" }
 
-      - name: Test (TCC)
-        if: matrix.compiler == 'tcc'
+      - name: Test
         shell: pwsh
         run: |
-          $ErrorActionPreference = 'Continue'
-          $testFiles = @(Get-ChildItem -Recurse test -Filter *.php | Where-Object {
-            (Select-String -Path $_.FullName -Pattern '#debug' -Quiet) -and
-            -not (Select-String -Path $_.FullName -Pattern '@skip' -Quiet)
-          })
-          $failed = @()
-          foreach ($f in $testFiles) {
-            $name = $f.FullName -replace '\\', '/'
-            $out = "build/test_$($f.BaseName).exe"
-            $proc = Start-Process -FilePath php.exe -ArgumentList "tphp.php",$name,"--debug","-o",$out -NoNewWindow -PassThru -Wait
-            if ($proc.ExitCode -ne 0) { $failed += $name; Write-Host "  FAIL: $name" }
-          }
-          Write-Host ""
-          Write-Host "=== $($testFiles.Count - $failed.Count) passed, $($failed.Count) failed ==="
-          if ($failed.Count -gt 0) {
-            Write-Host "`nFailed tests:"; $failed | ForEach-Object { Write-Host "  $_" }
-            exit 1
-          }
-
-      - name: Test (GCC / Clang)
-        if: matrix.compiler != 'tcc'
-        shell: msys2 {0}
-        run: |
-          export PATH="/c/msys64/mingw64/bin:$PWD:$PATH"
-          set +e
-          ccFlag="-cc ${{ matrix.compiler }}"
-          testFiles=$(find test -name '*.php' -exec grep -l '#debug' {} \; | while read f; do grep -q '@skip' "$f" && continue; echo "$f"; done)
-          failed=""
-          total=0; passed=0
-          for f in $testFiles; do
-            total=$((total+1))
-            out="build/test_$(basename ${f%.php}).exe"
-            if php tphp.php "$f" --debug $ccFlag -o "$out"; then
-              passed=$((passed+1))
-            else
-              failed="$failed  $f"$'\n'
-            fi
-          done
-          echo ""
-          echo "=== $passed passed, $((total - passed)) failed ==="
-          if [ -n "$failed" ]; then
-            echo ""
-            echo "Failed tests:"
-            echo "$failed"
-            exit 1
-          fi
+          $cc = "${{ matrix.compiler }}"
+          $ccFlag = if ($cc -eq 'tcc') { '' } else { '-cc ' + $cc }
+          $proc = Start-Process php.exe -ArgumentList '.github/scripts/run_tests.php',$ccFlag -NoNewWindow -PassThru -Wait
+          exit $proc.ExitCode
 
   # ============================================================
   # Linux x86_64 — TCC / GCC / Clang
@@ -125,29 +82,9 @@ jobs:
 
       - name: Test
         run: |
-          set +e
           ccFlag=""
           if [ "${{ matrix.compiler }}" != "tcc" ]; then ccFlag="-cc ${{ matrix.compiler }}"; fi
-          testFiles=$(find test -name '*.php' -exec grep -l '#debug' {} \; | while read f; do grep -q '@skip' "$f" && continue; echo "$f"; done)
-          failed=""
-          total=0; passed=0
-          for f in $testFiles; do
-            total=$((total+1))
-            out="build/test_$(basename ${f%.php})"
-            if ./php tphp.php "$f" --debug $ccFlag -o "$out"; then
-              passed=$((passed+1))
-            else
-              failed="$failed  $f"$'\n'
-            fi
-          done
-          echo ""
-          echo "=== $passed passed, $((total - passed)) failed ==="
-          if [ -n "$failed" ]; then
-            echo ""
-            echo "Failed tests:"
-            echo "$failed"
-            exit 1
-          fi
+          ./php .github/scripts/run_tests.php $ccFlag
 
   # ============================================================
   # Linux aarch64 — TCC / GCC / Clang
@@ -179,32 +116,12 @@ jobs:
 
       - name: Test
         run: |
-          set +e
           ccFlag=""
           if [ "${{ matrix.compiler }}" != "tcc" ]; then ccFlag="-cc ${{ matrix.compiler }}"; fi
-          testFiles=$(find test -name '*.php' -exec grep -l '#debug' {} \; | grep -v '@skip')
-          failed=""
-          total=0; passed=0
-          for f in $testFiles; do
-            total=$((total+1))
-            out="build/test_$(basename ${f%.php})"
-            if ./php tphp.php "$f" --debug $ccFlag -o "$out"; then
-              passed=$((passed+1))
-            else
-              failed="$failed  $f"$'\n'
-            fi
-          done
-          echo ""
-          echo "=== $passed passed, $((total - passed)) failed ==="
-          if [ -n "$failed" ]; then
-            echo ""
-            echo "Failed tests:"
-            echo "$failed"
-            exit 1
-          fi
+          ./php .github/scripts/run_tests.php $ccFlag
 
   # ============================================================
-  # macOS aarch64 — TCC / Clang
+  # macOS aarch64 — TCC / GCC / Clang
   # ============================================================
   macos-aarch64:
     runs-on: macos-latest
@@ -221,7 +138,6 @@ jobs:
           set -e
           export LANG=C
           SDK=$(xcrun --show-sdk-path)
-          # 重试克隆（repo.or.cz 可能不稳定）
           for i in 1 2 3; do
             echo "[*] Clone attempt $i..."
             git clone --depth 1 --branch mob https://repo.or.cz/tinycc.git tinycc-src 2>/dev/null && break
@@ -262,26 +178,6 @@ jobs:
 
       - name: Test
         run: |
-          set +e
           ccFlag=""
           if [ "${{ matrix.compiler }}" != "tcc" ]; then ccFlag="-cc ${{ matrix.compiler }}"; fi
-          testFiles=$(find test -name '*.php' -exec grep -l '#debug' {} \; | grep -v '@skip')
-          failed=""
-          total=0; passed=0
-          for f in $testFiles; do
-            total=$((total+1))
-            out="build/test_$(basename ${f%.php})"
-            if ./php tphp.php "$f" --debug $ccFlag -o "$out"; then
-              passed=$((passed+1))
-            else
-              failed="$failed  $f"$'\n'
-            fi
-          done
-          echo ""
-          echo "=== $passed passed, $((total - passed)) failed ==="
-          if [ -n "$failed" ]; then
-            echo ""
-            echo "Failed tests:"
-            echo "$failed"
-            exit 1
-          fi
+          ./php .github/scripts/run_tests.php $ccFlag
