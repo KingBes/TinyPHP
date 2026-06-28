@@ -53,19 +53,32 @@ foreach ($testFiles as $i => $f) {
         $errLines = [];
         $logContent = @file_get_contents($log);
         if ($logContent) {
-            foreach (explode("\n", $logContent) as $line) {
-                if (str_contains($line, '[FAIL]') || str_contains($line, 'expected:') || str_contains($line, 'got     :')) {
+            $lines = explode("\n", str_replace("\r", '', $logContent));
+            // 1. --debug 输出比较失败
+            foreach ($lines as $line) {
+                if (preg_match('/\[FAIL\]|expected:|got\s+:/', $line)) {
                     $errLines[] = rtrim($line);
                 }
             }
-            // 也捕获编译错误
+            // 2. 编译/解析错误
             if (empty($errLines)) {
-                foreach (explode("\n", $logContent) as $line) {
-                    if (str_contains($line, 'error:') || str_contains($line, 'Error:')) {
+                foreach ($lines as $line) {
+                    if (preg_match('/\b(error|Error):/', $line) || str_contains($line, '[NO]') || str_contains($line, 'Fatal error')) {
                         $errLines[] = rtrim($line);
                     }
                 }
             }
+            // 3. 兜底：最后 8 行非空
+            if (empty($errLines)) {
+                $tail = array_reverse(array_filter($lines, fn($l) => trim($l) !== ''));
+                $tail = array_reverse(array_slice($tail, 0, 8));
+                $errLines = $tail;
+            }
+        } elseif (file_exists($out)) {
+            // 编译成功但运行时崩溃（无输出）
+            $errLines[] = '(binary ran but produced no output — possible crash/segfault)';
+        } else {
+            $errLines[] = '(compilation failed, no binary produced)';
         }
         $failed[$rel] = $errLines;
         @unlink($log);
