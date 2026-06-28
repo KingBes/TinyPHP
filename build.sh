@@ -4,12 +4,24 @@
 # 用法: bash build.sh（在项目根目录执行）
 # =============================================================
 set -e
+set -o pipefail
 
 OS="$(uname -s)"
 
 echo "=== 1. 克隆 TCC 源码 ==="
 rm -rf tcc-src tcc
-git clone --depth 1 --branch mob https://repo.or.cz/tinycc.git tcc-src
+# 最多重试 3 次（repo.or.cz 网络不稳定）
+for i in 1 2 3; do
+  echo "[*] 第 $i 次尝试克隆 TCC..."
+  if git clone --depth 1 --branch mob https://repo.or.cz/tinycc.git tcc-src 2>/dev/null; then
+    break
+  fi
+  [ "$i" -lt 3 ] && sleep 10
+done
+if [ ! -d tcc-src ]; then
+  echo "[ERROR] 无法从 repo.or.cz 克隆 TCC 源码（重试 3 次均失败）"
+  exit 1
+fi
 cd tcc-src
 
 echo "=== 2. 配置 TCC ==="

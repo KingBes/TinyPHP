@@ -1,4 +1,5 @@
 @echo off
+setlocal enabledelayedexpansion
 chcp 65001 >nul
 REM =============================================================
 REM Windows TCC 构建（需要 MSYS2 MinGW64 gcc 环境）
@@ -7,7 +8,19 @@ REM =============================================================
 
 echo === 1. 克隆 TCC 源码 ===
 rmdir /s /q tcc 2>nul
-git clone --depth 1 --branch mob https://repo.or.cz/tinycc.git tcc
+REM 最多重试 3 次（repo.or.cz 网络不稳定）
+set TCC_CLONED=0
+for /L %%i in (1,1,3) do (
+  if !TCC_CLONED!==0 (
+    echo [*] 第 %%i 次尝试克隆 TCC...
+    git clone --depth 1 --branch mob https://repo.or.cz/tinycc.git tcc 2>nul && set TCC_CLONED=1
+    if !TCC_CLONED!==0 timeout /t 10 /nobreak >nul
+  )
+)
+if !TCC_CLONED!==0 (
+  echo [ERROR] 无法从 repo.or.cz 克隆 TCC 源码（重试 3 次均失败）
+  exit /b 1
+)
 
 echo === 2. 编译 TCC ===
 cd tcc\win32

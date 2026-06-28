@@ -204,7 +204,13 @@ jobs:
           set -e
           export LANG=C
           SDK=$(xcrun --show-sdk-path)
-          git clone --depth 1 --branch mob https://repo.or.cz/tinycc.git tinycc-src
+          # 重试克隆（repo.or.cz 可能不稳定）
+          for i in 1 2 3; do
+            echo "[*] Clone attempt $i..."
+            git clone --depth 1 --branch mob https://repo.or.cz/tinycc.git tinycc-src 2>/dev/null && break
+            [ "$i" -lt 3 ] && sleep 10
+          done
+          test -d tinycc-src || { echo "TCC clone failed"; exit 1; }
           cd tinycc-src
           # Symlink headers for TCC bootstrapping (Vlang-style)
           for i in include/*.h; do test -f $i && ln -sf $i $(basename $i); done
