@@ -193,7 +193,7 @@ echo "[1/2] Transpiling {$allFilesStr} => C...\n";
                 $extC   = glob($extSrc . DIRECTORY_SEPARATOR . '*.c');
                 foreach ($extPhp as $f) { if (!in_array($f, $files)) $files[] = $f; }
                 foreach ($extC   as $f) { $rf = realpath($f); if ($rf && !in_array($rf, $importCFiles)) $importCFiles[] = $rf; }
-                echo "       #import {$extName} → " . count($extPhp) . " php + " . count($extC) . " c\n";
+                echo "       #import {$extName} => " . count($extPhp) . " php + " . count($extC) . " c\n";
             }
         }
     }
