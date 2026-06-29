@@ -241,14 +241,14 @@
 
 ## 随机数
 
-| 函数 | 算法 | 安全 | 说明 |
-|---|---|---|---|
-| `rand($min, $max)` | libc LCG | ❌ | 快速伪随机 |
-| `mt_rand($min, $max)` | **MT19937** | ❌ | 高质量伪随机 |
-| `random_int($min, $max)` | **CSPRNG** | ✅ | 密码学安全，拒绝采样防模偏差 |
-| `random_bytes($len)` | **CSPRNG** | ✅ | 返回原始二进制字符串，≤1MB |
+| 函数 | 算法 | 安全 | 线程安全 | 说明 |
+|---|---|---|---|---|
+| `rand($min, $max)` | **CSPRNG** | ✅ | ✅ | 代理到 `random_int` |
+| `mt_rand($min, $max)` | **CSPRNG** | ✅ | ✅ | 代理到 `random_int` |
+| `random_int($min, $max)` | **CSPRNG** | ✅ | ✅ | 拒绝采样防模偏差 |
+| `random_bytes($len)` | **CSPRNG** | ✅ | ✅ | 返回原始二进制字符串，≤1MB |
 
-> 实现：Windows → `rand_s`，Linux/macOS → `/dev/urandom`
+> 全部统一走 CSPRNG（Windows → `rand_s`，Linux/macOS → `/dev/urandom`），零全局状态。
 
 ---
 

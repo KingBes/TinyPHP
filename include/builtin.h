@@ -1218,62 +1218,17 @@ static inline t_bool tphp_fn_ctype_xdigit(t_string s) { _TPHP_CTYPE_CHECK(isxdig
 #undef _TPHP_CTYPE_CHECK
 
 // ============================================================
-// random — CSPRNG 安全随机数（跨平台）
-//   Windows: rand_s (CRT, TCC/MinGW 均支持)
-//   Linux/macOS: /dev/urandom
+// random_int / random_bytes — CSPRNG 安全随机（委托 rand.h）
 // ============================================================
 
-/** 填充 n 字节安全随机数到 buf，成功返回 0 */
-static inline int _tphp_random_bytes(unsigned char* buf, size_t n) {
-#ifdef _WIN32
-    // rand_s: 每次生成 4 字节，循环填充
-    size_t i = 0;
-    while (i + 4 <= n) {
-        unsigned int v = 0;
-        if (rand_s(&v) != 0) return -1;
-        buf[i]   = (unsigned char)(v);
-        buf[i+1] = (unsigned char)(v >> 8);
-        buf[i+2] = (unsigned char)(v >> 16);
-        buf[i+3] = (unsigned char)(v >> 24);
-        i += 4;
-    }
-    if (i < n) {
-        unsigned int v = 0;
-        if (rand_s(&v) != 0) return -1;
-        for (; i < n; i++) {
-            buf[i] = (unsigned char)(v);
-            v >>= 8;
-        }
-    }
-    return 0;
-#else
-    FILE* f = fopen("/dev/urandom", "rb");
-    if (!f) return -1;
-    size_t r = fread(buf, 1, n, f);
-    fclose(f);
-    return (r == n) ? 0 : -1;
-#endif
-}
+// 前向声明（定义在 rand.h）
+static inline int _tphp_random_bytes(unsigned char* buf, size_t n);
 
-/** random_int($min, $max) — 范围安全随机整数 */
 static inline t_int tphp_fn_random_int(t_int min, t_int max) {
     if (min > max) { tphp_fn_error(STR_LIT("random_int(): min must be <= max"), "<php>", 0); return 0; }
-    uint64_t range = (uint64_t)(max - min) + 1;
-    unsigned char buf[8];
-    if (_tphp_random_bytes(buf, 8) != 0) {
-        tphp_fn_error(STR_LIT("random_int(): unable to generate random bytes"), "<php>", 0);
-        return 0;
-    }
-    // Rejection sampling to avoid modulo bias
-    uint64_t val = ((uint64_t)buf[0]) | ((uint64_t)buf[1] << 8) | ((uint64_t)buf[2] << 16) |
-                   ((uint64_t)buf[3] << 24) | ((uint64_t)buf[4] << 32) | ((uint64_t)buf[5] << 40) |
-                   ((uint64_t)buf[6] << 48) | ((uint64_t)buf[7] << 56);
-    // Simple rejection: just use modulo for now (acceptable for non-crypto use)
-    (void)range;
-    return min + (t_int)(val % range);
+    return tphp_fn_rand_int(min, max);
 }
 
-/** random_bytes($length) — 返回安全随机字节字符串 */
 static inline t_string tphp_fn_random_bytes(t_int length) {
     if (length <= 0) return (t_string){NULL, 0};
     if (length > 1048576) {
@@ -1287,7 +1242,6 @@ static inline t_string tphp_fn_random_bytes(t_int length) {
         tphp_fn_error(STR_LIT("random_bytes(): unable to generate random bytes"), "<php>", 0);
         return (t_string){NULL, 0};
     }
-    // Register for cleanup — use string pool
     t_string s = tphp_rt_str_dup((t_string){(char*)buf, (int)length});
     free(buf);
     return s;

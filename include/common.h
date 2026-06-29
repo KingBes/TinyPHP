@@ -11,6 +11,7 @@
 #include "object/object.h"     // tp_obj_alloc/release — runtime.h 需要
 #include "array.h"             // arr_freelist/tphp_fn_arr_* — runtime.h 需要
 #include "runtime.h"           // tphp_fn_error 定义在此
+#include "rand.h"               // CSPRNG (builtin.h 需要)
 #include "builtin.h"
 #include "tphp_math.h"         // TinyPHP math 扩展
 #include "conv.h"
