@@ -45,8 +45,8 @@ else
     ./configure \
         --prefix=../tcc \
         --bindir=../tcc \
-        --crtprefix="tcc/lib/tcc:/usr/lib/$ARCH:/usr/lib64:/usr/lib:/lib/$ARCH:/lib" \
-        --libpaths="tcc/lib/tcc:/usr/lib/$ARCH:/usr/lib64:/usr/lib:/lib/$ARCH:/lib:/usr/local/lib/$ARCH:/usr/local/lib" \
+        --crtprefix="lib/tcc:/usr/lib/$ARCH:/usr/lib64:/usr/lib:/lib/$ARCH:/lib" \
+        --libpaths="lib/tcc:/usr/lib/$ARCH:/usr/lib64:/usr/lib:/lib/$ARCH:/lib:/usr/local/lib/$ARCH:/usr/local/lib" \
         --extra-cflags=-O3 \
         --config-bcheck=yes \
         --config-backtrace=yes \
@@ -67,9 +67,16 @@ if [ "$OS" = "Darwin" ]; then
     ln -sf /usr/lib/libSystem.B.dylib ../tcc/lib/tcc/libc.dylib 2>/dev/null || true
 else
     echo "=== 5. 补充系统 CRT 文件（Linux） ==="
-    cp /usr/lib/$ARCH/crt1.o ../tcc/lib/ 2>/dev/null || true
-    cp /usr/lib/$ARCH/crti.o ../tcc/lib/ 2>/dev/null || true
-    cp /usr/lib/$ARCH/crtn.o ../tcc/lib/ 2>/dev/null || true
+    CRT_TARGET=../tcc/lib/tcc
+    # 来自多个可能的 CRT 路径
+    for crtdir in /usr/lib/$ARCH /usr/lib64 /usr/lib /lib/$ARCH /lib; do
+        [ -f "$crtdir/crt1.o" ] || continue
+        cp -v "$crtdir/crt1.o" "$crtdir/crti.o" "$crtdir/crtn.o" "$CRT_TARGET/" 2>/dev/null || true
+        # 也复制 libc.so（用于动态链接）
+        cp -v "$crtdir/libc.so"* "$CRT_TARGET/" 2>/dev/null || true
+        cp -v "$crtdir/libc.a"   "$CRT_TARGET/" 2>/dev/null || true
+        break
+    done
 fi
 
 echo "=== 6. 验证 ==="

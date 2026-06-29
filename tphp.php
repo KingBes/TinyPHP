@@ -658,7 +658,9 @@ if ($isTCC && $inPhar) {
         $tccSysDir = $pharDir . DIRECTORY_SEPARATOR . 'tcc';
     }
     if (isset($tccSysDir) && is_dir($tccSysDir)) {
-        $bFlag = ' -B"' . $tccSysDir . '"';
+        // build.sh puts libtcc1.a & headers at tcc/lib/tcc/
+        $tccLibDir = $tccSysDir . DIRECTORY_SEPARATOR . 'lib' . DIRECTORY_SEPARATOR . 'tcc';
+        $bFlag = ' -B"' . (is_dir($tccLibDir) ? $tccLibDir : $tccSysDir) . '"';
     }
 } elseif ($isTCC) {
     // Dev mode: auto-detect TCC standalone directory
