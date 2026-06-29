@@ -1362,7 +1362,15 @@ class CodeGenerator implements ASTVisitor
     // ============================================================
     public function visitStringLiteral(StringLiteralExpr $node): string
     {
-        $val = str_replace('"', '\\"', $node->value);
+        // Escape chars invalid in C string literals
+        $val = $node->value;
+        $val = str_replace('"', '\\"', $val);     // "  → \"
+        $val = str_replace("\n", '\\n', $val);    // LF → \n
+        $val = str_replace("\r", '\\r', $val);    // CR → \r
+        $val = str_replace("\t", '\\t', $val);    // TAB → \t
+        // \ is only escaped if followed by ', ?, a, b, e, f, r, n, t, v, x, 0-7
+        // (PHP escape sequences already in the literal should pass through to C)
+        // Only escape standalone \ that would break C strings
         return "STR_LIT(\"{$val}\")";
     }
 
