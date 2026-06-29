@@ -183,7 +183,10 @@ echo "[1/2] Transpiling {$allFilesStr} => C...\n";
     $importedExts = [];  // 已处理的扩展名，避免重复
 
     // Magic constants for #include / #flag
-    $magicExt = str_replace('\\', '/', realpath(__DIR__ . '/ext') ?: __DIR__ . '/ext');
+    // PHAR 模式：__EXT__ 必须指向文件系统解压路径，否则 #include 无法解析
+    $magicExt = $inPhar
+        ? str_replace('\\', '/', $destExtDir)
+        : str_replace('\\', '/', realpath(__DIR__ . '/ext') ?: __DIR__ . '/ext');
     $magicInc = str_replace('\\', '/', realpath($includeDir) ?: $includeDir);
     $magicCmd = str_replace('\\', '/', $cwd);
 
