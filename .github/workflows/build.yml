@@ -114,6 +114,17 @@ jobs:
           chmod +x tphp
           ls -la tphp
 
+      - name: Debug TCC
+        run: |
+          echo "=== TCC binary ==="
+          ls -la tcc/tcc
+          echo "=== libtcc1.a ==="
+          find tcc -name libtcc1.a -ls
+          echo "=== CRT files ==="
+          ls tcc/lib/tcc/crt*.o 2>/dev/null || echo "(no CRT files found)"
+          echo "=== TCC dirs ==="
+          find tcc -maxdepth 3 -type d
+
       - name: Test
         run: |
           ./tphp test/main/min.php
@@ -171,6 +182,11 @@ jobs:
           cat micro.sfx tphp.phar > tphp
           chmod +x tphp
           ls -la tphp
+
+      - name: Debug TCC
+        run: |
+          echo "=== libtcc1.a ==="
+          find tcc -name libtcc1.a -ls
 
       - name: Test
         run: |

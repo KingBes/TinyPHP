@@ -82,12 +82,18 @@ fi
 echo "=== 6. 验证 ==="
 cd ..
 echo 'int main(){return 0;}' > _test_tcc.c
-if ./tcc/tcc -B"$PWD/tcc/lib/tcc" -o _test_tcc _test_tcc.c 2>/dev/null; then
+echo "=== libtcc1.a 位置 ==="
+find tcc -name libtcc1.a
+echo "=== 验证编译 ==="
+if ./tcc/tcc -B"$PWD/tcc/lib/tcc" -o _test_tcc _test_tcc.c; then
     echo "TCC standalone OK"
+    rm -f _test_tcc
 else
-    echo "TCC probe failed (may still work with full flags)"
+    echo "TCC FAILED — 检查 libtcc1.a"
+    ls -la tcc/lib/tcc/libtcc1.a 2>/dev/null || echo "libtcc1.a 不存在!"
+    exit 1
 fi
-rm -f _test_tcc.c _test_tcc
+rm -f _test_tcc.c
 
 echo "=== 7. 清理 ==="
 rm -rf tcc-src
