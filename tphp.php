@@ -704,24 +704,8 @@ $tccOutput = [];
 $retval = 0;
 // --debug: print full compile command
 if ($debugMode) echo "[DEBUG] {$cmd}\n";
-// TCC resolves its hardcoded --prefix (CONFIG_TCCDIR) relative to CWD at runtime.
-// Must run from the TCC binary's directory so ../tcc/lib/tcc → ./lib/tcc/
 $savedCwd = getcwd();
-$execCwd = $savedCwd;
-if ($isTCC) {
-    $binDir = dirname($ccExe);
-    if (is_dir($binDir)) $execCwd = $binDir;
-}
-// TCC mob bug: opens "libtcc1.a" directly from CWD without prefix
-// Create symlink so TCC finds it regardless of CWD
-if ($isTCC) {
-    $libtcc1a_src = dirname($ccExe) . '/lib/tcc/libtcc1.a';
-    $libtcc1a_link = $execCwd . '/libtcc1.a';
-    if (file_exists($libtcc1a_src) && !file_exists($libtcc1a_link)) {
-        @symlink($libtcc1a_src, $libtcc1a_link);
-    }
-}
-if ($execCwd !== false && @chdir($execCwd)) {
+if ($savedCwd !== false && @chdir(__DIR__)) {
     exec($cmd, $tccOutput, $retval);
     @chdir($savedCwd);
 } else {

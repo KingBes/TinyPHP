@@ -49,8 +49,8 @@ else
     ./configure \
         --prefix="$PROJECT_ROOT/tcc" \
         --bindir="$PROJECT_ROOT/tcc" \
-        --crtprefix="../lib/tcc:/usr/lib/$ARCH:/usr/lib64:/usr/lib:/lib/$ARCH:/lib" \
-        --libpaths="../lib/tcc:/usr/lib/$ARCH:/usr/lib64:/usr/lib:/lib/$ARCH:/lib:/usr/local/lib/$ARCH:/usr/local/lib" \
+        --crtprefix="tcc/lib/tcc:/usr/lib/$ARCH:/usr/lib64:/usr/lib:/lib/$ARCH:/lib" \
+        --libpaths="tcc/lib/tcc:/usr/lib/$ARCH:/usr/lib64:/usr/lib:/lib/$ARCH:/lib:/usr/local/lib/$ARCH:/usr/local/lib" \
         --extra-cflags=-O3 \
         --config-bcheck=yes \
         --config-backtrace=yes \
@@ -86,21 +86,17 @@ fi
 echo "=== 6. 验证 ==="
 cd ..
 echo 'int main(){return 0;}' > _test_tcc.c
-echo "=== TCC search paths ==="
-./tcc/tcc -v -v 2>&1 || true
-echo "=== strace: TCC's open() calls for libtcc1 ==="
-strace -f -e openat -o /tmp/tcc_strace.log ./tcc/tcc -B"$PROJECT_ROOT/tcc/lib/tcc" -o _test_tcc _test_tcc.c 2>&1; true
-grep -i 'libtcc1' /tmp/tcc_strace.log || echo "(no libtcc1 in strace)"
-echo "=== verify with symlink workaround ==="
-ln -sf "$PROJECT_ROOT/tcc/lib/tcc/libtcc1.a" ./libtcc1.a
-if ./tcc/tcc -B"$PROJECT_ROOT/tcc/lib/tcc" -o _test_tcc _test_tcc.c 2>&1; then
-    echo "TCC OK"
+# libtcc1.a path is derived from --libpaths first entry = tcc/lib/tcc
+# From CWD = project root: tcc/lib/tcc/libtcc1.a ✓
+if ./tcc/tcc -B"$PROJECT_ROOT/tcc/lib/tcc" -o _test_tcc _test_tcc.c; then
+    echo "TCC standalone OK"
     rm -f _test_tcc
 else
     echo "TCC FAILED"
+    ./tcc/tcc -v -v 2>&1 | grep -E '(libtcc1|libraries)'
     exit 1
 fi
-rm -f _test_tcc.c _test_tcc libtcc1.a
+rm -f _test_tcc.c
 
 echo "=== 7. 清理 ==="
 rm -rf tcc-src
