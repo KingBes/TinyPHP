@@ -88,27 +88,21 @@ echo "=== libtcc1.a 位置 ==="
 find tcc -name libtcc1.a
 echo "=== TCC 二进制中嵌入的路径 ==="
 strings tcc/tcc | grep -E '(/tcc|/lib/tcc)' | sort -u
-echo "=== 验证编译 ==="
-# TCC 把 --prefix 相对路径硬编码进二进制，运行时从 CWD 解析
-# CONFIG_TCCDIR = $prefix/lib/tcc = ../tcc/lib/tcc
-# 从 CWD=tcc/ 解析: tcc/../tcc/lib/tcc = tcc/lib/tcc/ ✓
-(cd tcc && ./tcc -B"$(pwd)/lib/tcc" -o ../_test_tcc ../_test_tcc.c) && {
-    echo "TCC standalone OK"
+echo "=== 验证编译(方式1: 显式传入 libtcc1.a) ==="
+if ./tcc/tcc -B"$(pwd)/tcc/lib/tcc" tcc/lib/tcc/libtcc1.a -o _test_tcc _test_tcc.c 2>&1; then
+    echo "TCC OK (explicit libtcc1.a)"
     rm -f _test_tcc
-    rm -f _test_tcc.c
-} || {
-    echo "TCC FAILED — trying workaround: copy libtcc1.a to tcc/"
-    cp tcc/lib/tcc/libtcc1.a tcc/
-    if ./tcc/tcc -B"$(pwd)/tcc/lib/tcc" -o _test_tcc _test_tcc.c 2>&1; then
-        echo "TCC OK (workaround)"
-        rm -f _test_tcc tcc/libtcc1.a
-    else
-        echo "FATAL: TCC broken"
-        ls -la tcc/libtcc1.a 2>/dev/null
-        exit 1
-    fi
-    rm -f _test_tcc.c
-}
+elif (cd tcc && ./tcc -B"$(pwd)/lib/tcc" -o ../_test_tcc ../_test_tcc.c) 2>&1; then
+    echo "TCC OK (chdir to tcc/)"
+    rm -f _test_tcc
+else
+    echo "=== strace 诊断 ==="
+    strace -f -e openat,open -o /tmp/tcc_strace.log ./tcc/tcc -B"$(pwd)/tcc/lib/tcc" -o _test_tcc _test_tcc.c 2>/dev/null; true
+    grep -i libtcc1 /tmp/tcc_strace.log | head -5
+    echo "FATAL: TCC broken"
+    exit 1
+fi
+rm -f _test_tcc.c _test_tcc
 
 echo "=== 7. 清理 ==="
 rm -rf tcc-src
