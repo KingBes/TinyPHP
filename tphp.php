@@ -712,6 +712,15 @@ if ($isTCC) {
     $binDir = dirname($ccExe);
     if (is_dir($binDir)) $execCwd = $binDir;
 }
+// TCC mob bug: opens "libtcc1.a" directly from CWD without prefix
+// Create symlink so TCC finds it regardless of CWD
+if ($isTCC) {
+    $libtcc1a_src = dirname($ccExe) . '/lib/tcc/libtcc1.a';
+    $libtcc1a_link = $execCwd . '/libtcc1.a';
+    if (file_exists($libtcc1a_src) && !file_exists($libtcc1a_link)) {
+        @symlink($libtcc1a_src, $libtcc1a_link);
+    }
+}
 if ($execCwd !== false && @chdir($execCwd)) {
     exec($cmd, $tccOutput, $retval);
     @chdir($savedCwd);

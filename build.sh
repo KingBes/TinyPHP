@@ -86,7 +86,9 @@ fi
 echo "=== 6. 验证 ==="
 cd ..
 echo 'int main(){return 0;}' > _test_tcc.c
-# 使用绝对prefix后，TCC 无需特殊CWD也能找到 libtcc1.a
+# TCC mob 分支的 bug: 初始化时直接用相对文件名 "libtcc1.a" 去 open(),
+# 不拼接 CONFIG_TCCDIR。临时 symlink 到 CWD 绕过去。
+ln -sf "$PROJECT_ROOT/tcc/lib/tcc/libtcc1.a" ./libtcc1.a
 if ./tcc/tcc -B"$PROJECT_ROOT/tcc/lib/tcc" -o _test_tcc _test_tcc.c; then
     echo "TCC standalone OK"
     rm -f _test_tcc
@@ -94,7 +96,7 @@ else
     echo "TCC FAILED"
     exit 1
 fi
-rm -f _test_tcc.c
+rm -f _test_tcc.c _test_tcc libtcc1.a
 
 echo "=== 7. 清理 ==="
 rm -rf tcc-src
