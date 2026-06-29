@@ -704,8 +704,15 @@ $tccOutput = [];
 $retval = 0;
 // --debug: print full compile command
 if ($debugMode) echo "[DEBUG] {$cmd}\n";
+// TCC resolves crtprefix/libpaths from CWD at runtime.
+// Must run from the TCC binary's directory so lib/tcc → ./lib/tcc/ = tcc/lib/tcc/
 $savedCwd = getcwd();
-if ($savedCwd !== false && @chdir(__DIR__)) {
+$execCwd = $savedCwd;
+if ($isTCC) {
+    $binDir = dirname($ccExe);
+    if (is_dir($binDir)) $execCwd = $binDir;
+}
+if ($execCwd !== false && @chdir($execCwd)) {
     exec($cmd, $tccOutput, $retval);
     @chdir($savedCwd);
 } else {

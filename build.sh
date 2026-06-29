@@ -49,8 +49,8 @@ else
     ./configure \
         --prefix="$PROJECT_ROOT/tcc" \
         --bindir="$PROJECT_ROOT/tcc" \
-        --crtprefix="tcc/lib/tcc:/usr/lib/$ARCH:/usr/lib64:/usr/lib:/lib/$ARCH:/lib" \
-        --libpaths="tcc/lib/tcc:/usr/lib/$ARCH:/usr/lib64:/usr/lib:/lib/$ARCH:/lib:/usr/local/lib/$ARCH:/usr/local/lib" \
+        --crtprefix="lib/tcc:/usr/lib/$ARCH:/usr/lib64:/usr/lib:/lib/$ARCH:/lib" \
+        --libpaths="lib/tcc:/usr/lib/$ARCH:/usr/lib64:/usr/lib:/lib/$ARCH:/lib:/usr/local/lib/$ARCH:/usr/local/lib" \
         --extra-cflags=-O3 \
         --config-bcheck=yes \
         --config-backtrace=yes \
@@ -86,16 +86,15 @@ fi
 echo "=== 6. 验证 ==="
 cd ..
 echo 'int main(){return 0;}' > _test_tcc.c
-# libtcc1.a path is derived from --libpaths first entry = tcc/lib/tcc
-# From CWD = project root: tcc/lib/tcc/libtcc1.a ✓
-if ./tcc/tcc -B"$PROJECT_ROOT/tcc/lib/tcc" -o _test_tcc _test_tcc.c; then
+# TCC 的 crtprefix/libpaths 用相对路径 lib/tcc，从 CWD 解析
+# chdir 到 tcc/ 后: lib/tcc → tcc/lib/tcc/ → libtcc1.a + CRT 文件都在这里
+(cd tcc && ./tcc -B"$(pwd)/lib/tcc" -o ../_test_tcc ../_test_tcc.c) && {
     echo "TCC standalone OK"
     rm -f _test_tcc
-else
+} || {
     echo "TCC FAILED"
-    ./tcc/tcc -v -v 2>&1 | grep -E '(libtcc1|libraries)'
     exit 1
-fi
+}
 rm -f _test_tcc.c
 
 echo "=== 7. 清理 ==="
