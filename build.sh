@@ -62,9 +62,14 @@ make
 make install
 
 echo "=== 4. 整理 TCC 目录结构 ==="
-# -B 指向 tcc/lib/tcc/，libtcc1.a 已在该位置，无需额外复制
 mkdir -p ../tcc/include
 cp -r ../tcc/lib/tcc/include/* ../tcc/include/ 2>/dev/null || true
+# 独立 TCC 需要系统头文件（裸 Docker 没有 glibc 头文件）
+# 复制到 tcc/lib/tcc/include/（TCC 默认搜索的第一个 include 路径）
+if [ "$OS" != "Darwin" ]; then
+    cp -r /usr/include/* ../tcc/lib/tcc/include/ 2>/dev/null || true
+    cp -r /usr/include/$ARCH/* ../tcc/lib/tcc/include/ 2>/dev/null || true
+fi
 
 if [ "$OS" = "Darwin" ]; then
     # macOS: link libc for Big Sur+
