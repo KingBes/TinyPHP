@@ -404,16 +404,18 @@ echo "[1/2] Transpiling {$allFilesStr} => C...\n";
 
         // Find companion .c files for each #include
         $projectRoot = str_replace('\\', '/', __DIR__);
+        // PHAR 模式：解压到文件系统的 ext/ 不在 phar:// 路径下，需额外接受 PHAR 外部根
+        $fsProjectRoot = $inPhar ? str_replace('\\', '/', $pharDir) : $projectRoot;
         foreach ($allIncludes as $inc) {
             $fileName = is_array($inc) ? $inc['file'] : $inc;
-            // Security: resolve via realpath, verify within project root
+            // Security: resolve via realpath, verify within project root (or PHAR fs root)
             $resolvedInclude = null;
             // Absolute path (from __INC__/__EXT__/__CMD__ expansion): resolve directly
             if (str_starts_with($fileName, '/') || preg_match('/^[A-Za-z]:/', $fileName)) {
                 $raw = realpath($fileName);
                 if ($raw !== false) {
                     $candidate = str_replace('\\', '/', $raw);
-                    if (str_starts_with($candidate, $projectRoot)) {
+                    if (str_starts_with($candidate, $projectRoot) || str_starts_with($candidate, $fsProjectRoot)) {
                         $resolvedInclude = $candidate;
                     }
                 }
@@ -423,7 +425,7 @@ echo "[1/2] Transpiling {$allFilesStr} => C...\n";
                     $raw = realpath($dir . DIRECTORY_SEPARATOR . $fileName);
                     if ($raw === false) continue;
                     $candidate = str_replace('\\', '/', $raw);
-                    if (str_starts_with($candidate, $projectRoot)) {
+                    if (str_starts_with($candidate, $projectRoot) || str_starts_with($candidate, $fsProjectRoot)) {
                         $resolvedInclude = $candidate;
                         break;
                     }

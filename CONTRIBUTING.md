@@ -473,8 +473,8 @@ class Main {
 | `src/TokenType.php` | ~155 | Token 枚举（~90 token） |
 | `src/Token.php` | ~20 | Token 值对象 |
 | `src/AST/Node.php` | ~890 | AST 节点 + Visitor 接口 + AssignArrayPushStmtNode |
-| `src/Lexer.php` | ~774 | 词法分析（#include/#flag/#callback/heredoc/插值） |
-| `src/Parser.php` | ~1815 | 递归下降解析（两阶段） |
+| `src/Lexer.php` | ~790 | 词法分析（#include/#flag/#callback/heredoc/插值） |
+| `src/Parser.php` | ~1830 | 递归下降解析（两阶段） |
 | `src/CodeGenerator.php` | ~4000 | C 代码生成（COS OOP/zeroReturn/自动释放/ROPE/178 内置函数） |
 | `include/types.h` | ~130 | C 类型系统 + SSO t_string + likely/unlikely |
 | `include/compat.h` | ~55 | 三编译器兼容（TCC round fallback/math 声明） |

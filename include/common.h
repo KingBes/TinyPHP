@@ -21,5 +21,4 @@
 #include "os/times.h"
 #include "os/json.h"
 #include "os/file.h"
-#include "rand.h"
 #include "phpc.h"
