@@ -704,9 +704,15 @@ $tccOutput = [];
 $retval = 0;
 // --debug: print full compile command
 if ($debugMode) echo "[DEBUG] {$cmd}\n";
-// TCC on Linux may resolve lib paths relative to CWD
+// TCC resolves its hardcoded --prefix (CONFIG_TCCDIR) relative to CWD at runtime.
+// Must run from the TCC binary's directory so ../tcc/lib/tcc → ./lib/tcc/
 $savedCwd = getcwd();
-if ($savedCwd !== false && @chdir(__DIR__)) {
+$execCwd = $savedCwd;
+if ($isTCC) {
+    $binDir = dirname($ccExe);
+    if (is_dir($binDir)) $execCwd = $binDir;
+}
+if ($execCwd !== false && @chdir($execCwd)) {
     exec($cmd, $tccOutput, $retval);
     @chdir($savedCwd);
 } else {

@@ -25,6 +25,8 @@ fi
 cd tcc-src
 
 echo "=== 2. 配置 TCC ==="
+# 注意：TCC 把 --prefix 编译进二进制，运行时从 CWD 解析相对路径
+# 所以 prefix 用相对路径保持可移植，但调用 TCC 时必须从正确的 CWD 执行
 if [ "$OS" = "Darwin" ]; then
     SDK=$(xcrun --show-sdk-path)
     ./configure \
@@ -85,14 +87,16 @@ echo 'int main(){return 0;}' > _test_tcc.c
 echo "=== libtcc1.a 位置 ==="
 find tcc -name libtcc1.a
 echo "=== 验证编译 ==="
-if ./tcc/tcc -B"$PWD/tcc/lib/tcc" -o _test_tcc _test_tcc.c; then
+# 关键：TCC 把 --prefix=../tcc 硬编码进二进制，运行时从 CWD 解析
+# 必须在 tcc/ 目录内运行，这样 ../tcc/lib/tcc 才能正确解析到 ./lib/tcc/
+(cd tcc && ./tcc -B"$PWD/lib/tcc" -o ../_test_tcc ../_test_tcc.c) && {
     echo "TCC standalone OK"
     rm -f _test_tcc
-else
+} || {
     echo "TCC FAILED — 检查 libtcc1.a"
     ls -la tcc/lib/tcc/libtcc1.a 2>/dev/null || echo "libtcc1.a 不存在!"
     exit 1
-fi
+}
 rm -f _test_tcc.c
 
 echo "=== 7. 清理 ==="
