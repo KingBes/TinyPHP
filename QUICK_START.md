@@ -36,7 +36,7 @@ int my_add(int a, int b) {
 PHP 中通过 `C->` 直接调用：
 
 ```php
-<?php
+// (<?php 前缀可选)
 #debug 30
 
 class Main {
@@ -81,7 +81,7 @@ php tphp.php main.php my_func.c --debug
 | `src/Lexer.php` | 词法分析 → Token |
 | `src/Parser.php` | 语法分析 → AST |
 | `src/CodeGenerator.php` | AST → C 代码 |
-| `include/*.h` | C 运行时（全部 `static inline`） |
+| `include/` + `include/std/*.h` | C 运行时（全部 `static inline`, 8个分类子文件） |
 | `tphp.php` | CLI 入口、路径安全、合并 AST |
 
 - C 函数统一前缀 `tphp_fn_`

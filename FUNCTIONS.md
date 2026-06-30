@@ -79,7 +79,7 @@
 > 文件: `std/string.h`
 
 字符串为 16 字节 SSO 值类型 `{ char* data; int length; bool is_local; }`。
-≤512B 通过 64KB bump allocator 分配，零 `malloc`。
+≤512B 通过 128KB bump allocator 分配，零 `malloc`。
 拼接优化：3+ 片段 `.` 链编译期展平为 ROPE，单次分配。
 
 ### 基础操作

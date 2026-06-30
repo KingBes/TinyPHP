@@ -27,8 +27,8 @@ include/                         C 运行时头文件（全 static inline）
   ├── val.h                      便捷宏 (VAR_INT, STR_LIT, …)
   ├── array.h                    PHP 数组（128 槽复用池 + 1.5× 增长 + sort/shuffle/search）
   ├── runtime.h                  运行时（128KB 字符串池 + Arena、对象/数组/字符串池、资源追踪）
-  ├── builtin.h                  公开内置（178 个函数）
-  ├── rand.h                     MT19937 随机数
+  ├── builtin.h                  内置函数入口 (incl 8个 std/ 子文件, 230+ 函数)
+  ├── rand.h                     CSPRNG 随机数 (Win→rand_s, Unix→/dev/urandom)
   ├── phpc.h                     C 互操作（类型桥/数组/对象/回调/thunk）
   ├── tphp_math.h                扩展数学（pi/deg2rad/intdiv/pow/三角函数）
   ├── conv.h                     进制转换 + number_format
@@ -168,12 +168,12 @@ ExprNode（抽象，含 line/column）
 | `val.h` | `VAR_*` `STR_LIT` | 便捷宏 |
 | `array.h` | `tphp_fn_arr_` | PHP 数组（128 槽复用池 + sort + 1.5× 增长） |
 | `runtime.h` | `tphp_rt_` | 运行时（128KB 字符串池 + Arena、资源追踪、error） |
-| `builtin.h` | `tphp_fn_` | 公开内置：178 个函数 |
+| `builtin.h` + `std/*.h` | `tphp_fn_` | 内置函数入口 (8个子文件, 230+ 函数) |
 | `phpc.h` | `phpc_` `c_` `php_` | PHP↔C 互操作 |
 | `tphp_math.h` | `tphp_fn_` | 扩展数学函数 |
 | `conv.h` | `tphp_fn_` | 进制转换 |
 | `hash.h` | `tphp_fn_` | MD5/SHA1/CRC32 |
-| `rand.h` | `tphp_fn_` | MT19937 随机数 |
+| `rand.h` | `tphp_fn_` | CSPRNG 随机数 (Win→rand_s, Unix→/dev/urandom) |
 | `os/*.h` | `tphp_fn_` | 系统函数（时间/JSON/文件/进程/POSIX） |
 
 ### 3.2 内存管理层次
@@ -475,12 +475,12 @@ class Main {
 | `src/AST/Node.php` | ~890 | AST 节点 + Visitor 接口 + AssignArrayPushStmtNode |
 | `src/Lexer.php` | ~790 | 词法分析（#include/#flag/#callback/heredoc/插值） |
 | `src/Parser.php` | ~1830 | 递归下降解析（两阶段） |
-| `src/CodeGenerator.php` | ~4000 | C 代码生成（COS OOP/zeroReturn/自动释放/ROPE/178 内置函数） |
+| `src/CodeGenerator.php` | ~4000 | C 代码生成（COS OOP/zeroReturn/自动释放/ROPE/230+ 内置函数） |
 | `include/types.h` | ~130 | C 类型系统 + SSO t_string + likely/unlikely |
 | `include/compat.h` | ~55 | 三编译器兼容（TCC round fallback/math 声明） |
 | `include/array.h` | ~869 | PHP 数组（128 槽复用池/sort/1.5× 增长） |
 | `include/runtime.h` | ~402 | 运行时（128KB 字符串池+Arena/资源追踪/error/str_free SSO 感知） |
-| `include/builtin.h` | ~1193 | 公开内置（178 个函数） |
+| `include/builtin.h` | ~22 | 内置函数入口 (incl 8个 `include/std/` 子文件) |
 | `include/phpc.h` | ~200 | PHPC 互操作（类型/数组/对象/回调/thunk/内存释放） |
 | `include/object/object.h` | ~100 | COS 对象系统 + 128 槽对象复用池 |
 | `include/object/try.h` | ~92 | setjmp/longjmp 异常 |

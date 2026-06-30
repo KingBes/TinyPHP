@@ -12,7 +12,7 @@ TinyPHP 是 PHP→C AOT 编译器，不是解释器。以下规则**必须遵守
 ### 入口文件
 
 ```php
-<?php
+// (<?php 开头可选)
 // 1. 必须有全局命名空间（无 namespace）的 class Main
 // 2. 必须有 public function main(): void 作为入口
 // 3. 不支持任何游离代码（所有语句必须在类/函数内）
@@ -65,7 +65,8 @@ class Main
 | 动态引入 | `include` `require` | 无运行时文件加载 |
 | 魔术方法 | `__call` `__get` `__set` `__callStatic` | 无动态分发 |
 | 生成器 | `yield` | 不做 |
-| 可空/联合 | `?int` `int\|string` | 破坏类型固定优势 |
+| 可空 | `?int` | 不做（破坏类型固定优势） |
+| 联合类型 | `int\|string` | ✅ 已支持（映射到 `mixed`/`t_var`） |
 
 ---
 
@@ -349,7 +350,7 @@ expr:
   | additive         ✅
   | multiplicative   ✅
   | power            ✅
-  | instanceof       ⬜
+  | instanceof       ✅
   | prefix           ✅
   | postfix          ✅
   | primary          ✅

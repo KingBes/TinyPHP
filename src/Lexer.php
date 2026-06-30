@@ -113,14 +113,12 @@ class Lexer
         $this->column = 1;
         $this->tokens = [];
 
-        // 必须在最开头
+        // <?php 可选（开头有则跳过，没有也正常解析）
         if (str_starts_with($this->source, '<?php')) {
-            $this->addToken(TokenType::PHP_OPEN, '<?php');
             $this->pos = 5; // skip <?php
             $this->column = 6;
-        } else {
-            $this->error('The source file must start with <?php');
         }
+        $this->addToken(TokenType::PHP_OPEN, '<?php');
 
         while ($this->pos < strlen($this->source)) {
             $this->scanToken();

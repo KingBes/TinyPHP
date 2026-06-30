@@ -187,7 +187,7 @@ json_write_to(v, buf);                // 第2趟: 直接 memcpy 写入
 
 ### include/ 重构
 
-`builtin.h` (原 1500+ 行) → 拆分为 7 个 `std/` 文件:
+`builtin.h` (原 1500+ 行) → 拆分为 8 个 `std/` 文件:
 
 ```
 include/std/
