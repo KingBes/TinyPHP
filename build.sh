@@ -65,10 +65,21 @@ echo "=== 4. 整理 TCC 目录结构 ==="
 mkdir -p ../tcc/include
 cp -r ../tcc/lib/tcc/include/* ../tcc/include/ 2>/dev/null || true
 # 独立 TCC 需要系统头文件（裸 Docker 没有 glibc 头文件）
-# 复制到 tcc/lib/tcc/include/（TCC 默认搜索的第一个 include 路径）
+# 只复制编译 TinyPHP C 运行时必需的关键子目录，避免打包整个 /usr/include (数千文件)
 if [ "$OS" != "Darwin" ]; then
-    cp -r /usr/include/* ../tcc/lib/tcc/include/ 2>/dev/null || true
-    cp -r /usr/include/$ARCH/* ../tcc/lib/tcc/include/ 2>/dev/null || true
+    SYSINC=../tcc/lib/tcc/include
+    for subdir in linux asm asm-generic bits gnu sys; do
+        if [ -d "/usr/include/$subdir" ]; then
+            cp -r "/usr/include/$subdir" "$SYSINC/" 2>/dev/null || true
+        fi
+    done
+    # 复制架构相关的子目录
+    if [ -d "/usr/include/$ARCH" ]; then
+        cp -r "/usr/include/$ARCH" "$SYSINC/" 2>/dev/null || true
+    fi
+    # 复制顶层必需的头文件（不含子目录，避免递归复制整个 include）
+    find /usr/include -maxdepth 1 -name '*.h' -exec cp {} "$SYSINC/" \; 2>/dev/null || true
+    echo "[*] 系统头文件已精简复制到 $SYSINC"
 fi
 
 if [ "$OS" = "Darwin" ]; then
