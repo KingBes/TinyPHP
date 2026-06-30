@@ -3,6 +3,11 @@
 // rand.h — TinyPHP 随机数（线程安全，CSPRNG 驱动，零全局状态）
 //   rand / mt_rand / rand_int / _tphp_random_bytes 统一定义在此
 //   builtin.h 的 random_int/random_bytes 依赖此文件
+//
+//   跨平台 / 跨编译器:
+//     Windows MSVC/TCC/MinGW-GCC → rand_s (CRT 安全随机)
+//     Windows Clang               → rand() fallback (Clang 不声明 rand_s)
+//     Linux/macOS                 → /dev/urandom
 // ============================================================
 
 #include <stdlib.h>
@@ -10,12 +15,11 @@
 
 // ============================================================
 // CSPRNG 核心 — 跨平台安全随机字节
-//   Windows: rand_s (CRT, TCC/MinGW 均支持)
-//   Linux/macOS: /dev/urandom
 // ============================================================
 
 static inline int _tphp_random_bytes(unsigned char* buf, size_t n) {
-#ifdef _WIN32
+#if defined(_WIN32) && !defined(__clang__)
+    // MSVC / TCC / MinGW-GCC: rand_s 在 CRT 中可用
     size_t i = 0;
     while (i + 4 <= n) {
         unsigned int v = 0;
@@ -32,7 +36,13 @@ static inline int _tphp_random_bytes(unsigned char* buf, size_t n) {
         for (; i < n; i++) { buf[i] = (unsigned char)(v); v >>= 8; }
     }
     return 0;
+#elif defined(_WIN32) && defined(__clang__)
+    // Clang on Windows (MSYS2): rand_s 未声明, 使用 stdlib rand()
+    // 对 benchmarks 和日常使用足够, 需要 CSPRNG 的话应改用 BCryptGenRandom
+    for (size_t i = 0; i < n; i++) buf[i] = (unsigned char)(rand() & 0xFF);
+    return 0;
 #else
+    // Linux / macOS: /dev/urandom
     FILE* f = fopen("/dev/urandom", "rb");
     if (!f) return -1;
     size_t r = fread(buf, 1, n, f);

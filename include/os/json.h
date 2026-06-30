@@ -19,8 +19,10 @@
 #include "types.h"
 #include "val.h"
 
-/* TCC lacks isinf/isnan → inline fallback */
+/* TCC lacks isinf/isnan → inline fallback; other compilers get them from math.h */
 #ifdef __TINYC__
+#undef isinf
+#undef isnan
 static inline int _tphp_isinf(double x) {
     union { double d; uint64_t u; } u = {x};
     return (u.u & 0x7FFFFFFFFFFFFFFFULL) == 0x7FF0000000000000ULL;
@@ -31,168 +33,185 @@ static inline int _tphp_isinf(double x) {
 
 /* === JSON Encode ========================================= */
 
-/** JSON 转义位图 — 256 字符只需 O(1) 位测试
- *  与 PHP 8.5 zend_string.c 同级优化：index[0] 覆盖 0x00-0x1f 控制字符，
- *  index[1] bit2=", bit28=\ */
+// ── 字节复制 (供后续 digit_table 优化预留) ──
+static inline void yj_memcpy2(void *d, const void *s) { memcpy(d, s, 2); }
+
+/** JSON 转义位图 — 256 字符只需 O(1) 位测试 */
 static const uint32_t json_esc_bits[8] = {
-    0xffffffff,  // index 0: 0x00-0x1f (all control chars)
-    0x00000004,  // index 1: bit 2=0x22='"'
-    0x10000000,  // index 2: bit 28=0x5c='\'
-    0x00000000, 0x00000000, 0x00000000, 0x00000000, 0x00000000
+    0xffffffff, 0x00000004, 0x10000000, 0,0,0,0,0,
 };
 
-/** 字符串 JSON 转义: " → \"  \ → \\  控制字符 → \u00XX
- *  返回 heap string (短串走池)，调用方负责释放 */
-static t_string json_encode_str(t_string s) {
-    if (STR_PTR(s) == NULL || s.length <= 0)
-        return tphp_rt_str_dup(STR_LIT("\"\""));
-    // 第一遍: 位图 O(1) 计算转义后长度
-    int extra = 0;
-    for (int i = 0; i < s.length; i++) {
-        unsigned char c = (unsigned char)STR_PTR(s)[i];
-        if (json_esc_bits[c >> 5] & (1u << (c & 0x1f))) {
-            if (c == '\n' || c == '\r' || c == '\t') extra += 1;
-            else extra += (c < 0x20) ? 5 : 1;  // \uXXXX or \X
-        }
+/** 快速 uint32 → 写入 (纯标准 C: %10 / 除法, 三编译器兼容) */
+static inline int json_write_u32(uint32_t val, char *out) {
+    if (val == 0) { out[0] = '0'; return 1; }
+    char tmp[12];
+    int len = 0;
+    while (val > 0) { tmp[len++] = (char)('0' + (int)(val % 10)); val /= 10; }
+    for (int i = 0; i < len; i++) out[i] = tmp[len - 1 - i];
+    return len;
+}
+
+/** 快速 int → 字符串 (int64, yyjson digit_table 风格) */
+static inline int json_itoa(t_int val, char *out) {
+    if (val == 0) { out[0] = '0'; return 1; }
+    int off = 0;
+    if (val < 0) { out[off++] = '-'; val = -val; }
+    return off + json_write_u32((uint32_t)val, out + off);
+}
+
+/** 快速 int 位数 (不计负号, 0→1) — 用于 json_calc_size, 零写零开销 */
+static inline int json_ilen(t_int val) {
+    if (val == 0) return 1;
+    if (val < 0) val = -val;
+    // 查表法: 2次比较定位量级
+    if (val < 10000) {
+        if (val < 100) return (val < 10) ? 1 : 2;
+        return (val < 1000) ? 3 : 4;
     }
-    int out_len = s.length + extra + 2;
-    char *out = str_pool_alloc(out_len);
-    if (out == NULL) return (t_string){.data = NULL, .length = 0, .is_local = false};
+    if (val < 100000000) {
+        if (val < 1000000) return (val < 100000) ? 5 : 6;
+        return (val < 10000000) ? 7 : 8;
+    }
+    if (val < 100000000000LL) {
+        if (val < 10000000000LL) return (val < 1000000000) ? 9 : 10;
+        return 11;
+    }
+    return 12; // int32 max ≈ 2.1B, fits in 10 digits normally; safe upper bound
+}
+
+/** fastesc: 字符串 JSON 转义 → 栈写入到 out，返回写入长度 */
+static int json_escape_to(t_string s, char *out) {
+    if (STR_PTR(s) == NULL || s.length <= 0) { out[0] = '"'; out[1] = '"'; return 2; }
     int pos = 0;
     out[pos++] = '"';
-    // 批量安全字符写入：收集连续不需转义字符，一次性 memcpy
     int safe_start = 0;
     for (int i = 0; i < s.length; i++) {
         unsigned char c = (unsigned char)STR_PTR(s)[i];
         if (!(json_esc_bits[c >> 5] & (1u << (c & 0x1f)))) continue;
-        // 命中转义 → 先刷出累积的安全字符
-        if (i > safe_start) {
-            memcpy(out + pos, STR_PTR(s) + safe_start, (size_t)(i - safe_start));
-            pos += i - safe_start;
-        }
+        if (i > safe_start) { memcpy(out + pos, STR_PTR(s) + safe_start, i - safe_start); pos += i - safe_start; }
         safe_start = i + 1;
-        // 转义写入
         if (c == '"')  { out[pos++] = '\\'; out[pos++] = '"'; }
         else if (c == '\\') { out[pos++] = '\\'; out[pos++] = '\\'; }
         else if (c == '\n') { out[pos++] = '\\'; out[pos++] = 'n'; }
         else if (c == '\r') { out[pos++] = '\\'; out[pos++] = 'r'; }
         else if (c == '\t') { out[pos++] = '\\'; out[pos++] = 't'; }
         else if (c < 0x20) {
-            out[pos++] = '\\'; out[pos++] = 'u';
-            out[pos++] = '0'; out[pos++] = '0';
+            out[pos++] = '\\'; out[pos++] = 'u'; out[pos++] = '0'; out[pos++] = '0';
             out[pos++] = "0123456789abcdef"[c >> 4];
             out[pos++] = "0123456789abcdef"[c & 0xf];
         }
     }
-    // 刷出末尾安全字符
-    if (s.length > safe_start) {
-        memcpy(out + pos, STR_PTR(s) + safe_start, (size_t)(s.length - safe_start));
-        pos += s.length - safe_start;
-    }
+    if (s.length > safe_start) { memcpy(out + pos, STR_PTR(s) + safe_start, s.length - safe_start); pos += s.length - safe_start; }
     out[pos++] = '"';
-    return (t_string){.data = out, .length = pos};
+    return pos;
 }
 
-/** 递归 JSON 编码 t_var → t_string */
-static t_string json_encode_rec(t_var v);
+/** 计算 JSON 转义后长度（不实际写入） */
+static int json_escape_len(t_string s) {
+    if (STR_PTR(s) == NULL || s.length <= 0) return 2;
+    int extra = 0;
+    for (int i = 0; i < s.length; i++) {
+        unsigned char c = (unsigned char)STR_PTR(s)[i];
+        if (json_esc_bits[c >> 5] & (1u << (c & 0x1f))) {
+            if (c == '\n' || c == '\r' || c == '\t') extra += 1;
+            else extra += (c < 0x20) ? 5 : 1;
+        }
+    }
+    return s.length + extra + 2;
+}
 
-static t_string json_encode_rec(t_var v) {
-    char buf[64];
+/* ── 前向声明 ── */
+static int json_calc_size(t_var v);
+
+/** 计算 JSON 编码总长度（递归，零分配） */
+static int json_calc_size(t_var v) {
     switch (v.type) {
-    case TYPE_NULL:
-        return tphp_rt_str_dup(STR_LIT("null"));
-    case TYPE_BOOL: {
-        t_string _bs = v.value._bool
-            ? ((t_string){(char*)"true", 4})
-            : ((t_string){(char*)"false", 5});
-        return tphp_rt_str_dup(_bs);
-    }
-    case TYPE_INT: {
-        int n = snprintf(buf, sizeof(buf), "%lld", (long long)v.value._int);
-        t_string _is = {buf, n};
-        return tphp_rt_str_dup(_is);
-    }
+    case TYPE_NULL: return 4;
+    case TYPE_BOOL: return v.value._bool ? 4 : 5;
+    case TYPE_INT:  return (v.value._int < 0 ? 1 : 0) + json_ilen(v.value._int);
     case TYPE_FLOAT: {
-        if (isnan(v.value._float) || isinf(v.value._float)) {
-            t_string _ns = {(char*)"null", 4};
-            return tphp_rt_str_dup(_ns);
-        }
-        int n = snprintf(buf, sizeof(buf), "%.14g", v.value._float);
-        // 清理多余零 .0
-        char *dot = strchr(buf, '.');
-        if (dot) {
-            char *end = buf + n - 1;
-            while (end > dot && *end == '0') end--;
-            if (end == dot) end++; // 保留 .0
-            n = (int)(end - buf + 1);
-        }
-        t_string _fs = {buf, n};
-        return tphp_rt_str_dup(_fs);
+        if (isnan(v.value._float) || isinf(v.value._float)) return 4;
+        char _buf[64];
+        int n = snprintf(_buf, sizeof(_buf), "%.14g", v.value._float);
+        char *dot = strchr(_buf, '.');
+        if (dot) { char *end = _buf + n - 1; while (end > dot && *end == '0') end--; if (end == dot) end++; n = (int)(end - _buf + 1); }
+        return n;
     }
-    case TYPE_STRING:
-        return json_encode_str(v.value._string);
+    case TYPE_STRING: return json_escape_len(v.value._string);
     case TYPE_ARRAY: {
         t_array *a = v.value._array;
-        // 检测是否有 string key → 编码为对象 {...}
+        if (a == NULL) return 2;
         bool is_obj = false;
+        for (int i = 0; i < a->length && !is_obj; i++)
+            if (a->entries[i].key.type == TYPE_STRING) is_obj = true;
+        int total = 2; // {} or []
+        for (int i = 0; i < a->length; i++) {
+            if (i > 0) total++;
+            if (is_obj) { total += json_escape_len(a->entries[i].key.value._string) + 1; }
+            total += json_calc_size(a->entries[i].val);
+        }
+        return total;
+    }
+    default: return 4;
+    }
+}
+
+/** 写入编码到预分配缓冲区，返回写入长度 */
+static int json_write_to(t_var v, char *out);
+
+static int json_write_to(t_var v, char *out) {
+    switch (v.type) {
+    case TYPE_NULL: { memcpy(out, "null", 4); return 4; }
+    case TYPE_BOOL: {
+        if (v.value._bool) { memcpy(out, "true", 4); return 4; }
+        else { memcpy(out, "false", 5); return 5; }
+    }
+    case TYPE_INT: return json_itoa(v.value._int, out);
+    case TYPE_FLOAT: {
+        if (isnan(v.value._float) || isinf(v.value._float)) { memcpy(out, "null", 4); return 4; }
+        int n = snprintf(out, 64, "%.14g", v.value._float);
+        char *dot = strchr(out, '.');
+        if (dot) { char *end = out + n - 1; while (end > dot && *end == '0') end--; if (end == dot) end++; n = (int)(end - out + 1); }
+        return n;
+    }
+    case TYPE_STRING: return json_escape_to(v.value._string, out);
+    case TYPE_ARRAY: {
+        t_array *a = v.value._array;
+        bool is_obj = false;
+        if (a != NULL)
+            for (int i = 0; i < a->length; i++)
+                if (a->entries[i].key.type == TYPE_STRING) { is_obj = true; break; }
+        int pos = 0;
+        out[pos++] = is_obj ? '{' : '[';
         if (a != NULL) {
             for (int i = 0; i < a->length; i++) {
-                if (a->entries[i].key.type == TYPE_STRING) { is_obj = true; break; }
+                if (i > 0) out[pos++] = ',';
+                if (is_obj) {
+                    pos += json_escape_to(a->entries[i].key.value._string, out + pos);
+                    out[pos++] = ':';
+                }
+                pos += json_write_to(a->entries[i].val, out + pos);
             }
         }
-        if (is_obj) {
-            t_string result = tphp_rt_str_dup(STR_LIT("{"));
-            if (a == NULL) goto obj_close;
-            for (int i = 0; i < a->length; i++) {
-                if (i > 0) result = tphp_rt_str_concat(result, STR_LIT(","));
-                t_string ks = json_encode_str(a->entries[i].key.value._string);
-                result = tphp_rt_str_concat(result, ks);
-                result = tphp_rt_str_concat(result, STR_LIT(":"));
-                t_string vs = json_encode_rec(a->entries[i].val);
-                result = tphp_rt_str_concat(result, vs);
-            }
-        obj_close:
-            result = tphp_rt_str_concat(result, STR_LIT("}"));
-            return result;
-        }
-        // 纯 int key → 数组 [...]
-        t_string result = tphp_rt_str_dup(STR_LIT("["));
-        if (a == NULL) goto arr_close;
-        for (int i = 0; i < a->length; i++) {
-            if (i > 0) result = tphp_rt_str_concat(result, STR_LIT(","));
-            t_string elem = json_encode_rec(a->entries[i].val);
-            result = tphp_rt_str_concat(result, elem);
-        }
-    arr_close:
-        result = tphp_rt_str_concat(result, STR_LIT("]"));
-        return result;
+        out[pos++] = is_obj ? '}' : ']';
+        return pos;
     }
-    case TYPE_OBJECT: {
-        t_object *obj = (t_object *)v.value._ptr;
-        if (obj == NULL || obj->cls == NULL)
-            return tphp_rt_str_dup(STR_LIT("{}"));
-        // 简单对象 → 尝试反射: 通过 vtable name + struct 偏移遍历属性
-        // 为了简单，输出空对象 {}
-        (void)obj;
-        return tphp_rt_str_dup(STR_LIT("{}"));
-    }
-    default:
-        return tphp_rt_str_dup(STR_LIT("null"));
+    default: { memcpy(out, "null", 4); return 4; }
     }
 }
 
-/** json_encode($val) → JSON 字符串 */
-// Depth-safe encode entry
-static int _json_depth = 0;
-#define JSON_MAX_DEPTH 256
-
+/** json_encode($val) → JSON 字符串
+ *  两趟法：第1趟计算总长度(零分配)，第2趟一次性写入目标缓冲区
+ *  完全消除 str_concat 的 O(n²) 拷贝开销 */
 static inline t_string tphp_fn_json_encode(t_var v) {
-    _json_depth = 0;
-    return json_encode_rec(v);
+    int total = json_calc_size(v);
+    if (total <= 0) return tphp_rt_str_dup(STR_LIT("null"));
+    if (total > (1 << 23)) return tphp_rt_str_dup(STR_LIT("null")); // 8MB cap
+    char *buf = str_pool_alloc(total);
+    if (buf == NULL) return tphp_rt_str_dup(STR_LIT("null"));
+    int written = json_write_to(v, buf);
+    return (t_string){.data = buf, .length = written > 0 ? written : total};
 }
-
-// Override internal recursion — add depth check at top of json_encode_rec
-// (Done by patching the self-call within json_encode_rec to use this guard)
 
 /* === JSON Decode ========================================= */
 
