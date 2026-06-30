@@ -661,6 +661,11 @@ if ($isTCC && $inPhar) {
         // build.sh puts libtcc1.a & headers at tcc/lib/tcc/
         $tccLibDir = $tccSysDir . DIRECTORY_SEPARATOR . 'lib' . DIRECTORY_SEPARATOR . 'tcc';
         $bFlag = ' -B"' . (is_dir($tccLibDir) ? $tccLibDir : $tccSysDir) . '"';
+        // -nostdinc: 禁止搜索系统 /usr/include，防止与 PHAR 内打包的 glibc 头文件冲突
+        $tccIncDir = $tccLibDir . DIRECTORY_SEPARATOR . 'include';
+        if (is_dir($tccIncDir)) {
+            $bFlag .= ' -nostdinc -I"' . $tccIncDir . '"';
+        }
     }
 } elseif ($isTCC) {
     // Dev mode: auto-detect TCC standalone directory

@@ -115,9 +115,9 @@ if [ "$OS" != "Darwin" ]; then
     echo "[*] 解压 libc6-dev ..."
     extract_deb "$TMPDIR/libc6-dev.deb" "$TMPDIR/dev-root"
 
-    # 复制头文件
+    # 复制头文件（-n = no-clobber，不覆盖 TCC 自有头文件如 stdarg.h/stddef.h）
     echo "[*] 安装系统头文件 → $TCC_INC"
-    cp -r "$TMPDIR/dev-root/usr/include/"* "$TCC_INC/" 2>/dev/null
+    cp -rn "$TMPDIR/dev-root/usr/include/"* "$TCC_INC/" 2>/dev/null
     echo "    头文件: $(find "$TCC_INC" -type f | wc -l) 个"
 
     # 复制 CRT + 静态库 + 链接脚本
