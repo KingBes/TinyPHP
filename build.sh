@@ -115,15 +115,38 @@ if [ "$OS" != "Darwin" ]; then
     echo "[*] 解压 libc6-dev ..."
     extract_deb "$TMPDIR/libc6-dev.deb" "$TMPDIR/dev-root"
 
+    # 多架构 triplet（gcc -dumpmachine → x86_64-linux-gnu / aarch64-linux-gnu）
+    MULTIARCH=$(gcc -dumpmachine 2>/dev/null || echo "$MACHINE-linux-gnu")
+
     # 复制头文件（-n = no-clobber，不覆盖 TCC 自有头文件如 stdarg.h/stddef.h）
+    # 注意：Debian 多架构包中 bits/、gnu/、sys/、fpu_control.h 等在
+    #       usr/include/{triplet}/ 下，需要先复制到顶层，否则 TCC 找不到
     echo "[*] 安装系统头文件 → $TCC_INC"
-    cp -rn "$TMPDIR/dev-root/usr/include/"* "$TCC_INC/" 2>/dev/null
+    # 第1步：复制顶层通用头文件（-n 保留 TCC 自有头文件）
+    cp -rn "$TMPDIR/dev-root/usr/include/"* "$TCC_INC/"
+    # 第2步：复制多架构目录内容到顶层（bits/libc-header-start.h 等在此）
+    if [ -d "$TMPDIR/dev-root/usr/include/$MULTIARCH" ]; then
+        cp -rn "$TMPDIR/dev-root/usr/include/$MULTIARCH/"* "$TCC_INC/"
+    fi
     echo "    头文件: $(find "$TCC_INC" -type f | wc -l) 个"
+
+    # 验证关键头文件存在
+    if [ ! -f "$TCC_INC/bits/libc-header-start.h" ]; then
+        echo "[WARN] bits/libc-header-start.h 缺失！尝试从系统补充..."
+        if [ -f "/usr/include/$MULTIARCH/bits/libc-header-start.h" ]; then
+            mkdir -p "$TCC_INC/bits"
+            cp -v "/usr/include/$MULTIARCH/bits/libc-header-start.h" "$TCC_INC/bits/"
+        elif [ -f "/usr/include/bits/libc-header-start.h" ]; then
+            mkdir -p "$TCC_INC/bits"
+            cp -v "/usr/include/bits/libc-header-start.h" "$TCC_INC/bits/"
+        else
+            echo "[ERROR] 无法找到 bits/libc-header-start.h，编译将失败！"
+        fi
+    fi
 
     # 复制 CRT + 静态库 + 链接脚本
     echo "[*] 安装 CRT + 链接库 → $TCC_LIB"
     CRT_COUNT=0
-    MULTIARCH=$(gcc -dumpmachine 2>/dev/null || echo "$MACHINE-linux-gnu")
     for libdir in "$TMPDIR/dev-root/usr/lib/$MULTIARCH" "$TMPDIR/dev-root/usr/lib"; do
         if [ -d "$libdir" ]; then
             cp -v "$libdir"/crt*.o "$TCC_LIB/" 2>/dev/null && CRT_COUNT=$(($CRT_COUNT + $(ls "$libdir"/crt*.o 2>/dev/null | wc -l)))
