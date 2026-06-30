@@ -1064,6 +1064,33 @@ class CodeGenerator implements ASTVisitor
             if ($expr->name === 'explode') return 't_array*';
             if ($expr->name === 'json_encode') return 't_string';
             if ($expr->name === 'json_decode') return 't_var';
+            if ($expr->name === 'htmlspecialchars') return 't_string';
+            if ($expr->name === 'nl2br') return 't_string';
+            if ($expr->name === 'base64_encode') return 't_string';
+            if ($expr->name === 'base64_decode') return 't_string';
+            if ($expr->name === 'http_build_query') return 't_string';
+            if ($expr->name === 'array_diff')  return 't_array*';
+            if ($expr->name === 'array_intersect') return 't_array*';
+            if ($expr->name === 'array_column') return 't_array*';
+            if ($expr->name === 'array_flip') return 't_array*';
+            if ($expr->name === 'shuffle') return 't_bool';
+            if ($expr->name === 'sin' || $expr->name === 'cos' || $expr->name === 'tan') return 't_float';
+            if ($expr->name === 'asin' || $expr->name === 'acos' || $expr->name === 'atan') return 't_float';
+            if ($expr->name === 'exp' || $expr->name === 'log' || $expr->name === 'log10') return 't_float';
+            if ($expr->name === 'fmod') return 't_float';
+            if (str_starts_with($expr->name, 'is_') && $expr->name !== 'is_int' && $expr->name !== 'is_float'
+                && $expr->name !== 'is_string' && $expr->name !== 'is_bool' && $expr->name !== 'is_array'
+                && $expr->name !== 'is_null' && $expr->name !== 'is_numeric') return 't_bool';
+            if ($expr->name === 'json_validate') return 't_bool';
+            if ($expr->name === 'sha256' || $expr->name === 'sha512') return 't_string';
+            if ($expr->name === 'base_convert') return 't_string';
+            if ($expr->name === 'array_chunk') return 't_array*';
+            if ($expr->name === 'array_combine') return 't_array*';
+            if ($expr->name === 'array_count_values') return 't_array*';
+            if ($expr->name === 'array_rand') return 't_var';
+            if ($expr->name === 'mb_strlen') return 't_int';
+            if ($expr->name === 'mb_substr') return 't_string';
+            if ($expr->name === 'filter_var') return 't_var';
             // phpc 互操作函数返回类型
             if ($expr->name === 'c_int' || $expr->name === 'php_int')   return 't_int';
             if ($expr->name === 'c_float' || $expr->name === 'php_float') return 't_float';
@@ -1959,6 +1986,13 @@ class CodeGenerator implements ASTVisitor
             $a1 = $node->args[0]->accept($this);
             $a2 = $node->args[1]->accept($this);
             return 'tphp_fn_array_merge(' . $a1 . ', ' . $a2 . ')';
+        }
+
+        // Phase 2 array functions — map to tphp_fn_arr_* convention
+        if ($node->callee === null && in_array($node->name, ['array_chunk','array_combine','array_count_values','array_rand'], true)) {
+            $fnMap = ['array_chunk'=>'tphp_fn_arr_chunk','array_combine'=>'tphp_fn_arr_combine','array_count_values'=>'tphp_fn_arr_count_values','array_rand'=>'tphp_fn_arr_rand'];
+            $args = array_map(fn($a) => $a->accept($this), $node->args);
+            return $fnMap[$node->name] . '(' . implode(', ', $args) . ')';
         }
 
         // array_shift($arr) → 移除头部元素，返回 t_var

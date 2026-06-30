@@ -390,14 +390,13 @@ static inline t_var tphp_fn_json_decode(t_string json) {
     if (p.cur >= p.end) return VAR_NULL();
     const char *start = p.cur;
     t_var result = json_parse_value(&p);
-    // Check: at least one token was consumed — invalid JSON, return NULL
-    if (p.cur <= start) {
-        return VAR_NULL();
-    }
-    // Check: no trailing garbage data — return NULL
+    if (p.cur <= start) return VAR_NULL();
     json_skip_ws(&p);
-    if (p.cur < p.end) {
-        return VAR_NULL();
-    }
+    if (p.cur < p.end) return VAR_NULL();
     return result;
+}
+
+/** json_validate($str) → bool — 复用 json_decode 验证 JSON 有效性 */
+static inline t_bool tphp_fn_json_validate(t_string s) {
+    return tphp_fn_json_decode(s).type != TYPE_NULL;
 }
