@@ -1,3 +1,4 @@
+#pragma once
 // std/output.h — echo, var_dump, exit, isset, empty, unset
 //   对应 PHP ext/standard 输出 + var 函数
 

@@ -1,3 +1,4 @@
+#pragma once
 // std/ctrl.h — 断言/随机数/ctype
 //   对应 PHP ext/standard assertions + ext/random + ext/ctype
 

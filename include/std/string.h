@@ -1,3 +1,4 @@
+#pragma once
 // std/string.h — 字符串函数
 //   对应 PHP ext/standard string functions
 

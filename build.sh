@@ -15,8 +15,8 @@ PROJECT_ROOT="$(pwd)"
 rm -rf tcc-src tcc
 # 最多重试 3 次（repo.or.cz 网络不稳定）
 for i in 1 2 3; do
-  echo "[*] 第 $i 次尝试克隆 TCC..."
-  if git clone --depth 1 --branch master https://repo.or.cz/tinycc.git tcc-src 2>/dev/null; then
+  echo "[*] 第 $i 次尝试克隆 TCC (mob 分支)..."
+  if git clone --depth 1 --branch mob https://repo.or.cz/tinycc.git tcc-src 2>/dev/null; then
     break
   fi
   [ "$i" -lt 3 ] && sleep 10
@@ -70,8 +70,6 @@ void __bound_local_new(void *p) {}
 void __bound_local_delete(void *p) {}
 void __bound_sigjb(int sig, void *jb) {}
 BCHECK_STUBS
-# TCC mob branch ELF symbol limit too low (65535) for 230+ inline funcs → double it
-sed -i 's/#define ELF_MAX_SYM_INDEX 65535/#define ELF_MAX_SYM_INDEX 131070/' tccelf.c 2>/dev/null || true
 make
 make install
 

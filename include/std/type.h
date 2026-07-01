@@ -1,3 +1,4 @@
+#pragma once
 // std/type.h — 类型检测/转换 (is_*, intval, gettype, getenv)
 //   对应 PHP ext/standard type functions
 

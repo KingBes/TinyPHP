@@ -2,5 +2,4 @@
 // (不在 core 中以避免 TCC 符号表溢出)
 #include "std/html.h"
 #include "std/array_extra.h"
-#include "std/math.h"
 #include "std/utf8.h"

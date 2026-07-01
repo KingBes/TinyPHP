@@ -1,3 +1,4 @@
+#pragma once
 // std/array_extra.h — 补充数组函数 (flip/diff/intersect/column)
 //   对应 PHP ext/standard array functions
 

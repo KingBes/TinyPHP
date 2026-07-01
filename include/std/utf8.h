@@ -1,3 +1,4 @@
+#pragma once
 // std/utf8.h — UTF-8 多字节字符串函数
 //   对应 PHP ext/mbstring (仅UTF-8)
 

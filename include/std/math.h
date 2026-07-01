@@ -1,3 +1,4 @@
+#pragma once
 // std/math.h — 数学函数 (abs, round, trig, exp, log)
 //   对应 PHP ext/standard math functions
 

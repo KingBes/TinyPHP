@@ -1,3 +1,4 @@
+#pragma once
 // std/html.h — HTML安全 + Base64 + HTTP Build Query
 //   对应 PHP ext/standard html + base64 + http functions
 

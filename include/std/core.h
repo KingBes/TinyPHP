@@ -1,3 +1,4 @@
+#pragma once
 // std/output.h — echo, var_dump, exit, isset, empty, unset
 //   对应 PHP ext/standard 输出 + var 函数
 
@@ -1076,6 +1077,7 @@ static inline t_var tphp_fn_min(t_array *a) {
     }
     return found ? result : VAR_NULL();
 }
+
 // std/ctrl.h — 断言/随机数/ctype
 //   对应 PHP ext/standard assertions + ext/random + ext/ctype
 

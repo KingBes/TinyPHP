@@ -1,3 +1,4 @@
+#pragma once
 // std/array_core.h — 核心数组函数 (原 builtin.h 181-400行, 拆分时漏掉)
 //   array_push/pop, in_array, array_key_exists, array_keys/values, array_merge,
 //   implode, explode, max, min
