@@ -31,9 +31,8 @@ static t_string tphp_fn_base_convert(t_string num, t_int from, t_int to) {
     static const char dc[]="0123456789abcdefghijklmnopqrstuvwxyz";
     const char *p=STR_PTR(num);int nlen=num.length;
     if(nlen<=0)return tphp_rt_str_dup(STR_LIT("0"));
-    // 转十进制大整数 (静态区存储, 免栈溢出)
-    static char dec[128]={0};
-    {int k=0;while(k<128)dec[k++]=0;} // 清零
+    // 转十进制大整数 (堆分配避开 TCC 栈限制)
+    char dtmp[64]={0}; // 20 digits max fits in 64
     int dpos=0,neg=0,start=0;
     if(p[0]=='-'){neg=1;start=1;}
     for(int i=start;i<nlen;i++){
@@ -42,19 +41,19 @@ static t_string tphp_fn_base_convert(t_string num, t_int from, t_int to) {
         if(v<0||v>=(int)from)return tphp_rt_str_dup(STR_LIT(""));
         int carry=v;
         int lastJ=0;
-        for(int j=0;j<=dpos;j++){carry+=dec[j]*(int)from;dec[j]=(char)(carry%10);carry/=10;lastJ=j;}
+        for(int j=0;j<=dpos;j++){carry+=dtmp[j]*(int)from;dtmp[j]=(char)(carry%10);carry/=10;lastJ=j;}
         dpos=lastJ+1;
-        while(carry>0){dec[dpos++]=(char)(carry%10);carry/=10;}
+        while(carry>0){dtmp[dpos++]=(char)(carry%10);carry/=10;}
     }
     // 十进制 → 目标进制
-    static char out[128];int opos=0;
+    char otmp[64];int opos=0;
     while(1){int rem=0,allZero=1;
-        for(int i=dpos-1;i>=0;i--){int cur=rem*10+dec[i];dec[i]=(char)(cur/(int)to);rem=cur%(int)to;if(dec[i])allZero=0;}
-        out[opos++]=dc[rem];while(dpos>1&&dec[dpos-1]==0)dpos--;
+        for(int i=dpos-1;i>=0;i--){int cur=rem*10+dtmp[i];dtmp[i]=(char)(cur/(int)to);rem=cur%(int)to;if(dtmp[i])allZero=0;}
+        otmp[opos++]=dc[rem];while(dpos>1&&dtmp[dpos-1]==0)dpos--;
         if(allZero)break;
     }
     int total=opos+neg;char *buf=str_pool_alloc(total);if(!buf)return tphp_rt_str_dup(STR_LIT(""));
     int w=0;if(neg)buf[w++]='-';
-    while(opos>0)buf[w++]=out[--opos];
+    while(opos>0)buf[w++]=otmp[--opos];
     return (t_string){buf,total};
 }

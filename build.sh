@@ -16,7 +16,7 @@ rm -rf tcc-src tcc
 # 最多重试 3 次（repo.or.cz 网络不稳定）
 for i in 1 2 3; do
   echo "[*] 第 $i 次尝试克隆 TCC..."
-  if git clone --depth 1 --branch mob https://repo.or.cz/tinycc.git tcc-src 2>/dev/null; then
+  if git clone --depth 1 --branch master https://repo.or.cz/tinycc.git tcc-src 2>/dev/null; then
     break
   fi
   [ "$i" -lt 3 ] && sleep 10

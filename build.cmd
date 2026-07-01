@@ -13,7 +13,7 @@ set TCC_CLONED=0
 for /L %%i in (1,1,3) do (
   if !TCC_CLONED!==0 (
     echo [*] 第 %%i 次尝试克隆 TCC...
-    git clone --depth 1 --branch mob https://repo.or.cz/tinycc.git tcc 2>nul && set TCC_CLONED=1
+    git clone --depth 1 --branch master https://repo.or.cz/tinycc.git tcc 2>nul && set TCC_CLONED=1
     if !TCC_CLONED!==0 timeout /t 10 /nobreak >nul
   )
 )
