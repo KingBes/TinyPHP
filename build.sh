@@ -56,6 +56,10 @@ else
 fi
 
 echo "=== 3. 编译 & 安装 ==="
+# Patch: glibc 2.34+ removed __malloc_hook, bcheck.c won't compile without this
+if [ -f lib/bcheck.c ]; then
+    sed -i 's/__malloc_hook/_tcc_disabled_malloc_hook/g' lib/bcheck.c
+fi
 make
 make install
 
