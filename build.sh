@@ -52,13 +52,14 @@ else
         --crtprefix="lib/tcc:/usr/lib/$ARCH:/usr/lib64:/usr/lib:/lib/$ARCH:/lib" \
         --libpaths="lib/tcc:/usr/lib/$ARCH:/usr/lib64:/usr/lib:/lib/$ARCH:/lib:/usr/local/lib/$ARCH:/usr/local/lib" \
         --extra-cflags=-O3 \
+        --config-bcheck=yes \
         --config-backtrace=yes
 fi
 
 echo "=== 3. 编译 & 安装 ==="
-# bcheck.c uses __malloc_hook/__free_hook — both removed in glibc 2.34+
-# glibc 不提供这些 API 了, bcheck 功能无法工作, 直接跳过
-echo '// patched: glibc 2.34+ removed __malloc_hook/__free_hook' > lib/bcheck.c
+# bcheck.c uses __malloc_hook/__free_hook — removed in glibc 2.34+
+# TCC treats undeclared functions as errors, so add missing stubs
+printf 'void *__malloc_hook(size_t s, const void *c){return malloc(s);}\nvoid __free_hook(void *p, const void *c){free(p);}\n' | cat - lib/bcheck.c > lib/bcheck_patched.c && mv lib/bcheck_patched.c lib/bcheck.c
 make
 make install
 
