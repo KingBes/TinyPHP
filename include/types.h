@@ -58,11 +58,12 @@ typedef bool    t_bool;
 
 typedef struct {
     union {
-        char *data;              // heap/pool pointer (when !is_local)
+        char *data;              // heap/pool pointer (when !is_local && !is_lit)
         char  local[STR_SSO_MAX+1]; // SSO inline buffer (when is_local)
     };
     int   length;
     bool  is_local;
+    bool  is_lit;                // true for .rodata string literals (STR_LIT) — never free()
 } t_string;
 
 // ── SSO 零开销访问器 ────────────────────────────────────

@@ -277,6 +277,8 @@ static inline t_string tphp_rt_str_concat_multi(int count, const t_string parts[
 static inline t_string tphp_rt_str_dup(t_string s) {
     const char *src = STR_PTR(s);
     if (src == NULL || s.length <= 0) return (t_string){.data = NULL, .length = 0, .is_local = false};
+    // 字面量(.rodata)直接返回，零开销 — 不可变串无需深拷贝
+    if (s.is_lit) return s;
     // SSO: 短串直接内联，零堆分配
     if (likely(s.length <= STR_SSO_MAX)) {
         t_string r = {.is_local = true, .length = s.length};
@@ -294,6 +296,7 @@ static inline t_string tphp_rt_str_dup(t_string s) {
 /** tphp_str_free — 安全释放 t_string（SSO 跳过，池/arena 跳过，否则 free） */
 static inline void tphp_rt_str_free(t_string* s) {
     if (unlikely(s == NULL || s->length <= 0)) return;
+    if (s->is_lit)   { s->data = NULL; s->length = 0; return; }   // .rodata literal — never free()
     if (s->is_local) { s->length = 0; s->is_local = false; return; }
     char *d = STR_PTR_P(s);
     if (d == NULL) { s->length = 0; return; }

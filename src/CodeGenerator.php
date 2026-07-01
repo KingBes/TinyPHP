@@ -11,17 +11,7 @@ class CodeGenerator implements ASTVisitor
 
     /** 变量类型追踪：varName → className（对象）或 C 类型（基础类型） */
     private array $varTypes = [];
-    /** 常量类型追踪：CONST_NAME → C 类型（用于 wrapVar 选择正确的 VAR_*） */
-    private array $constTypes = [];
-    /** 常量可见性：全限定 const 名 → 'public'|'private'|'protected' */
-    private array $constVis = [];
-    /** 类名映射：原始类名 → C 类名（用于 ClassName::CONST 访问） */
-    private array $classNames = ['Exception' => 'tphp_class_Exception'];
-    /** Class own properties: cn → [prop => true] */
-    private array $classOwnProps = [];
-    /** Class parent name: cn → parent CN (or '' if root) */
-    private array $classParentName = [];
-    /** Current method name (for __METHOD__) */
+    /** 当前方法名字（用于 __METHOD__） */
     private string $currentMethodName = '';
     /** 数组元素类型追踪：varName → C 类型（int key 的默认类型） */
     private array $arrElementTypes = [];
@@ -33,18 +23,27 @@ class CodeGenerator implements ASTVisitor
     private array $declaredVars = [];
     /** for 循环提升到函数作用域的变量声明：varName => cType */
     private array $funcScopeDecls = [];
-    /** 当前作用域内的对象变量名列表（用于自动析构） */
-    private array $scopeObjects = [];
-    /** 类属性类型追踪：className → [propName → C type] */
+
+    // ── 统一符号表 ──────────────────────────────────────────
+    // 替代了 13 个散落的类型追踪数组
+    private SymbolTable $symbols;
+
+    // 过渡期：旧数组仍用作 write-back，读取均走 SymbolTable
+    // 待全部 READ 迁移完成后删除
     private array $classPropTypes = [];
-    /** 类方法返回类型：className → [methodName → C type] */
-    private array $classMethodRetTypes = [
-        'tphp_class_Exception' => ['getMessage' => 't_string', '__construct' => 'void', '__destruct' => 'void'],
-    ];
-    /** 枚举 backing 类型：enumName → 'int'|'string' (FQN 和短名均可查) */
+    private array $classOwnProps = [];
+    private array $classParentName = [];
+    private array $classMethodRetTypes = [];
+    private array $classNames = [];
+    private array $constTypes = [];
+    private array $constVis = [];
     private array $enumBackingTypes = [];
-    /** 枚举 C 类型名：enumName → 'tphp_enum_X*' (FQN 和短名均可查) */
     private array $enumCTypes = [];
+    private array $methodParamTypes = [];
+    private array $funcRetTypes = [];
+    private array $funcParamTypes = [];
+    private array $closureSigs = [];
+    private array $varClosureMap = [];
 
     /** 字面量 → C 类型的映射 */
     private static array $litTypeMap = [
@@ -66,31 +65,37 @@ class CodeGenerator implements ASTVisitor
 
     /** 闭包函数计数器 */
     private int $closureCounter = 0;
-    /** 收集所有闭包函数的 C 实现，在 visitProgram 末尾统一输出 */
-    private array $closureImpls = [];
-    /** 闭包捕获变量 struct 定义，需在文件顶部输出 */
-    private array $capDefs = [];
-    /** 闭包签名：_closure_N → ['ret' => 't_int', 'params' => 't_int, t_string'] */
-    private array $closureSigs = [];
-    /** 闭包/Thunk 前置声明，在文件顶部输出 */
-    private array $fwdDecls = [];
-    /** 变量名 → 最新赋值的闭包函数名（用于 generateClosureCall 类型推导） */
-    private array $varClosureMap = [];
+    /** 捕获类型计数器（用于预扫描阶段的唯一 ID 分配） */
+    private int $capTypeCounter = 0;
 
     // ── Thunk 生成（phpc_thunk_i32 / phpc_thunk('name')）─
-    /** thunk 函数 C 实现，在 visitProgram 末尾输出 */
-    private array $thunkImpls = [];
-    /** thunk 所需的静态回调副本分配语句 */
-    private array $thunkAssigns = [];
     private int $thunkCounter = 0;
     /** #callback 声明的回调签名: name → ['ret'=>'int32_t','params_str'=>'int32_t a, double b'] */
     private array $phpcCallbackSigs = [];
 
+    // ── 多段输出 (V-style multi-section codegen) ──────────
+    // 所有代码生成写入命名段，最后由 renderSections() 按序组装
+    // 替代了原来的 $p = [] + 5 个 deferred 数组 + 字符串插入 hack
+    private const SEC_HEADER    = 'header';     // 文件注释
+    private const SEC_INCLUDES  = 'includes';   // #include 行
+    private const SEC_CAPTYPES  = 'captypes';   // 闭包捕获类型 struct 定义
+    private const SEC_FWDDECLS  = 'fwddecls';   // 函数前置声明
+    private const SEC_THUNKVARS = 'thunkvars';  // Thunk 静态回调副本
+    private const SEC_CONSTS    = 'consts';     // 全局常量
+    private const SEC_ENUMS     = 'enums';      // 枚举定义
+    private const SEC_CLSFWDS   = 'clsfwds';    // 类 struct + 方法前置声明
+    private const SEC_FUNCFWDS  = 'funcfwds';   // 独立函数前置声明
+    private const SEC_CLSIMPL   = 'clsimpl';    // 类方法实现 + allocator
+    private const SEC_FUNCIMPL  = 'funcimpl';   // 独立函数实现
+    private const SEC_CLOSURES  = 'closures';   // 闭包函数实现
+    private const SEC_THUNKS    = 'thunks';     // Thunk 函数实现
+    private const SEC_MAIN      = 'main';       // C entry main()
+
+    private array $sections = [];
+
     // ── 类型/作用域 ──────────────────────────────────────
     /** 当前方法/函数的返回类型（用于 return 语句的 t_var 包裹） */
     private string $currentRetType = '';
-    /** 方法参数类型：className → methodName → [C type per param index] */
-    private array $methodParamTypes = [];
 
     // ============================================================
     public function generate(ProgramNode $program, string $phpFile, string $outputDir): string
@@ -133,38 +138,34 @@ class CodeGenerator implements ASTVisitor
             }
         }
 
-        $p = [];
+        // ── SEC_HEADER ──
+        $this->sectionLine(self::SEC_HEADER, "/* Generated by TinyPHP — PHP → C (TCC) */");
+        $this->sectionLine(self::SEC_HEADER, '');
 
-        // Header
-        $p[] = "/* Generated by TinyPHP — PHP → C (TCC) */";
-        $p[] = '';
-        $p[] = '#include "common.h"';
+        // ── SEC_INCLUDES ──
+        $this->sectionLine(self::SEC_INCLUDES, '#include "common.h"');
         if ($needExtra) {
-            $p[] = '#include "builtin_extra.h"';
+            $this->sectionLine(self::SEC_INCLUDES, '#include "builtin_extra.h"');
         }
         foreach ($node->includes as $inc) {
             if (is_array($inc)) {
                 $delim = ($inc['quoted'] ?? true) ? '"' : '<';
                 $end   = ($inc['quoted'] ?? true) ? '"' : '>';
-                $p[] = '#include ' . $delim . $inc['file'] . $end;
+                $this->sectionLine(self::SEC_INCLUDES, '#include ' . $delim . $inc['file'] . $end);
             } else {
-                // 兼容旧格式（纯字符串）
-                $p[] = '#include "' . $inc . '"';
+                $this->sectionLine(self::SEC_INCLUDES, '#include "' . $inc . '"');
             }
         }
-        $p[] = '';
 
-        // ── 常量 ──
+        // ── SEC_CONSTS ──
         foreach ($node->constants as $c) {
-            $p[] = $c->accept($this);
+            $this->sectionLine(self::SEC_CONSTS, $c->accept($this));
         }
-        if ($node->constants) $p[] = '';
 
-        // ── 枚举 ──
+        // ── SEC_ENUMS ──
         foreach ($node->enums as $e) {
-            $p[] = $e->accept($this);
+            $this->sectionBlock(self::SEC_ENUMS, $e->accept($this));
         }
-        if ($node->enums) $p[] = '';
 
         $allClasses = array_merge(
             $node->mainClass ? [$node->mainClass] : [],
@@ -188,86 +189,42 @@ class CodeGenerator implements ASTVisitor
         $allClasses = $sorted;
         $mainClassName = $node->mainClass ? self::classCName($node->mainClass) : '';
 
-        // ── Phase 1: 所有类的 struct + 前置声明 (保证类型可见) ──
+        // ── SEC_CLSFWDS: Phase 1 — 所有类的 struct + 前置声明 ──
         foreach ($allClasses as $class) {
             $this->className = self::classCName($class);
             $isMain = (self::classCName($class) === $mainClassName);
-            $p[] = $this->emitClassForward($class, $isMain);
+            $this->sectionBlock(self::SEC_CLSFWDS, $this->emitClassForward($class, $isMain));
         }
 
-        // 独立函数前置声明 + 注册返回类型 + 参数类型（byRef 检测用）
+        // ── SEC_FUNCFWDS: 独立函数前置声明 ──
         foreach ($node->functions as $fn) {
             $ret = self::mapType($fn->returnType);
             $this->funcRetTypes[self::funcCName($fn)] = $ret;
             $this->funcParamTypes[self::funcCName($fn)] = array_map(fn($p) => self::paramCType($p), $fn->params);
             $params = array_map(fn($p) => $this->visitParam($p), $fn->params);
-            $p[] = 'static ' . $ret . ' ' . self::funcCName($fn) . '(' . implode(', ', $params) . ');';
+            $this->sectionLine(self::SEC_FUNCFWDS,
+                'static ' . $ret . ' ' . self::funcCName($fn) . '(' . implode(', ', $params) . ');');
         }
-        if ($node->functions) $p[] = '';
 
-        // ── Phase 2: 所有类的方法实现 + allocator ──
+        // ── SEC_CLSIMPL: Phase 2 — 所有类的方法实现 + allocator ──
         foreach ($allClasses as $class) {
             $this->className = self::classCName($class);
             $isMain = (self::classCName($class) === $mainClassName);
-            $p[] = $this->emitClassImpl($class, $isMain);
+            $this->sectionBlock(self::SEC_CLSIMPL, $this->emitClassImpl($class, $isMain));
         }
 
-        // 独立函数实现
+        // ── SEC_FUNCIMPL: 独立函数实现 ──
         foreach ($node->functions as $fn) {
-            $p[] = $fn->accept($this);
-            $p[] = '';
+            $this->sectionBlock(self::SEC_FUNCIMPL, $fn->accept($this));
         }
 
-        // ── 闭包函数实现（文件作用域 static 函数） ──
-        if (!empty($this->closureImpls)) {
-            $p[] = "/* ── 闭包函数实现 ──────────────────────────── */";
-            foreach ($this->closureImpls as $impl) {
-                $p[] = $impl;
-                $p[] = '';
-            }
-        }
-
-        // ── Thunk 函数实现（phpc 无 env 回调适配） ──
-        if (!empty($this->thunkImpls)) {
-            $p[] = "/* ── 闭包 Thunk（C 回调适配） ──────────────────── */";
-            foreach ($this->thunkImpls as $impl) {
-                $p[] = $impl;
-                $p[] = '';
-            }
-        }
-
-        // C 入口
+        // ── SEC_MAIN: C 入口 ──
         if ($node->mainClass !== null) {
             $this->className = self::classCName($node->mainClass);
-            $p[] = $this->generateCEntry();
+            $this->sectionBlock(self::SEC_MAIN, $this->generateCEntry());
         }
 
-        $result = implode("\n", $p) . "\n";
-
-        // 后处理：把 capDefs + thunkAssigns 插入到 #include 之后
-        $postBlock = '';
-        if (!empty($this->capDefs)) {
-            $postBlock .= "/* ── 闭包捕获类型 ──────────────────────────── */\n"
-                . implode("\n", $this->capDefs) . "\n";
-        }
-        if (!empty($this->fwdDecls)) {
-            $postBlock .= "/* ── 前置声明 ────────────────────────────────── */\n"
-                . implode("\n", $this->fwdDecls) . "\n\n";
-        }
-        if (!empty($this->thunkAssigns)) {
-            $postBlock .= "/* ── 闭包 Thunk 静态副本 ──────────────────── */\n"
-                . implode("\n", $this->thunkAssigns) . "\n\n";
-        }
-        if ($postBlock !== '') {
-            $needle = '#include "common.h"';
-            $pos = strpos($result, $needle);
-            if ($pos !== false) {
-                $insertAt = $pos + strlen($needle) + 1;
-                $result = substr($result, 0, $insertAt) . $postBlock . substr($result, $insertAt);
-            }
-        }
-
-        return $result;
+        return $this->renderSections();
     }
 
     /** 重置状态（每次 generate 调用时） */
@@ -275,15 +232,83 @@ class CodeGenerator implements ASTVisitor
     {
         $this->varTypes = [];
         $this->declaredVars = [];
-        $this->scopeObjects = [];
         $this->tmpVarCounter = 0;
         $this->closureCounter = 0;
-        $this->closureImpls = [];
-        $this->capDefs = [];
+        $this->capTypeCounter = 0;
         $this->thunkCounter = 0;
-        $this->thunkImpls = [];
-        $this->thunkAssigns = [];
-        $this->fwdDecls = [];
+        $this->sections = [];
+        $this->symbols = new SymbolTable();
+        // 内置 Exception 类
+        $this->symbols->addClass('tphp_class_Exception');
+        $this->symbols->addClassName('Exception', 'tphp_class_Exception');
+        $this->symbols->getClass('tphp_class_Exception')->methods['getMessage']    = new MethodInfo('t_string');
+        $this->symbols->getClass('tphp_class_Exception')->methods['__construct'] = new MethodInfo('void');
+        $this->symbols->getClass('tphp_class_Exception')->methods['__destruct']  = new MethodInfo('void');
+    }
+
+    // ── 多段输出方法 ─────────────────────────────────────────
+
+    /** 向指定段追加一行 */
+    private function sectionLine(string $section, string $line): void
+    {
+        $this->sections[$section][] = $line;
+    }
+
+    /** 向指定段追加多行 */
+    private function sectionLines(string $section, array $lines): void
+    {
+        if (empty($lines)) return;
+        if (!isset($this->sections[$section])) $this->sections[$section] = [];
+        array_push($this->sections[$section], ...$lines);
+    }
+
+    /** 向指定段追加字符串块（含换行） */
+    private function sectionBlock(string $section, string $block): void
+    {
+        $block = rtrim($block);
+        if ($block === '') return;
+        $this->sections[$section][] = $block;
+    }
+
+    /** 按固定顺序渲染所有段 → 最终 C 代码字符串 */
+    private function renderSections(): string
+    {
+        $order = [
+            self::SEC_HEADER,
+            self::SEC_INCLUDES,
+            self::SEC_CAPTYPES,
+            self::SEC_FWDDECLS,
+            self::SEC_THUNKVARS,
+            self::SEC_CONSTS,
+            self::SEC_ENUMS,
+            self::SEC_CLSFWDS,
+            self::SEC_FUNCFWDS,
+            self::SEC_CLSIMPL,
+            self::SEC_FUNCIMPL,
+            self::SEC_CLOSURES,
+            self::SEC_THUNKS,
+            self::SEC_MAIN,
+        ];
+        // 段注释头（仅在段有内容时输出）
+        $labels = [
+            self::SEC_CAPTYPES  => "/* ── 闭包捕获类型 ──────────────────────────── */",
+            self::SEC_FWDDECLS  => "/* ── 前置声明 ────────────────────────────────── */",
+            self::SEC_THUNKVARS => "/* ── 闭包 Thunk 静态副本 ──────────────────── */",
+            self::SEC_CLOSURES  => "/* ── 闭包函数实现 ──────────────────────────── */",
+            self::SEC_THUNKS    => "/* ── 闭包 Thunk（C 回调适配） ──────────────────── */",
+        ];
+        $lines = [];
+        foreach ($order as $sec) {
+            if (empty($this->sections[$sec])) continue;
+            // 段间空行
+            if (!empty($lines)) $lines[] = '';
+            // 段注释头
+            if (isset($labels[$sec])) {
+                $lines[] = $labels[$sec];
+            }
+            $lines[] = implode("\n", $this->sections[$sec]);
+        }
+        return implode("\n", $lines) . "\n";
     }
 
     /** Phase 1: struct + 前置声明 */
@@ -327,50 +352,55 @@ class CodeGenerator implements ASTVisitor
                 $o[] = $this->ind("t_array* {$fname};");
             }
         }
-        $this->classPropTypes[$cn] = $propTypes;
-        // Track own properties (for COS inheritance property resolution)
-        $this->classOwnProps[$cn] = array_fill_keys(array_keys($propTypes), true);
+        // ── 注册到统一符号表 ──
+        $this->symbols->addClass($cn, $parentCN, $class->isAbstract, $class->implements);
+        $this->symbols->addClassName($class->name, $cn);
+        foreach ($propTypes as $pn => $pt) {
+            $this->symbols->addClassProp($cn, $pn, $pt);
+            // 同步到旧数组（过渡期）
+            $this->classPropTypes[$cn][$pn] = $pt;
+            $this->classOwnProps[$cn][$pn] = true;
+        }
         if ($parentCN !== '') {
             $this->classParentName[$cn] = $parentCN;
         }
-        // 记录方法返回类型
-        $methodRets = ['__construct' => 'void', '__destruct' => 'void'];
+        // 方法返回类型
+        $this->symbols->getClass($cn)->methods['__construct'] = new MethodInfo('void');
+        $this->symbols->getClass($cn)->methods['__destruct']  = new MethodInfo('void');
+        $this->classMethodRetTypes[$cn] = ['__construct' => 'void', '__destruct' => 'void'];
         foreach ($methods as $m) {
-            $methodRets[$m->name] = $this->mapType($m->returnType);
+            $mr = $this->mapType($m->returnType);
+            $this->symbols->getClass($cn)->methods[$m->name] = new MethodInfo($mr);
+            $this->classMethodRetTypes[$cn][$m->name] = $mr;
         }
-        $this->classMethodRetTypes[$cn] = $methodRets;
         $o[] = "} {$cn};";
         $o[] = '';
         // 类常量 → #define（简单类型）或 static 变量（array）
-        // 记录类名映射（原始名 → C 名），用于 ClassName::CONST 访问
         $this->classNames[$class->name] = $cn;
         foreach ($class->classConsts as $cc) {
             $cname = 'TPHP_CONST_' . strtoupper($cn . '_' . $cc->name);
-            $fullName = $cn . '_' . $cc->name; // 用于 constTypes 查询
-            $this->constVis[$fullName] = $cc->visibility ?? 'public';
-            $this->constVis[$cname] = $cc->visibility ?? 'public';
+            $fullName = $cn . '_' . $cc->name;
+            $vis = $cc->visibility ?? 'public';
+            $this->constVis[$fullName] = $vis;
+            $this->constVis[$cname] = $vis;
             if ($cc->value instanceof StringLiteralExpr) {
-                $this->constTypes[$cc->name] = 't_string';
+                $this->symbols->addConst($fullName, 't_string', $vis);
                 $this->constTypes[$fullName] = 't_string';
-                $this->constTypes[$cname] = 't_string';
                 $val = str_replace('"', '\\"', $cc->value->value);
                 $o[] = "#define {$cname} STR_LIT(\"{$val}\")";
             } elseif ($cc->value instanceof IntLiteralExpr) {
-                $this->constTypes[$cc->name] = 't_int';
+                $this->symbols->addConst($fullName, 't_int', $vis);
                 $this->constTypes[$fullName] = 't_int';
-                $this->constTypes[$cname] = 't_int';
                 $o[] = "#define {$cname} {$cc->value->value}";
             } elseif ($cc->value instanceof FloatLiteralExpr) {
-                $this->constTypes[$cc->name] = 't_float';
+                $this->symbols->addConst($fullName, 't_float', $vis);
                 $this->constTypes[$fullName] = 't_float';
-                $this->constTypes[$cname] = 't_float';
                 $fv = $cc->value->value;
                 $o[] = '#define ' . $cname . ' ' .
                     (($fv == (float)(int)$fv) ? sprintf('%.1f', $fv) : rtrim(rtrim(sprintf('%.15g', $fv), '0'), '.'));
             } elseif ($cc->value instanceof BoolLiteralExpr) {
-                $this->constTypes[$cc->name] = 't_bool';
+                $this->symbols->addConst($fullName, 't_bool', $vis);
                 $this->constTypes[$fullName] = 't_bool';
-                $this->constTypes[$cname] = 't_bool';
                 $o[] = "#define {$cname} " . ($cc->value->value ? 'true' : 'false');
             } elseif ($cc->value instanceof ArrayLiteralExpr) {
                 // 数组常量：static 变量
@@ -426,6 +456,10 @@ class CodeGenerator implements ASTVisitor
             // 记录方法参数类型（用于 visitCall 中 t_var 参数包裹）
             $pts = array_map(fn($p) => $this->mapType($p->type), $m->params);
             $this->methodParamTypes[$cn][$m->name] = $pts;
+            if ($mi = $this->symbols->getClassMethod($cn, $m->name)) {
+                $mi = new MethodInfo($mi->retType, $pts);
+            }
+            $this->symbols->getClass($cn)->methods[$m->name] = $mi ?? new MethodInfo('void', $pts);
         }
 
         $o = [];
@@ -449,7 +483,7 @@ class CodeGenerator implements ASTVisitor
         // __construct — 注入参数类型到 varTypes
         $this->declaredVars = ['self' => true];
         $this->varTypes = [];
-        $this->scopeObjects = [];
+        $this->symbols->clearScopeObjects();
 
         if ($isMain) {
             $this->declaredVars['argc'] = true;
@@ -568,15 +602,12 @@ class CodeGenerator implements ASTVisitor
     public function visitClass(ClassNode $node): string { return ''; }
 
     /** 独立函数返回类型追踪：funcCName → C 类型 */
-    private array $funcRetTypes = [];
-    /** 独立函数参数类型追踪：funcCName → [C类型, ...] */
-    private array $funcParamTypes = [];
 
     public function visitFunction(FunctionNode $node): string
     {
         $this->declaredVars = [];
         $this->varTypes = [];
-        $this->scopeObjects = [];
+        $this->symbols->clearScopeObjects();
         $this->funcScopeDecls = [];
         $ret = self::mapType($node->returnType);
         $this->currentRetType = $ret;
@@ -601,7 +632,7 @@ class CodeGenerator implements ASTVisitor
         }
 
         $tail = [];
-        foreach ($this->scopeObjects as $ov) {
+        foreach ($this->symbols->scopeObjects() as $ov) {
             $tail[] = $this->ind("tp_obj_release({$ov});");
         }
         $tail[] = '}';
@@ -632,7 +663,7 @@ class CodeGenerator implements ASTVisitor
         $this->currentMethodName = $node->name;
         $this->declaredVars = ['self' => true];
         $this->varTypes = [];
-        $this->scopeObjects = [];
+        $this->symbols->clearScopeObjects();
         $this->funcScopeDecls = [];
         $this->currentRetType = $this->mapType($node->returnType);
         foreach ($node->params as $p) {
@@ -665,7 +696,7 @@ class CodeGenerator implements ASTVisitor
 
         // 自动析构本作用域内的对象变量
         $tail = [];
-        foreach ($this->scopeObjects as $ov) {
+        foreach ($this->symbols->scopeObjects() as $ov) {
             $tail[] = $this->ind("tp_obj_release({$ov});");
         }
         $tail[] = '}';
@@ -776,7 +807,7 @@ class CodeGenerator implements ASTVisitor
             $cn = self::classRefName($node->expr->className);
             $this->varTypes[$var] = $cn;
             if ($this->indent == 1) {
-                $this->scopeObjects[] = $var;  // 仅顶层作用域自动析构
+                $this->symbols->addScopeObject($var);  // 仅顶层作用域自动析构
             }
             if ($isDeclared) {
                 return "{$var} = {$expr}; tphp_rt_register((void*){$var}, 0);";
@@ -1435,8 +1466,8 @@ class CodeGenerator implements ASTVisitor
     {
         $this->varTypes['__magic_tmp__'] = 't_string';
         if ($node->name === '__LINE__') return 'tphp_rt_str_from_int(' . $node->line . ')';
-        if ($node->name === '__FILE__') return 'tphp_rt_str_dup((t_string){.data="' . str_replace('\\', '\\\\', $this->phpFile) . '", .length=' . strlen($this->phpFile) . '})';
-        if ($node->name === '__DIR__')  return 'tphp_rt_str_dup((t_string){.data="' . str_replace('\\', '\\\\', dirname($this->phpFile)) . '", .length=' . strlen(dirname($this->phpFile)) . '})';
+        if ($node->name === '__FILE__') return 'tphp_rt_str_dup((t_string){.data="' . str_replace('\\', '\\\\', $this->phpFile) . '", .length=' . strlen($this->phpFile) . ', .is_lit=true})';
+        if ($node->name === '__DIR__')  return 'tphp_rt_str_dup((t_string){.data="' . str_replace('\\', '\\\\', dirname($this->phpFile)) . '", .length=' . strlen(dirname($this->phpFile)) . ', .is_lit=true})';
         if ($node->name === 'DIRECTORY_SEPARATOR') return PHP_OS_FAMILY === 'Windows' ? 'STR_LIT("\\\\")' : 'STR_LIT("/")';
         if ($node->name === '__CLASS__')  return 'STR_LIT("' . $this->className . '")';
         if ($node->name === '__METHOD__') return 'STR_LIT("' . $this->className . '::' . ($this->currentMethodName ?? '') . '")';
@@ -1554,13 +1585,13 @@ class CodeGenerator implements ASTVisitor
 
         // 构建闭包函数 C 实现
         $savedDeclared = $this->declaredVars;
-        $savedObjs     = $this->scopeObjects;
+        $savedObjs = $this->symbols->scopeObjects();
         $savedTypes    = $this->varTypes;
         $savedIndent   = $this->indent;
         $savedRetType  = $this->currentRetType;
 
         $this->declaredVars = [];
-        $this->scopeObjects = [];
+        $this->symbols->clearScopeObjects();
         $this->varTypes     = [];
         $this->indent       = 0;
         $this->currentRetType = $ret;
@@ -1593,12 +1624,12 @@ class CodeGenerator implements ASTVisitor
                 $implLines[] = '    ' . $s->accept($this);
             }
         }
-        foreach ($this->scopeObjects as $ov) {
+        foreach ($this->symbols->scopeObjects() as $ov) {
             $implLines[] = '    ' . "tp_obj_release({$ov});";
         }
         $implLines[] = '}';
 
-        $this->closureImpls[] = implode("\n", $implLines);
+        $this->sectionBlock(self::SEC_CLOSURES, implode("\n", $implLines));
 
         // 记录闭包签名：用于 generateClosureCall 生成正确的函数指针转换
         $this->closureSigs[$name] = [
@@ -1608,7 +1639,7 @@ class CodeGenerator implements ASTVisitor
 
         // 恢复外层作用域
         $this->declaredVars = $savedDeclared;
-        $this->scopeObjects = $savedObjs;
+        $this->symbols->clearScopeObjects(); foreach($savedObjs as $so) $this->symbols->addScopeObject($so);
         $this->varTypes     = $savedTypes;
         $this->indent       = $savedIndent;
         $this->currentRetType = $savedRetType;
@@ -1616,7 +1647,7 @@ class CodeGenerator implements ASTVisitor
         // 注册捕获 struct 定义（后处理时插入文件顶部）
         if ($hasCapture) {
             $capDef = "typedef struct {\n" . implode("\n", $capFields) . "\n} {$capName};";
-            $this->capDefs[$capName] = $capDef;
+            $this->sectionBlock(self::SEC_CAPTYPES, $capDef);
         }
 
         // 生成 GNU 复合表达式
@@ -1666,7 +1697,7 @@ class CodeGenerator implements ASTVisitor
         $tid = ++$this->thunkCounter;
         $thunkName = "_phpc_thunk_{$tid}";
         $cbStatic  = "_phpc_cb_{$tid}";
-        $this->thunkAssigns[] = "static t_callback {$cbStatic};";
+        $this->sectionLine(self::SEC_THUNKVARS, "static t_callback {$cbStatic};");
 
         // 函数指针类型（用于 cast 表达式）
         $castType = ($cRet === 'void' ? 'void' : $cRet)
@@ -1693,8 +1724,8 @@ class CodeGenerator implements ASTVisitor
             $thunkImpl .= "    return {$retCast}_raw({$argStr}{$envStr});\n";
         }
         $thunkImpl .= '}';
-        $this->thunkImpls[] = $thunkImpl;
-        $this->fwdDecls[] = "static {$cRet} {$thunkName}({$sigStr});";
+        $this->sectionBlock(self::SEC_THUNKS, $thunkImpl);
+        $this->sectionLine(self::SEC_FWDDECLS, "static {$cRet} {$thunkName}({$sigStr});");
 
         $cbCode = $expr->accept($this);
         return "({$cbStatic} = {$cbCode}, {$thunkName})";
@@ -2313,7 +2344,7 @@ class CodeGenerator implements ASTVisitor
                 if (str_starts_with($type, 'tphp_class_') || str_starts_with($type, 'tphp_enum_')) {
                     $lines[count($lines)-1] = "tphp_rt_unregister((void*){$code}); tphp_fn_unset_obj((void**)&{$code});";
                     $vn = self::varName($arg->name);
-                    $this->scopeObjects = array_values(array_filter($this->scopeObjects, fn($o) => $o !== $vn));
+                    $this->symbols->removeScopeObjects([$vn]);
                 }
             }
             return implode('; ', $lines) . ';';
@@ -3998,14 +4029,15 @@ class CodeGenerator implements ASTVisitor
         elseif ($stmt instanceof EchoStmtNode && !empty($stmt->exprs)) $expr = $stmt->exprs[0];
 
         if ($expr instanceof ClosureExpr && !empty($expr->useVars)) {
-            $id = $this->closureCounter + 1 + count($this->capDefs);
+            $id = ++$this->capTypeCounter;
             $capFields = [];
             foreach ($expr->useVars as [$vn, $_]) {
                 $ct = $this->varTypes[$vn] ?? 't_int';
                 $ct = ($ct === 'null') ? 'void*' : $ct;
                 $capFields[] = "    {$ct} {$vn};";
             }
-            $this->capDefs["_cap_{$id}"] = "typedef struct {\n" . implode("\n", $capFields) . "\n} _cap_{$id};";
+            $this->sectionBlock(self::SEC_CAPTYPES,
+                "typedef struct {\n" . implode("\n", $capFields) . "\n} _cap_{$id};");
         }
     }
 

@@ -7,9 +7,9 @@
 // 便捷宏 — 快速构造 t_var
 // ============================================================
 
-// STR_LIT: C 字符串字面量 → t_string（union .data 字段，is_local=false）
+// STR_LIT: C 字符串字面量 → t_string（.rodata 段, 零堆分配, 永不 free）
 #define STR_LIT(s) \
-    ((t_string){.data = (char *)(s), .length = (int)(sizeof(s) - 1), .is_local = false})
+    ((t_string){.data = (char *)(s), .length = (int)(sizeof(s) - 1), .is_local = false, .is_lit = true})
 
 // 编译期检查：确保 STR_LIT 的参数不是指针
 //   (void)sizeof(s) 在编译时求值，如果 s 是 char* 指针则 sizeof 为 8，非预期行为
