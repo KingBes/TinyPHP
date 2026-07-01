@@ -57,9 +57,15 @@ else
 fi
 
 echo "=== 3. 编译 & 安装 ==="
-# bcheck.c uses __malloc_hook/__free_hook — removed in glibc 2.34+
-# TCC treats undeclared functions as errors, so add missing stubs
-printf 'void *__malloc_hook(size_t s, const void *c){return malloc(s);}\nvoid __free_hook(void *p, const void *c){free(p);}\n' | cat - lib/bcheck.c > lib/bcheck_patched.c && mv lib/bcheck_patched.c lib/bcheck.c
+# bcheck.c uses __malloc_hook/__free_hook — both removed in glibc 2.34+
+# add stub implementations before the real bcheck code
+cat > lib/bcheck_patched.c << 'STUB'
+#include <stdlib.h>
+void *__malloc_hook(size_t size, const void *caller) { return malloc(size); }
+void __free_hook(void *ptr, const void *caller) { free(ptr); }
+STUB
+cat lib/bcheck.c >> lib/bcheck_patched.c
+mv lib/bcheck_patched.c lib/bcheck.c
 make
 make install
 
