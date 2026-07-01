@@ -13,7 +13,7 @@
 //   二进制安全，不依赖 \0，不解析格式化占位符
 //   PHP: echo "hello";
 // ============================================================
-static inline void tphp_fn_echo(t_string s) {
+inline void tphp_fn_echo(t_string s) {
     if (STR_PTR(s) != NULL && s.length > 0) {
         fwrite(STR_PTR(s), 1, (size_t)s.length, stdout);
     }
@@ -117,7 +117,7 @@ static void tphp_fn_var_dump_rec(t_var v, int depth) {
 // tphp_fn_exit — 终止程序
 //   PHP: exit($code);  exit();
 // ============================================================
-static inline void tphp_fn_exit(t_int code) {
+inline void tphp_fn_exit(t_int code) {
     exit((int)code);
 }
 
@@ -126,7 +126,7 @@ static inline void tphp_fn_exit(t_int code) {
 //   PHP: isset($x);
 //   非指针类型（int/float/bool/string 栈值）始终为 true
 // ============================================================
-static inline bool tphp_fn_isset(void* p) {
+inline bool tphp_fn_isset(void* p) {
     return p != NULL;
 }
 
@@ -138,11 +138,11 @@ static inline bool tphp_fn_isset(void* p) {
 //   string:  tphp_rt_str_is_falsy(s)   (空串或 "0")
 //   null:    始终 true
 // ============================================================
-static inline bool tphp_fn_empty_int(t_int v)       { return v == 0; }
-static inline bool tphp_fn_empty_float(t_float v)   { return v == 0.0; }
-static inline bool tphp_fn_empty_bool(t_bool v)     { return !v; }
-static inline bool tphp_fn_empty_str(t_string s)    { return tphp_rt_str_is_falsy(s); }
-static inline bool tphp_fn_empty_null(void* p)      { (void)p; return true; }
+inline bool tphp_fn_empty_int(t_int v)       { return v == 0; }
+inline bool tphp_fn_empty_float(t_float v)   { return v == 0.0; }
+inline bool tphp_fn_empty_bool(t_bool v)     { return !v; }
+inline bool tphp_fn_empty_str(t_string s)    { return tphp_rt_str_is_falsy(s); }
+inline bool tphp_fn_empty_null(void* p)      { (void)p; return true; }
 
 // ============================================================
 // tphp_fn_unset — PHP unset() 按类型释放
@@ -152,9 +152,9 @@ static inline bool tphp_fn_empty_null(void* p)      { (void)p; return true; }
 //   object:         引用计数析构
 //   null:           无操作
 // ============================================================
-static inline void tphp_fn_unset_str(t_string* s)    { tphp_rt_str_free(s); }
-static inline void tphp_fn_unset_arr(t_array** a)    { if (*a) { tphp_fn_arr_free(*a); *a = NULL; } }
-static inline void tphp_fn_unset_obj(void** o)       { tp_obj_release(*o); *o = NULL; }
+inline void tphp_fn_unset_str(t_string* s)    { tphp_rt_str_free(s); }
+inline void tphp_fn_unset_arr(t_array** a)    { if (*a) { tphp_fn_arr_free(*a); *a = NULL; } }
+inline void tphp_fn_unset_obj(void** o)       { tp_obj_release(*o); *o = NULL; }
 
 
 // std/type.h — 类型检测/转换 (is_*, intval, gettype, getenv)
@@ -163,21 +163,21 @@ static inline void tphp_fn_unset_obj(void** o)       { tp_obj_release(*o); *o = 
 // tphp_fn_is_* — t_var 类型检测（mixed/union 变量用）
 //   静态类型变量在编译期直接生成 true/false，不调用这些函数
 // ============================================================
-static inline bool tphp_fn_is_int(t_var v)    { return v.type == TYPE_INT; }
-static inline bool tphp_fn_is_float(t_var v)  { return v.type == TYPE_FLOAT; }
-static inline bool tphp_fn_is_string(t_var v) { return v.type == TYPE_STRING; }
-static inline bool tphp_fn_is_bool(t_var v)   { return v.type == TYPE_BOOL; }
-static inline bool tphp_fn_is_array(t_var v)  { return v.type == TYPE_ARRAY; }
-static inline bool tphp_fn_is_null(t_var v)   { return v.type == TYPE_NULL; }
-static inline bool tphp_fn_is_object(t_var v) { return v.type == TYPE_OBJECT; }
-static inline bool tphp_fn_is_callable(t_var v) { return v.type == TYPE_CALLBACK; }
+inline bool tphp_fn_is_int(t_var v)    { return v.type == TYPE_INT; }
+inline bool tphp_fn_is_float(t_var v)  { return v.type == TYPE_FLOAT; }
+inline bool tphp_fn_is_string(t_var v) { return v.type == TYPE_STRING; }
+inline bool tphp_fn_is_bool(t_var v)   { return v.type == TYPE_BOOL; }
+inline bool tphp_fn_is_array(t_var v)  { return v.type == TYPE_ARRAY; }
+inline bool tphp_fn_is_null(t_var v)   { return v.type == TYPE_NULL; }
+inline bool tphp_fn_is_object(t_var v) { return v.type == TYPE_OBJECT; }
+inline bool tphp_fn_is_callable(t_var v) { return v.type == TYPE_CALLBACK; }
 
 /* ============================================================
  * Type conversion functions
 /* ============================================================
  * ============================================================ */
 
-static inline t_int tphp_fn_intval(t_var v) {
+inline t_int tphp_fn_intval(t_var v) {
     if (v.type == TYPE_INT)   return v.value._int;
     if (v.type == TYPE_FLOAT) return (t_int)v.value._float;
     if (v.type == TYPE_BOOL)  return v.value._bool ? 1 : 0;
@@ -185,7 +185,7 @@ static inline t_int tphp_fn_intval(t_var v) {
     return 0;
 }
 
-static inline t_float tphp_fn_floatval(t_var v) {
+inline t_float tphp_fn_floatval(t_var v) {
     if (v.type == TYPE_INT)   return (t_float)v.value._int;
     if (v.type == TYPE_FLOAT) return v.value._float;
     if (v.type == TYPE_BOOL)  return v.value._bool ? 1.0 : 0.0;
@@ -193,7 +193,7 @@ static inline t_float tphp_fn_floatval(t_var v) {
     return 0.0;
 }
 
-static inline t_string tphp_fn_strval(t_var v) {
+inline t_string tphp_fn_strval(t_var v) {
     if (v.type == TYPE_INT)   return tphp_rt_str_from_int(v.value._int);
     if (v.type == TYPE_FLOAT) return tphp_rt_str_from_float(v.value._float);
     if (v.type == TYPE_BOOL)  return v.value._bool ? STR_LIT("1") : STR_LIT("");
@@ -202,14 +202,14 @@ static inline t_string tphp_fn_strval(t_var v) {
     return STR_LIT("");
 }
 
-static inline t_bool tphp_fn_boolval(t_var v) {
+inline t_bool tphp_fn_boolval(t_var v) {
     if (v.type == TYPE_INT)   return v.value._int != 0;
     if (v.type == TYPE_FLOAT) return v.value._float != 0.0;
     if (v.type == TYPE_BOOL)  return v.value._bool;
     if (v.type == TYPE_STRING) return !tphp_rt_str_is_falsy(v.value._string);
     return false;
 }
-static inline t_string tphp_fn_gettype(t_var v) {
+inline t_string tphp_fn_gettype(t_var v) {
     static const char *names[] = {
         [TYPE_NULL]     = "NULL",
         [TYPE_INT]      = "int",
@@ -225,7 +225,7 @@ static inline t_string tphp_fn_gettype(t_var v) {
 }
 
 // ── getenv / putenv — 环境变量 ───────────────────────────────
-static inline t_string tphp_fn_getenv(t_string key) {
+inline t_string tphp_fn_getenv(t_string key) {
     if (key.data == NULL) return (t_string){.data = NULL, .length = 0, .is_local = false};
     static char _env[4096];
     // 临时复制到可写缓冲区（getenv 返回的指针可能不安全）
@@ -242,7 +242,7 @@ static inline t_string tphp_fn_getenv(t_string key) {
     return (t_string){_env, vlen};
 }
 
-static inline void tphp_fn_putenv(t_string key) {
+inline void tphp_fn_putenv(t_string key) {
     if (key.data == NULL) return;
     static char _buf[1024];
     int len = key.length < 1023 ? key.length : 1023;
@@ -262,11 +262,11 @@ static inline void tphp_fn_putenv(t_string key) {
 /* ============================================================
  * ============================================================ */
 
-static inline t_int tphp_fn_strlen(t_string s) {
+inline t_int tphp_fn_strlen(t_string s) {
     return (STR_PTR(s) != NULL && s.length > 0) ? (t_int)s.length : 0;
 }
 
-static inline t_string tphp_fn_trim(t_string s) {
+inline t_string tphp_fn_trim(t_string s) {
     if (STR_PTR(s) == NULL || s.length <= 0) return (t_string){.data = NULL, .length = 0, .is_local = false};
     int start = 0, end = s.length - 1;
     while (start <= end && (unsigned char)STR_PTR(s)[start] <= ' ') start++;
@@ -281,7 +281,7 @@ static inline t_string tphp_fn_trim(t_string s) {
     return (t_string){buf, len};
 }
 
-static inline t_string tphp_fn_ltrim(t_string s) {
+inline t_string tphp_fn_ltrim(t_string s) {
     if (STR_PTR(s) == NULL || s.length <= 0) return (t_string){.data = NULL, .length = 0, .is_local = false};
     int start = 0;
     while (start < s.length && (unsigned char)STR_PTR(s)[start] <= ' ') start++;
@@ -295,7 +295,7 @@ static inline t_string tphp_fn_ltrim(t_string s) {
     return (t_string){buf, len};
 }
 
-static inline t_string tphp_fn_rtrim(t_string s) {
+inline t_string tphp_fn_rtrim(t_string s) {
     if (STR_PTR(s) == NULL || s.length <= 0) return (t_string){.data = NULL, .length = 0, .is_local = false};
     int end = s.length - 1;
     while (end >= 0 && (unsigned char)STR_PTR(s)[end] <= ' ') end--;
@@ -309,7 +309,7 @@ static inline t_string tphp_fn_rtrim(t_string s) {
     return (t_string){buf, len};
 }
 
-static inline t_string tphp_fn_substr(t_string s, t_int offset, t_int length) {
+inline t_string tphp_fn_substr(t_string s, t_int offset, t_int length) {
     if (STR_PTR(s) == NULL || s.length <= 0) return (t_string){.data = NULL, .length = 0, .is_local = false};
     int slen = s.length;
     int start = (int)offset;
@@ -335,7 +335,7 @@ static inline t_string tphp_fn_substr(t_string s, t_int offset, t_int length) {
     return (t_string){buf, len};
 }
 
-static inline t_int tphp_fn_strpos(t_string haystack, t_string needle) {
+inline t_int tphp_fn_strpos(t_string haystack, t_string needle) {
     if (STR_PTR(haystack) == NULL || STR_PTR(needle) == NULL) return -1;
     if (needle.length <= 0) return 0;
     if (needle.length > haystack.length) return -1;
@@ -346,16 +346,16 @@ static inline t_int tphp_fn_strpos(t_string haystack, t_string needle) {
     return -1;
 }
 
-static inline t_bool tphp_fn_str_contains(t_string haystack, t_string needle) {
+inline t_bool tphp_fn_str_contains(t_string haystack, t_string needle) {
     return tphp_fn_strpos(haystack, needle) >= 0;
 }
 
-static inline t_string tphp_fn_sprintf(t_string fmt) {
+inline t_string tphp_fn_sprintf(t_string fmt) {
     // No args — just copy format string
     return tphp_rt_str_dup(fmt);
 }
 
-static inline t_string tphp_fn_str_replace(t_string search, t_string replace, t_string subject) {
+inline t_string tphp_fn_str_replace(t_string search, t_string replace, t_string subject) {
     if (STR_PTR(subject) == NULL || subject.length <= 0) return (t_string){.data = NULL, .length = 0, .is_local = false};
     if (STR_PTR(search) == NULL || search.length <= 0 || search.length > subject.length)
         return tphp_rt_str_dup(subject);
@@ -392,7 +392,7 @@ static inline t_string tphp_fn_str_replace(t_string search, t_string replace, t_
 /* ============================================================
  * ============================================================ */
 
-static inline t_string tphp_fn_strtolower(t_string s) {
+inline t_string tphp_fn_strtolower(t_string s) {
     if (STR_PTR(s) == NULL || s.length <= 0) return (t_string){.data = NULL, .length = 0, .is_local = false};
     int changed = 0;
     for (int i = 0; i < s.length; i++) {
@@ -410,7 +410,7 @@ static inline t_string tphp_fn_strtolower(t_string s) {
     return (t_string){buf, s.length};
 }
 
-static inline t_string tphp_fn_strtoupper(t_string s) {
+inline t_string tphp_fn_strtoupper(t_string s) {
     if (STR_PTR(s) == NULL || s.length <= 0) return (t_string){.data = NULL, .length = 0, .is_local = false};
     int changed = 0;
     for (int i = 0; i < s.length; i++) {
@@ -428,12 +428,12 @@ static inline t_string tphp_fn_strtoupper(t_string s) {
     return (t_string){buf, s.length};
 }
 
-static inline t_int tphp_fn_ord(t_string s) {
+inline t_int tphp_fn_ord(t_string s) {
     if (STR_PTR(s) == NULL || s.length < 1) return 0;
     return (t_int)(unsigned char)STR_PTR(s)[0];
 }
 
-static inline t_string tphp_fn_chr(t_int n) {
+inline t_string tphp_fn_chr(t_int n) {
     static char _chr[2];
     _chr[0] = (char)(n & 0xFF);
     _chr[1] = '\0';
@@ -441,14 +441,14 @@ static inline t_string tphp_fn_chr(t_int n) {
 }
 
 // ── str_starts_with / str_ends_with — PHP 8.0+ ──────────────
-static inline t_bool tphp_fn_str_starts_with(t_string haystack, t_string needle) {
+inline t_bool tphp_fn_str_starts_with(t_string haystack, t_string needle) {
     if (STR_PTR(haystack) == NULL || STR_PTR(needle) == NULL) return false;
     if (needle.length == 0) return true;
     if (needle.length > haystack.length) return false;
     return memcmp(STR_PTR(haystack), STR_PTR(needle), (size_t)needle.length) == 0;
 }
 
-static inline t_bool tphp_fn_str_ends_with(t_string haystack, t_string needle) {
+inline t_bool tphp_fn_str_ends_with(t_string haystack, t_string needle) {
     if (STR_PTR(haystack) == NULL || STR_PTR(needle) == NULL) return false;
     if (needle.length == 0) return true;
     if (needle.length > haystack.length) return false;
@@ -457,7 +457,7 @@ static inline t_bool tphp_fn_str_ends_with(t_string haystack, t_string needle) {
 }
 
 // ── is_numeric($str) — 检查是否为数值字符串 ──────────────────
-static inline t_bool tphp_fn_is_numeric_str(t_string s) {
+inline t_bool tphp_fn_is_numeric_str(t_string s) {
     if (STR_PTR(s) == NULL || s.length == 0) return false;
     // 需要 null-terminated 副本给 strto*
     char buf[256];
@@ -474,7 +474,7 @@ static inline t_bool tphp_fn_is_numeric_str(t_string s) {
 
 
 // ucfirst($s) — 首字符大写，其余不变
-static inline t_string tphp_fn_ucfirst(t_string s) {
+inline t_string tphp_fn_ucfirst(t_string s) {
     if (STR_PTR(s) == NULL || s.length == 0) return s;
     if (STR_PTR(s)[0] < 'a' || STR_PTR(s)[0] > 'z') return s; // 已是零分配
     char *d = str_pool_alloc(s.length);
@@ -486,7 +486,7 @@ static inline t_string tphp_fn_ucfirst(t_string s) {
 }
 
 // lcfirst($s) — 首字符小写，其余不变
-static inline t_string tphp_fn_lcfirst(t_string s) {
+inline t_string tphp_fn_lcfirst(t_string s) {
     if (STR_PTR(s) == NULL || s.length == 0) return s;
     if (STR_PTR(s)[0] < 'A' || STR_PTR(s)[0] > 'Z') return s;
     char *d = str_pool_alloc(s.length);
@@ -498,7 +498,7 @@ static inline t_string tphp_fn_lcfirst(t_string s) {
 }
 
 // strrev($s) — 反转字符串
-static inline t_string tphp_fn_strrev(t_string s) {
+inline t_string tphp_fn_strrev(t_string s) {
     if (STR_PTR(s) == NULL || s.length <= 0) return s;
     char *d = str_pool_alloc(s.length);
     if (d == NULL) return s;
@@ -508,7 +508,7 @@ static inline t_string tphp_fn_strrev(t_string s) {
 }
 
 // str_repeat($s, $n) — 重复字符串
-static inline t_string tphp_fn_str_repeat(t_string s, t_int n) {
+inline t_string tphp_fn_str_repeat(t_string s, t_int n) {
     if (STR_PTR(s) == NULL || s.length <= 0) return (t_string){.data = NULL, .length = 0, .is_local = false};
     if (n < 0) {
         tphp_fn_error((t_string){"str_repeat(): Argument #2 ($times) must be greater than or equal to 0", 71}, "<php>", 0);
@@ -526,7 +526,7 @@ static inline t_string tphp_fn_str_repeat(t_string s, t_int n) {
 }
 
 // str_split($s, $chunk?) — 分割字符串为数组，默认 chunk=1
-static inline t_array* tphp_fn_str_split(t_string s, t_int chunk) {
+inline t_array* tphp_fn_str_split(t_string s, t_int chunk) {
     if (chunk < 1) {
         tphp_fn_error((t_string){"str_split(): Argument #2 ($length) must be greater than 0", 56}, "<php>", 0);
         return NULL;
@@ -551,7 +551,7 @@ static inline t_array* tphp_fn_str_split(t_string s, t_int chunk) {
 
 // str_pad($s, $len, $pad?, $type?) — 填充字符串
 // type: 0=RIGHT(默认) / 1=LEFT / 2=BOTH
-static inline t_string tphp_fn_str_pad(t_string s, t_int len, t_string pad, t_int type) {
+inline t_string tphp_fn_str_pad(t_string s, t_int len, t_string pad, t_int type) {
     if (STR_PTR(s) == NULL && pad.data == NULL) return (t_string){.data = NULL, .length = 0, .is_local = false};
     int slen = (STR_PTR(s) != NULL) ? s.length : 0;
     int plen = (STR_PTR(pad) != NULL && pad.length > 0) ? pad.length : 1;
@@ -577,7 +577,7 @@ static inline t_string tphp_fn_str_pad(t_string s, t_int len, t_string pad, t_in
 }
 
 // substr_count($h, $n) — 统计子串出现次数
-static inline t_int tphp_fn_substr_count(t_string haystack, t_string needle) {
+inline t_int tphp_fn_substr_count(t_string haystack, t_string needle) {
     if (STR_PTR(haystack) == NULL || STR_PTR(needle) == NULL) return 0;
     if (needle.length == 0 || needle.length > haystack.length) return 0;
     t_int count = 0;
@@ -591,9 +591,9 @@ static inline t_int tphp_fn_substr_count(t_string haystack, t_string needle) {
 }
 
 // str_shuffle($s) — 随机打乱字符串
-static inline t_int tphp_fn_rand_int(t_int min, t_int max);
+inline t_int tphp_fn_rand_int(t_int min, t_int max);
 
-static inline t_string tphp_fn_str_shuffle(t_string s) {
+inline t_string tphp_fn_str_shuffle(t_string s) {
     if (STR_PTR(s) == NULL || s.length <= 0) return s;
     char *d = str_pool_alloc(s.length);
     if (d == NULL) return s;
@@ -608,7 +608,7 @@ static inline t_string tphp_fn_str_shuffle(t_string s) {
 }
 
 // addslashes($s) — 转义 ' " \ \0
-static inline t_string tphp_fn_addslashes(t_string s) {
+inline t_string tphp_fn_addslashes(t_string s) {
     if (STR_PTR(s) == NULL || s.length == 0) return s;
     // Pass 1: 数需要转义的字符
     int extra = 0;
@@ -631,7 +631,7 @@ static inline t_string tphp_fn_addslashes(t_string s) {
 }
 
 // stripslashes($s) — 反转义
-static inline t_string tphp_fn_stripslashes(t_string s) {
+inline t_string tphp_fn_stripslashes(t_string s) {
     if (STR_PTR(s) == NULL || s.length == 0) return s;
     // Pass 1: 数实际上需要的字符数
     int newlen = 0;
@@ -652,7 +652,7 @@ static inline t_string tphp_fn_stripslashes(t_string s) {
 }
 
 // bin2hex($s) / hex2bin($s) — 二进制 ↔ 十六进制
-static inline t_string tphp_fn_bin2hex(t_string s) {
+inline t_string tphp_fn_bin2hex(t_string s) {
     if (STR_PTR(s) == NULL || s.length == 0) return (t_string){.data = NULL, .length = 0, .is_local = false};
     static const char hexc[] = "0123456789abcdef";
     char *d = str_pool_alloc(s.length * 2);
@@ -665,12 +665,12 @@ static inline t_string tphp_fn_bin2hex(t_string s) {
     return (t_string){d, s.length * 2};
 }
 
-static inline int _is_hex(char c) {
+inline int _is_hex(char c) {
     return (c >= '0' && c <= '9') || (c >= 'a' && c <= 'f') || (c >= 'A' && c <= 'F');
 }
 static int _hexval(char x); // 前置声明
 
-static inline t_string tphp_fn_hex2bin(t_string s) {
+inline t_string tphp_fn_hex2bin(t_string s) {
     if (STR_PTR(s) == NULL || s.length == 0) return (t_string){.data = NULL, .length = 0, .is_local = false};
     if (s.length % 2 != 0) {
         tphp_fn_error((t_string){"hex2bin(): Hexadecimal input string must have an even length", 58}, "<php>", 0);
@@ -695,12 +695,12 @@ static inline t_string tphp_fn_hex2bin(t_string s) {
 }
 
 // urlencode($s) / urldecode($s)
-static inline int _is_url_safe(char c) {
+inline int _is_url_safe(char c) {
     return (c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') ||
            (c >= '0' && c <= '9') || c == '-' || c == '_' || c == '.' || c == '~';
 }
 
-static inline t_string tphp_fn_urlencode(t_string s) {
+inline t_string tphp_fn_urlencode(t_string s) {
     if (STR_PTR(s) == NULL || s.length == 0) return s;
     // Pass 1: 计算需要%编码的字符
     int extra = 0;
@@ -721,14 +721,14 @@ static inline t_string tphp_fn_urlencode(t_string s) {
     return (t_string){d, pos};
 }
 
-static inline int _hexval(char x) {
+inline int _hexval(char x) {
     if (x >= '0' && x <= '9') return x - '0';
     if (x >= 'A' && x <= 'F') return x - 'A' + 10;
     if (x >= 'a' && x <= 'f') return x - 'a' + 10;
     return 0;
 }
 
-static inline t_string tphp_fn_urldecode(t_string s) {
+inline t_string tphp_fn_urldecode(t_string s) {
     if (STR_PTR(s) == NULL || s.length == 0) return s;
     // count transformations
     int extra = 0;
@@ -759,7 +759,7 @@ static inline t_string tphp_fn_urldecode(t_string s) {
 
 // parse_str($s) — 解析 query string → 数组 (写入全局作用域风格的简单版)
 // 仅返回 key=val 对构成的数组。不支持嵌套键 (a[b]=c)。
-static inline t_array* tphp_fn_parse_str(t_string s) {
+inline t_array* tphp_fn_parse_str(t_string s) {
     t_array *out = tphp_fn_arr_create(8);
     if (out == NULL) return NULL;
     tphp_rt_register((void*)out, 1);
@@ -792,7 +792,7 @@ static inline t_array* tphp_fn_parse_str(t_string s) {
 }
 
 // parse_url($u) — 解析 URL → 关联数组 (scheme,host,port,path,query)
-static inline t_array* tphp_fn_parse_url(t_string u) {
+inline t_array* tphp_fn_parse_url(t_string u) {
     t_array *out = tphp_fn_arr_create(8);
     if (out == NULL) return NULL;
     tphp_rt_register((void*)out, 1);
@@ -848,7 +848,7 @@ static inline t_array* tphp_fn_parse_url(t_string u) {
 }
 
 // strtr($s, $from, $to?) — 字符/字符串翻译
-static inline t_string tphp_fn_strtr2(t_string s, t_string from, t_string to) {
+inline t_string tphp_fn_strtr2(t_string s, t_string from, t_string to) {
     if (STR_PTR(s) == NULL || from.data == NULL) return s;
     // 预建翻译表 (仅 ASCII 0-127)
     char map[128]; for (int i = 0; i < 128; i++) map[i] = (char)i;
@@ -1018,21 +1018,21 @@ static t_string tphp_fn_http_build_query(t_array *arr) {
 //   implode, explode, max, min
 
 // ── array_push($arr, $val) → 尾部追加, 返回新长度 ────────────
-static inline t_int tphp_fn_array_push(t_array** a, t_var val) {
+inline t_int tphp_fn_array_push(t_array** a, t_var val) {
     if (a == NULL || *a == NULL) return 0;
     *a = tphp_fn_arr_push(*a, val);
     return (*a)->length;
 }
 
 // ── array_pop($arr) → 弹出尾部元素, 返回 t_var ────────────────
-static inline t_var tphp_fn_array_pop(t_array** a) {
+inline t_var tphp_fn_array_pop(t_array** a) {
     t_var out = VAR_NULL();
     if (a != NULL && *a != NULL) tphp_fn_arr_pop(*a, &out);
     return out;
 }
 
 // ── in_array($needle, $haystack) → 值是否存在 ────────────────
-static inline bool tphp_fn_in_array(t_var needle, t_array* a) {
+inline bool tphp_fn_in_array(t_var needle, t_array* a) {
     if (a == NULL) return false;
     for (int i = 0; i < a->length; i++) {
         t_var *v = &a->entries[i].val;
@@ -1050,15 +1050,15 @@ static inline bool tphp_fn_in_array(t_var needle, t_array* a) {
 }
 
 // ── array_key_exists($key, $arr) → 键是否存在 ───────────────
-static inline bool tphp_fn_array_key_exists_int(t_int key, t_array* a) {
+inline bool tphp_fn_array_key_exists_int(t_int key, t_array* a) {
     return tphp_fn_arr_get_int(a, key) != NULL;
 }
-static inline bool tphp_fn_array_key_exists_str(t_string key, t_array* a) {
+inline bool tphp_fn_array_key_exists_str(t_string key, t_array* a) {
     return tphp_fn_arr_get_str(a, key) != NULL;
 }
 
 // ── array_keys($arr) → 所有 key 组成新数组 ──────────────────
-static inline t_array* tphp_fn_array_keys(t_array* a) {
+inline t_array* tphp_fn_array_keys(t_array* a) {
     t_array* out = tphp_fn_arr_create(a ? a->length : 0);
     if (a == NULL || out == NULL) return out;
     tphp_rt_register((void*)out, 1);
@@ -1074,7 +1074,7 @@ static inline t_array* tphp_fn_array_keys(t_array* a) {
 }
 
 // ── array_values($arr) → 所有 value 组成新数组 ────────────────
-static inline t_array* tphp_fn_array_values(t_array* a) {
+inline t_array* tphp_fn_array_values(t_array* a) {
     t_array* out = tphp_fn_arr_create(a ? a->length : 0);
     if (a == NULL || out == NULL) return out;
     tphp_rt_register((void*)out, 1);
@@ -1085,7 +1085,7 @@ static inline t_array* tphp_fn_array_values(t_array* a) {
 }
 
 // ── array_merge($a, $b) → 合并, int key 重新索引 ──────────────
-static inline t_array* tphp_fn_array_merge(t_array* a, t_array* b) {
+inline t_array* tphp_fn_array_merge(t_array* a, t_array* b) {
     int total = (a ? a->length : 0) + (b ? b->length : 0);
     t_array* out = tphp_fn_arr_create(total);
     if (out == NULL) return NULL;
@@ -1103,7 +1103,7 @@ static inline t_array* tphp_fn_array_merge(t_array* a, t_array* b) {
 }
 
 // ── implode($glue, $arr) → 两遍扫描, O(N) memcpy ──────────────
-static inline t_string tphp_fn_implode(t_string glue, t_array* a) {
+inline t_string tphp_fn_implode(t_string glue, t_array* a) {
     if (a == NULL || a->length == 0) return (t_string){.data = NULL, .length = 0, .is_local = false};
     int glueLen = (STR_PTR(glue) != NULL && glue.length > 0) ? glue.length : 0;
     int totalLen = 0;
@@ -1146,7 +1146,7 @@ static inline t_string tphp_fn_implode(t_string glue, t_array* a) {
 }
 
 // ── explode($delim, $str) → 精确容量, 零 realloc ─────────────
-static inline t_array* tphp_fn_explode(t_string delim, t_string s) {
+inline t_array* tphp_fn_explode(t_string delim, t_string s) {
     if (STR_PTR(s) == NULL || s.length == 0) {
         t_array* out = tphp_fn_arr_create(0);
         if (out) tphp_rt_register((void*)out, 1);
@@ -1190,7 +1190,7 @@ static inline t_array* tphp_fn_explode(t_string delim, t_string s) {
 }
 
 // ── max/min ──────────────────────────────────────────────────
-static inline t_var tphp_fn_max(t_array *a) {
+inline t_var tphp_fn_max(t_array *a) {
     if (unlikely(a == NULL || a->length == 0)) {
         tphp_rt_free_all();
         fputs("\nFatal error: max(): Array must contain at least one element\n\n", stderr);
@@ -1214,7 +1214,7 @@ static inline t_var tphp_fn_max(t_array *a) {
     return found ? result : VAR_NULL();
 }
 
-static inline t_var tphp_fn_min(t_array *a) {
+inline t_var tphp_fn_min(t_array *a) {
     if (unlikely(a == NULL || a->length == 0)) {
         tphp_rt_free_all();
         fputs("\nFatal error: min(): Array must contain at least one element\n\n", stderr);
@@ -1343,29 +1343,29 @@ static t_array* tphp_fn_arr_count_values(t_array *a) {
 // std/math.h — 数学函数 (abs, round, trig, exp, log)
 //   对应 PHP ext/standard math functions
 
-static inline t_int   tphp_fn_abs(t_int v)   { return llabs(v); }
-static inline t_float tphp_fn_round(t_float v) { return round(v); }
-static inline t_float tphp_fn_ceil(t_float v)  { return ceil(v); }
-static inline t_float tphp_fn_floor(t_float v) { return floor(v); }
-static inline t_float tphp_fn_sqrt(t_float v)  { return v >= 0.0 ? sqrt(v) : 0.0; }
+inline t_int   tphp_fn_abs(t_int v)   { return llabs(v); }
+inline t_float tphp_fn_round(t_float v) { return round(v); }
+inline t_float tphp_fn_ceil(t_float v)  { return ceil(v); }
+inline t_float tphp_fn_floor(t_float v) { return floor(v); }
+inline t_float tphp_fn_sqrt(t_float v)  { return v >= 0.0 ? sqrt(v) : 0.0; }
 
 // ── C99 <math.h> 1:1 映射 ────────────────────────────────────
-static inline t_float tphp_fn_sin(t_float x){return sin(x);}
-static inline t_float tphp_fn_cos(t_float x){return cos(x);}
-static inline t_float tphp_fn_tan(t_float x){return tan(x);}
-static inline t_float tphp_fn_asin(t_float x){return asin(x);}
-static inline t_float tphp_fn_acos(t_float x){return acos(x);}
-static inline t_float tphp_fn_atan(t_float x){return atan(x);}
-static inline t_float tphp_fn_sinh(t_float x){return sinh(x);}
-static inline t_float tphp_fn_cosh(t_float x){return cosh(x);}
-static inline t_float tphp_fn_tanh(t_float x){return tanh(x);}
-static inline t_float tphp_fn_exp(t_float x){return exp(x);}
-static inline t_float tphp_fn_log(t_float x){return log(x);}
-static inline t_float tphp_fn_log10(t_float x){return log10(x);}
-static inline t_float tphp_fn_fmod(t_float x,t_float y){return fmod(x,y);}
-static inline t_bool tphp_fn_is_finite(t_float x){return isfinite(x);}
-static inline t_bool tphp_fn_is_infinite(t_float x){return isinf(x);}
-static inline t_bool tphp_fn_is_nan(t_float x){return isnan(x);}
+inline t_float tphp_fn_sin(t_float x){return sin(x);}
+inline t_float tphp_fn_cos(t_float x){return cos(x);}
+inline t_float tphp_fn_tan(t_float x){return tan(x);}
+inline t_float tphp_fn_asin(t_float x){return asin(x);}
+inline t_float tphp_fn_acos(t_float x){return acos(x);}
+inline t_float tphp_fn_atan(t_float x){return atan(x);}
+inline t_float tphp_fn_sinh(t_float x){return sinh(x);}
+inline t_float tphp_fn_cosh(t_float x){return cosh(x);}
+inline t_float tphp_fn_tanh(t_float x){return tanh(x);}
+inline t_float tphp_fn_exp(t_float x){return exp(x);}
+inline t_float tphp_fn_log(t_float x){return log(x);}
+inline t_float tphp_fn_log10(t_float x){return log10(x);}
+inline t_float tphp_fn_fmod(t_float x,t_float y){return fmod(x,y);}
+inline t_bool tphp_fn_is_finite(t_float x){return isfinite(x);}
+inline t_bool tphp_fn_is_infinite(t_float x){return isinf(x);}
+inline t_bool tphp_fn_is_nan(t_float x){return isnan(x);}
 
 // ── base_convert: 任意进制转换 (2-36进制) ──────────────────
 static t_string tphp_fn_base_convert(t_string num, t_int from, t_int to) {
@@ -1404,10 +1404,10 @@ static t_string tphp_fn_base_convert(t_string num, t_int from, t_int to) {
 //   对应 PHP ext/mbstring (仅UTF-8)
 
 // ── 判断是否为 UTF-8 后续字节 (10xxxxxx) ────────────────
-static inline bool _utf8_is_cont(unsigned char c) { return (c & 0xC0) == 0x80; }
+inline bool _utf8_is_cont(unsigned char c) { return (c & 0xC0) == 0x80; }
 
 // ── UTF-8 字符字节数 (首字节) ──────────────────────────
-static inline int _utf8_clen(unsigned char c) {
+inline int _utf8_clen(unsigned char c) {
     if (c < 0x80) return 1;
     if ((c & 0xE0) == 0xC0) return 2;
     if ((c & 0xF0) == 0xE0) return 3;
@@ -1472,21 +1472,21 @@ static t_int tphp_fn_mb_strpos(t_string haystack, t_string needle) {
 // std/ctrl.h — 断言/随机数/ctype
 //   对应 PHP ext/standard assertions + ext/random + ext/ctype
 
-static inline void tphp_fn_assert_true(t_bool cond) {
+inline void tphp_fn_assert_true(t_bool cond) {
     if (unlikely(!cond)) {
         tphp_rt_free_all();
         fputs("\nASSERT FAIL: assert_true()\n\n", stderr);
         exit(2);
     }
 }
-static inline void tphp_fn_assert_false(t_bool cond) {
+inline void tphp_fn_assert_false(t_bool cond) {
     if (unlikely(cond)) {
         tphp_rt_free_all();
         fputs("\nASSERT FAIL: assert_false()\n\n", stderr);
         exit(2);
     }
 }
-static inline void tphp_fn_assert_eq_int(t_int a, t_int b) {
+inline void tphp_fn_assert_eq_int(t_int a, t_int b) {
     if (unlikely(a != b)) {
         tphp_rt_free_all();
         fprintf(stderr, "\nASSERT FAIL: assert_eq_int(%lld, %lld)\n\n",
@@ -1494,14 +1494,14 @@ static inline void tphp_fn_assert_eq_int(t_int a, t_int b) {
         exit(2);
     }
 }
-static inline void tphp_fn_assert_eq_float(t_float a, t_float b) {
+inline void tphp_fn_assert_eq_float(t_float a, t_float b) {
     if (unlikely(a != b)) {
         tphp_rt_free_all();
         fprintf(stderr, "\nASSERT FAIL: assert_eq_float(%g, %g)\n\n", a, b);
         exit(2);
     }
 }
-static inline void tphp_fn_assert_eq_str(t_string a, t_string b) {
+inline void tphp_fn_assert_eq_str(t_string a, t_string b) {
     if (unlikely(!tphp_rt_str_eq(a, b))) {
         tphp_rt_free_all();
         fprintf(stderr, "\nASSERT FAIL: assert_eq_str(len=%d vs len=%d)\n\n",
@@ -1525,17 +1525,17 @@ static inline void tphp_fn_assert_eq_str(t_string a, t_string b) {
         return true;                                       \
     } while(0)
 
-static inline t_bool tphp_fn_ctype_alnum(t_string s) { _TPHP_CTYPE_CHECK(isalnum, s); }
-static inline t_bool tphp_fn_ctype_alpha(t_string s) { _TPHP_CTYPE_CHECK(isalpha, s); }
-static inline t_bool tphp_fn_ctype_cntrl(t_string s) { _TPHP_CTYPE_CHECK(iscntrl, s); }
-static inline t_bool tphp_fn_ctype_digit(t_string s) { _TPHP_CTYPE_CHECK(isdigit, s); }
-static inline t_bool tphp_fn_ctype_graph(t_string s) { _TPHP_CTYPE_CHECK(isgraph, s); }
-static inline t_bool tphp_fn_ctype_lower(t_string s) { _TPHP_CTYPE_CHECK(islower, s); }
-static inline t_bool tphp_fn_ctype_print(t_string s) { _TPHP_CTYPE_CHECK(isprint, s); }
-static inline t_bool tphp_fn_ctype_punct(t_string s) { _TPHP_CTYPE_CHECK(ispunct, s); }
-static inline t_bool tphp_fn_ctype_space(t_string s) { _TPHP_CTYPE_CHECK(isspace, s); }
-static inline t_bool tphp_fn_ctype_upper(t_string s) { _TPHP_CTYPE_CHECK(isupper, s); }
-static inline t_bool tphp_fn_ctype_xdigit(t_string s) { _TPHP_CTYPE_CHECK(isxdigit, s); }
+inline t_bool tphp_fn_ctype_alnum(t_string s) { _TPHP_CTYPE_CHECK(isalnum, s); }
+inline t_bool tphp_fn_ctype_alpha(t_string s) { _TPHP_CTYPE_CHECK(isalpha, s); }
+inline t_bool tphp_fn_ctype_cntrl(t_string s) { _TPHP_CTYPE_CHECK(iscntrl, s); }
+inline t_bool tphp_fn_ctype_digit(t_string s) { _TPHP_CTYPE_CHECK(isdigit, s); }
+inline t_bool tphp_fn_ctype_graph(t_string s) { _TPHP_CTYPE_CHECK(isgraph, s); }
+inline t_bool tphp_fn_ctype_lower(t_string s) { _TPHP_CTYPE_CHECK(islower, s); }
+inline t_bool tphp_fn_ctype_print(t_string s) { _TPHP_CTYPE_CHECK(isprint, s); }
+inline t_bool tphp_fn_ctype_punct(t_string s) { _TPHP_CTYPE_CHECK(ispunct, s); }
+inline t_bool tphp_fn_ctype_space(t_string s) { _TPHP_CTYPE_CHECK(isspace, s); }
+inline t_bool tphp_fn_ctype_upper(t_string s) { _TPHP_CTYPE_CHECK(isupper, s); }
+inline t_bool tphp_fn_ctype_xdigit(t_string s) { _TPHP_CTYPE_CHECK(isxdigit, s); }
 
 #undef _TPHP_CTYPE_CHECK
 
@@ -1544,14 +1544,14 @@ static inline t_bool tphp_fn_ctype_xdigit(t_string s) { _TPHP_CTYPE_CHECK(isxdig
 // ============================================================
 
 // 前向声明（定义在 rand.h）
-static inline int _tphp_random_bytes(unsigned char* buf, size_t n);
+inline int _tphp_random_bytes(unsigned char* buf, size_t n);
 
-static inline t_int tphp_fn_random_int(t_int min, t_int max) {
+inline t_int tphp_fn_random_int(t_int min, t_int max) {
     if (min > max) { tphp_fn_error(STR_LIT("random_int(): min must be <= max"), "<php>", 0); return 0; }
     return tphp_fn_rand_int(min, max);
 }
 
-static inline t_string tphp_fn_random_bytes(t_int length) {
+inline t_string tphp_fn_random_bytes(t_int length) {
     if (length <= 0) return (t_string){NULL, 0};
     if (length > 1048576) {
         tphp_fn_error(STR_LIT("random_bytes(): length must be <= 1048576"), "<php>", 0);
