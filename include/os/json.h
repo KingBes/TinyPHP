@@ -16,8 +16,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <math.h>
-#include "types.h"
-#include "val.h"
+// types.h + val.h 由 common.h 统一引入, 不在此重复
 
 /* TCC lacks isinf/isnan → inline fallback; other compilers get them from math.h */
 #ifdef __TINYC__

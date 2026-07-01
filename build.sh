@@ -52,9 +52,7 @@ else
         --crtprefix="lib/tcc:/usr/lib/$ARCH:/usr/lib64:/usr/lib:/lib/$ARCH:/lib" \
         --libpaths="lib/tcc:/usr/lib/$ARCH:/usr/lib64:/usr/lib:/lib/$ARCH:/lib:/usr/local/lib/$ARCH:/usr/local/lib" \
         --extra-cflags=-O3 \
-        --config-bcheck=yes \
-        --config-backtrace=yes \
-        --debug
+        --config-backtrace=yes
 fi
 
 echo "=== 3. 编译 & 安装 ==="
