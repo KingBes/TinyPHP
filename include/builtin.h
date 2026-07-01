@@ -1,8 +1,9 @@
 #pragma once
 
 // builtin.h — TinyPHP 内置函数总入口
-//   所有函数定义在 include/std/ 下（按 PHP ext/ 结构分类）
-//   独立 include 给 GCC/Clang 最佳编译体验, TCC 也能处理
+// TCC 对多个 #include 的符号表限制是 65535, 230+ inline 函数必超
+// 所以全合并到 builtin_full.h 一个文件里 (69KB single unit)
+// GCC/Clang 不受影响, std/ 下分文件保留供人类阅读
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -11,12 +12,4 @@
 #include <ctype.h>
 #include "types.h"
 
-#include "std/output.h"
-#include "std/type.h"
-#include "std/string.h"
-#include "std/html.h"
-#include "std/array_core.h"
-#include "std/array_extra.h"
-#include "std/math.h"
-#include "std/utf8.h"
-#include "std/ctrl.h"
+#include "builtin_full.h"
