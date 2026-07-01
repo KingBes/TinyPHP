@@ -6,7 +6,6 @@
 #include <ctype.h>
 #include "types.h"
 
-// std/output.h — echo, var_dump, exit, isset, empty, unset
 //   对应 PHP ext/standard 输出 + var 函数
 
 // tphp_echo — 输出字符串原始字节到 stdout
@@ -157,7 +156,6 @@ inline void tphp_fn_unset_arr(t_array** a)    { if (*a) { tphp_fn_arr_free(*a); 
 inline void tphp_fn_unset_obj(void** o)       { tp_obj_release(*o); *o = NULL; }
 
 
-// std/type.h — 类型检测/转换 (is_*, intval, gettype, getenv)
 //   对应 PHP ext/standard type functions
 
 // tphp_fn_is_* — t_var 类型检测（mixed/union 变量用）
@@ -254,7 +252,6 @@ inline void tphp_fn_putenv(t_string key) {
 // ── 第二梯队字符串函数 ──────────────────────────────────────
 
 
-// std/string.h — 字符串函数
 //   对应 PHP ext/standard string functions
 
 /* ============================================================
@@ -863,7 +860,6 @@ inline t_string tphp_fn_strtr2(t_string s, t_string from, t_string to) {
 }
 
 
-// std/html.h — HTML安全 + Base64 + HTTP Build Query
 //   对应 PHP ext/standard html + base64 + http functions
 
 // ── htmlspecialchars: 转义 & < > " ' → 实体 ──────────────────
@@ -1013,7 +1009,6 @@ static t_string tphp_fn_http_build_query(t_array *arr) {
     return r;
 }
 
-// std/array_core.h — 核心数组函数 (原 builtin.h 181-400行, 拆分时漏掉)
 //   array_push/pop, in_array, array_key_exists, array_keys/values, array_merge,
 //   implode, explode, max, min
 
@@ -1238,7 +1233,6 @@ inline t_var tphp_fn_min(t_array *a) {
     return found ? result : VAR_NULL();
 }
 
-// std/array_extra.h — 补充数组函数 (flip/diff/intersect/column)
 //   对应 PHP ext/standard array functions
 
 static t_array* tphp_fn_arr_flip(t_array *s) {
@@ -1340,7 +1334,6 @@ static t_array* tphp_fn_arr_count_values(t_array *a) {
 
 // array_rand: 已在 array.h 中定义 (tphp_fn_array_rand, 返回 t_int)
 
-// std/math.h — 数学函数 (abs, round, trig, exp, log)
 //   对应 PHP ext/standard math functions
 
 inline t_int   tphp_fn_abs(t_int v)   { return llabs(v); }
@@ -1400,7 +1393,6 @@ static t_string tphp_fn_base_convert(t_string num, t_int from, t_int to) {
     return (t_string){buf,total};
 }
 
-// std/utf8.h — UTF-8 多字节字符串函数
 //   对应 PHP ext/mbstring (仅UTF-8)
 
 // ── 判断是否为 UTF-8 后续字节 (10xxxxxx) ────────────────
@@ -1469,7 +1461,6 @@ static t_int tphp_fn_mb_strpos(t_string haystack, t_string needle) {
     return tphp_fn_strpos(haystack, needle); // UTF-8 substring search works at byte level
 }
 
-// std/ctrl.h — 断言/随机数/ctype
 //   对应 PHP ext/standard assertions + ext/random + ext/ctype
 
 inline void tphp_fn_assert_true(t_bool cond) {
